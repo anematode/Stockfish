@@ -269,14 +269,17 @@ class FeatureTransformer {
               6;
     #endif
 
+
             for (IndexType j = 0; j < NumOutputChunks; ++j)
             {
-                const vec_t sum0a =
-                  vec_slli_16(vec_max_16(vec_min_16(in0[j * 2 + 0], One), Zero), shift);
+                const vec_t* v0 = in0 + j * 2;
+                const vec_t* v1 = in1 + j * 2;
+                asm("" : "+r"(v0), "+r"(v1));  // force materialization
+                const vec_t sum0a = vec_slli_16(vec_max_16(vec_min_16(*v0, One), Zero), shift);
                 const vec_t sum0b =
-                  vec_slli_16(vec_max_16(vec_min_16(in0[j * 2 + 1], One), Zero), shift);
-                const vec_t sum1a = vec_min_16(in1[j * 2 + 0], One);
-                const vec_t sum1b = vec_min_16(in1[j * 2 + 1], One);
+                  vec_slli_16(vec_max_16(vec_min_16(*(v0 + 1), One), Zero), shift);
+                const vec_t sum1a = vec_min_16(*v1, One);
+                const vec_t sum1b = vec_min_16(*(v1 + 1), One);
 
                 const vec_t pa = vec_mulhi_16(sum0a, sum1a);
                 const vec_t pb = vec_mulhi_16(sum0b, sum1b);
