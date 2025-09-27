@@ -248,32 +248,43 @@ class AffineTransformSparseInput {
         using invec_t  = __m512i;
         using outvec_t = __m512i;
         #define vec_set_32 _mm512_set1_epi32
+        #define vec_add_32 _mm512_add_epi32
         #define vec_add_dpbusd_32 SIMD::m512_add_dpbusd_epi32
     #elif defined(USE_AVX2)
         using invec_t  = __m256i;
         using outvec_t = __m256i;
         #define vec_set_32 _mm256_set1_epi32
+        #define vec_add_32 _mm256_add_epi32
         #define vec_add_dpbusd_32 SIMD::m256_add_dpbusd_epi32
     #elif defined(USE_SSSE3)
         using invec_t  = __m128i;
         using outvec_t = __m128i;
         #define vec_set_32 _mm_set1_epi32
+        #define vec_add_32 _mm_add_epi32
         #define vec_add_dpbusd_32 SIMD::m128_add_dpbusd_epi32
     #elif defined(USE_NEON_DOTPROD)
         using invec_t  = int8x16_t;
         using outvec_t = int32x4_t;
         #define vec_set_32(a) vreinterpretq_s8_u32(vdupq_n_u32(a))
+        #define vec_add_32(a, b) vaddq_s32(a, b)
         #define vec_add_dpbusd_32 SIMD::dotprod_m128_add_dpbusd_epi32
     #elif defined(USE_NEON)
         using invec_t  = int8x16_t;
         using outvec_t = int32x4_t;
         #define vec_set_32(a) vreinterpretq_s8_u32(vdupq_n_u32(a))
+        #define vec_add_32(a, b) vaddq_s32(a, b)
         #define vec_add_dpbusd_32 SIMD::neon_m128_add_dpbusd_epi32
     #endif
         static constexpr IndexType OutputSimdWidth = sizeof(outvec_t) / sizeof(OutputType);
 
         constexpr IndexType NumChunks = ceil_to_multiple<IndexType>(InputDimensions, 8) / ChunkSize;
-        constexpr IndexType NumRegs   = OutputDimensions / OutputSimdWidth;
+        constexpr IndexType NumAccums = OutputDimensions / OutputSimdWidth;
+        // Use two regs per accumulator to improve throughput
+        constexpr bool      SplitAccums = NumAccums == 1;
+
+        static_assert(SplitAccums && "This change makes no difference if there's >1 accumulator");
+
+        constexpr IndexType NumRegs     = SplitAccums ? 2 * NumAccums : NumAccums;
         std::uint16_t       nnz[NumChunks];
         IndexType           count;
 
@@ -283,22 +294,54 @@ class AffineTransformSparseInput {
         find_nnz<NumChunks>(input32, nnz, count);
 
         const outvec_t* biasvec = reinterpret_cast<const outvec_t*>(biases);
-        outvec_t        acc[NumRegs];
-        for (IndexType k = 0; k < NumRegs; ++k)
-            acc[k] = biasvec[k];
 
-        for (IndexType j = 0; j < count; ++j)
+        outvec_t acc[NumRegs];
+        {
+            IndexType k = 0;
+            for (; k < NumAccums; ++k)
+                acc[k] = biasvec[k];
+            for (; k < NumRegs; ++k)
+                acc[k] = vec_set_32(0);
+        }
+        IndexType j = 0;
+
+        if constexpr (SplitAccums)
+        {
+            for (; j + 1 < count; j += 2)
+            {
+                const auto    i1  = nnz[j];
+                const auto    i2  = nnz[j + 1];
+                const invec_t in1 = vec_set_32(input32[i1]);
+                const invec_t in2 = vec_set_32(input32[i2]);
+                const auto    col1 =
+                  reinterpret_cast<const invec_t*>(&weights[i1 * OutputDimensions * ChunkSize]);
+                const auto col2 =
+                  reinterpret_cast<const invec_t*>(&weights[i2 * OutputDimensions * ChunkSize]);
+                for (IndexType k = 0; k < NumAccums; ++k)
+                {
+                    vec_add_dpbusd_32(acc[k], in1, col1[k]);
+                    vec_add_dpbusd_32(acc[k + NumAccums], in2, col2[k]);
+                }
+            }
+        }
+        for (; j < count; ++j)
         {
             const auto    i  = nnz[j];
             const invec_t in = vec_set_32(input32[i]);
             const auto    col =
               reinterpret_cast<const invec_t*>(&weights[i * OutputDimensions * ChunkSize]);
-            for (IndexType k = 0; k < NumRegs; ++k)
+            for (IndexType k = 0; k < NumAccums; ++k)
                 vec_add_dpbusd_32(acc[k], in, col[k]);
         }
 
+        if (SplitAccums)
+        {
+            for (IndexType k = 0; k < NumAccums; ++k)
+                acc[k] = vec_add_32(acc[k], acc[k + NumAccums]);
+        }
+
         outvec_t* outptr = reinterpret_cast<outvec_t*>(output);
-        for (IndexType k = 0; k < NumRegs; ++k)
+        for (IndexType k = 0; k < NumAccums; ++k)
             outptr[k] = acc[k];
     #undef vec_set_32
     #undef vec_add_dpbusd_32
