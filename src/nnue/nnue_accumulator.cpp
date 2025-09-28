@@ -18,10 +18,12 @@
 
 #include "nnue_accumulator.h"
 
+#include <array>
 #include <cassert>
 #include <cstdint>
 #include <initializer_list>
 #include <type_traits>
+#include <utility>
 
 #include "../bitboard.h"
 #include "../misc.h"
@@ -208,10 +210,45 @@ void fused_row_reduce(const ElementType* in, ElementType* out, const Ts* const..
 
     auto* vecIn  = reinterpret_cast<const typename VectorWrapper::type*>(in);
     auto* vecOut = reinterpret_cast<typename VectorWrapper::type*>(out);
+	auto* vecInLast = vecIn + size;
 
-    for (IndexType i = 0; i < size; ++i)
-        vecOut[i] = fused<VectorWrapper, ops...>(
-          vecIn[i], reinterpret_cast<const typename VectorWrapper::type*>(rows)[i]...);
+	std::array<const typename VectorWrapper::type*, sizeof...(rows)> read_ptrs =
+		{ reinterpret_cast<const typename VectorWrapper::type*>(rows)... };
+
+	int UNROLL = 8;
+	int REM = size % UNROLL;
+
+	for (int j = 0; j < REM; ++j) {
+		std::apply([&](auto&&... args) {
+		vecOut[j] = fused<VectorWrapper, ops...>(vecIn[j], args[j]...);
+			}, read_ptrs);
+	}
+
+	vecIn += REM;
+	vecOut += REM;
+	for (auto &ptr : read_ptrs)
+		ptr += REM;
+
+    while (vecIn < vecInLast) {
+		for (int i = 0; i < 8; ++i) {
+			std::apply([&](auto&&... args) {
+			vecOut[i] = fused<VectorWrapper, ops...>(
+			  vecIn[i], args[i]...);
+			}, read_ptrs);
+		}
+
+#define MATERIALIZE_I(i) if constexpr (read_ptrs.size() > i) asm("" : "+r"(read_ptrs[i]));
+	MATERIALIZE_I(1)
+	MATERIALIZE_I(2)
+	MATERIALIZE_I(3)
+	MATERIALIZE_I(4)
+
+		vecIn += 8;
+		vecOut += 8;
+		asm("" : "+r"(vecIn), "+r"(vecOut));
+		for (auto &ptr : read_ptrs)
+			ptr += 8;
+	}
 }
 
 template<Color Perspective, IndexType Dimensions>
