@@ -277,7 +277,7 @@ class AffineTransformSparseInput {
         constexpr IndexType NumAccums   = OutputDimensions / OutputSimdWidth;
         // If there's only one accumulator, split it to avoid the latency penalty
         constexpr bool SplitAccums = NumAccums == 1;
-        constexpr IndexType NumRegs = SplitAccums ? NumAccums : NumRegs;
+        constexpr IndexType NumRegs = SplitAccums ? 2 * NumAccums : NumAccums;
         std::uint16_t       nnz[NumChunks];
         IndexType           count;
 
@@ -302,6 +302,8 @@ class AffineTransformSparseInput {
         #endif
         // convince GCC to not do weird pointer arithmetic in the following loop
         const std::int8_t* weights_cp = weights;
+
+        // dbg_extremes_of(count, 1);
 
         if constexpr (SplitAccums)
         {

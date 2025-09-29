@@ -457,6 +457,7 @@ void UCIEngine::benchmark(std::istream& args) {
 
     // clang-format on
 
+    dbg_print();
     init_search_update_listeners();
 }
 
