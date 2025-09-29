@@ -287,7 +287,7 @@ class AffineTransformSparseInput {
         std::uint16_t       nnz[NumChunks];
         IndexType           count;
 
-        const auto input32 = reinterpret_cast<const std::int32_t*>(input);
+        auto input32 = reinterpret_cast<const std::int32_t*>(input);
 
         // Find indices of nonzero 32-bit blocks
         find_nnz<NumChunks>(input32, nnz, count);
@@ -303,6 +303,8 @@ class AffineTransformSparseInput {
         // convince GCC to not do weird pointer arithmetic in the following loop
         const std::int8_t* weights_cp1 = weights_interleaved;
         const std::int8_t* weights_cp2 = weights_interleaved + (OutputDimensions * PaddedInputDimensions / 2);
+
+        asm ("" : "+r"(weights_cp1), "+r"(weights_cp2), "+r"(input32));
 
         while (start < end)
         {
