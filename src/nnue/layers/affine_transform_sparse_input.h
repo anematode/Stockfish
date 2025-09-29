@@ -59,7 +59,7 @@ alignas(CacheLineSize) static constexpr struct OffsetIndices {
             std::uint64_t j = i, k = 0;
             while (j)
             {
-                offset_indices[i][k++] = constexpr_lsb(j);
+                offset_indices[i][k++] = constexpr_lsb(j) << 2;
                 j &= j - 1;
             }
             while (k < 8)
@@ -147,7 +147,7 @@ void find_nnz(const std::int32_t* RESTRICT input,
     const auto     inputVector = reinterpret_cast<const vec_uint_t*>(input);
     IndexType      count       = 0;
     vec128_t       base        = vec128_zero;
-    const vec128_t increment   = vec128_set_16(8);
+    const vec128_t increment   = vec128_set_16(32);
     for (IndexType i = 0; i < NumChunks; ++i)
     {
         // bitmask of nonzero values in this chunk
@@ -227,7 +227,15 @@ class AffineTransformSparseInput {
     bool read_parameters(std::istream& stream) {
         read_little_endian<BiasType>(stream, biases, OutputDimensions);
         for (IndexType i = 0; i < OutputDimensions * PaddedInputDimensions; ++i)
+        {
             weights[get_weight_index(i)] = read_little_endian<WeightType>(stream);
+        }
+        for (IndexType i = 0; i < OutputDimensions * PaddedInputDimensions; i += 64)
+        {
+            IndexType half = OutputDimensions * PaddedInputDimensions / 2;
+            memcpy(&weights_interleaved[i >> 1], &weights[i], 32);
+            memcpy(&weights_interleaved[half + (i >> 1)], &weights[i + 32], 32);
+        }
 
         return !stream.fail();
     }
@@ -274,15 +282,12 @@ class AffineTransformSparseInput {
         static constexpr IndexType OutputSimdWidth = sizeof(outvec_t) / sizeof(OutputType);
 
         constexpr IndexType NumChunks = ceil_to_multiple<IndexType>(InputDimensions, 8) / ChunkSize;
-        constexpr IndexType NumAccums   = OutputDimensions / OutputSimdWidth;
-        // If there's only one accumulator, split it to avoid the latency penalty
-        constexpr bool SplitAccums = NumAccums == 1;
-        static_assert(SplitAccums && "This test only meant to run with AVX512");
-        constexpr IndexType NumRegs = SplitAccums ? 2 * NumAccums : NumAccums;
+        constexpr IndexType NumRegs   = OutputDimensions / OutputSimdWidth;
+        static_assert(NumRegs == 2 && "This test only meant to run with AVX2");
         std::uint16_t       nnz[NumChunks];
         IndexType           count;
 
-        auto input32 = reinterpret_cast<const std::int32_t*>(input);
+        const auto input32 = reinterpret_cast<const std::int32_t*>(input);
 
         // Find indices of nonzero 32-bit blocks
         find_nnz<NumChunks>(input32, nnz, count);
@@ -296,34 +301,20 @@ class AffineTransformSparseInput {
         auto* end   = nnz + count;
 
         // convince GCC to not do weird pointer arithmetic in the following loop
-        const std::int8_t* weights_cp = weights;
-
-        if constexpr (SplitAccums)
-        {
-            acc[1] = vec_zero();
-            while (start + 1 < end)
-            {
-                std::ptrdiff_t i1 = *start++;
-                std::ptrdiff_t i2 = *start++;
-                const invec_t in1  = vec_set_32(input32[i1]);
-                const invec_t in2  = vec_set_32(input32[i2]);
-                const auto    col1 = reinterpret_cast<const invec_t*>(&weights_cp[i1 * OutputDimensions * ChunkSize]);
-                const auto    col2 = reinterpret_cast<const invec_t*>(&weights_cp[i2 * OutputDimensions * ChunkSize]);
-                vec_add_dpbusd_32(acc[0], in1, *col1);
-                vec_add_dpbusd_32(acc[1], in2, *col2);
-            }
-
-            acc[0] = _mm512_add_epi32(acc[0], acc[1]);
-        }
+        const std::int8_t* weights_cp1 = weights_interleaved;
+        const std::int8_t* weights_cp2 = weights_interleaved + (OutputDimensions * PaddedInputDimensions / 2);
 
         while (start < end)
         {
-            const std::ptrdiff_t i = *start;
+            const std::ptrdiff_t i = *start; // Index is preshifted
             start++;
-            const invec_t in  = vec_set_32(input32[i]);
-            const auto    col = (const invec_t*) (&weights_cp[i * OutputDimensions * ChunkSize]);
-            for (IndexType k = 0; k < NumAccums; ++k)
-                vec_add_dpbusd_32(acc[k], in, col[k]);
+            uint32_t in_val;
+            memcpy(&in_val, reinterpret_cast<const char*>(input32) + i, sizeof(in_val));
+            const auto    col1 = (const invec_t*) (&weights_cp1[i * (OutputDimensions * ChunkSize / 8)]);
+            const auto    col2 = (const invec_t*) (&weights_cp2[i * (OutputDimensions * ChunkSize / 8)]);
+            const invec_t in  = vec_set_32(in_val);
+            vec_add_dpbusd_32(acc[0], in, *col1);
+            vec_add_dpbusd_32(acc[1], in, *col2);
         }
 
         outvec_t* outptr = reinterpret_cast<outvec_t*>(output);
@@ -344,6 +335,7 @@ class AffineTransformSparseInput {
 
     alignas(CacheLineSize) BiasType biases[OutputDimensions];
     alignas(CacheLineSize) WeightType weights[OutputDimensions * PaddedInputDimensions];
+    alignas(CacheLineSize) WeightType weights_interleaved[OutputDimensions * PaddedInputDimensions];
 };
 
 }  // namespace Stockfish::Eval::NNUE::Layers
