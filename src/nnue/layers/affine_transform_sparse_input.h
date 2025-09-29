@@ -277,6 +277,7 @@ class AffineTransformSparseInput {
         constexpr IndexType NumAccums   = OutputDimensions / OutputSimdWidth;
         // If there's only one accumulator, split it to avoid the latency penalty
         constexpr bool SplitAccums = NumAccums == 1;
+        static_assert(SplitAccums && "This test only meant to run with AVX512");
         constexpr IndexType NumRegs = SplitAccums ? 2 * NumAccums : NumAccums;
         std::uint16_t       nnz[NumChunks];
         IndexType           count;

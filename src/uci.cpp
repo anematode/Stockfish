@@ -456,7 +456,7 @@ void UCIEngine::benchmark(std::istream& args) {
               << "\nNodes/second               : " << 1000 * nodes / totalTime << std::endl;
 
     // clang-format on
-    
+
     init_search_update_listeners();
 }
 
