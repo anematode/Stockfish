@@ -176,7 +176,8 @@ class FeatureTransformer {
                            AccumulatorStack&                         accumulatorStack,
                            AccumulatorCaches::Cache<HalfDimensions>* cache,
                            OutputType*                               output,
-                           int                                       bucket) const {
+                           int                                       bucket,
+						   uint16_t nnz_bitset[768 / 16]) const {
 
         using namespace SIMD;
 
@@ -190,6 +191,7 @@ class FeatureTransformer {
           / 2;
 
         const auto& accumulation = (accumulatorState.acc<HalfDimensions>()).accumulation;
+		uint16_t *write_nnz = nnz_bitset;
 
         for (IndexType p = 0; p < 2; ++p)
         {
@@ -268,7 +270,6 @@ class FeatureTransformer {
     #else
               6;
     #endif
-
             for (IndexType j = 0; j < NumOutputChunks; ++j)
             {
                 const vec_t sum0a =
@@ -281,9 +282,11 @@ class FeatureTransformer {
                 const vec_t pa = vec_mulhi_16(sum0a, sum1a);
                 const vec_t pb = vec_mulhi_16(sum0b, sum1b);
 
-                out[j] = vec_packus_16(pa, pb);
+				const vec_t result = vec_packus_16(pa, pb);
+				
+				*write_nnz++ = _mm512_test_epi32_mask(result, result);
+				out[j] = result;
             }
-
 #else
 
             for (IndexType j = 0; j < HalfDimensions / 2; ++j)

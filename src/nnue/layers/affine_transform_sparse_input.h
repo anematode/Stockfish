@@ -77,6 +77,47 @@ alignas(CacheLineSize) static constexpr struct OffsetIndices {
         #define RESTRICT
     #endif
 
+template<const IndexType InputDimensions>
+void find_nnz_bitset(uint16_t *RESTRICT input, uint16_t *RESTRICT output, IndexType& count_out) {
+	uint16_t *output_original = output;
+	constexpr IndexType ITERS = InputDimensions / 16;
+	auto *input_end = input + ITERS;
+#if defined(USE_AVX512ICL)
+    __m512i             base = _mm512_set_epi16(31,30,29,28,27,26,25,24,23,22,21,20,19,18,17,16,15,14,13,12,11,10,9,8,7,6,5,4,3,2,1,0);
+    __m512i       increment    = _mm512_set1_epi16(32);
+	for (; input < input_end; input += 2) {
+		__mmask32 mask;
+		memcpy(&mask, input, sizeof(mask));  // strict aliasing my beloved
+        __m512i nnz = _mm512_maskz_compress_epi16(mask, base);
+        _mm512_storeu_si512(output, nnz);
+
+        output += popcount(mask);
+        base = _mm512_add_epi16(base, increment);
+	}
+	if constexpr (ITERS % 2) {
+		__mmask16 mask = *input;	
+        __m256i nnz = _mm256_maskz_compress_epi16(mask, _mm512_castsi512_si256(base));
+        _mm256_storeu_si256((__m256i*)output, nnz);
+
+        output += popcount(mask);
+	}
+#else
+    const __m512i       increment = _mm512_set1_epi32(16);
+    __m512i base = _mm512_set_epi32(15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0);
+
+    for (; input < input_end; input++)
+    {
+        // Get a bitmask and gather non zero indices
+        const __mmask16 nnzMask = *input;
+        const __m512i   nnzV    = _mm512_maskz_compress_epi32(nnzMask, base);
+        _mm512_mask_cvtepi32_storeu_epi16(output, 0xFFFF, nnzV);
+        output += popcount(nnzMask);
+        base = _mm512_add_epi32(base, increment);
+    }
+#endif
+	count_out = output - output_original;
+}
+
 // Find indices of nonzero numbers in an int32_t array
 template<const IndexType InputDimensions>
 void find_nnz(const std::int32_t* RESTRICT input,
@@ -242,7 +283,7 @@ class AffineTransformSparseInput {
         return !stream.fail();
     }
     // Forward propagation
-    void propagate(const InputType* input, OutputType* output) const {
+    void propagate(const InputType* input, OutputType* output, uint16_t RESTRICT nnz_bitset[768 / 16]) const {
 
 #if (USE_SSSE3 | (USE_NEON >= 8))
     #if defined(USE_AVX512)
@@ -271,17 +312,19 @@ class AffineTransformSparseInput {
         #define vec_set_32(a) vreinterpretq_s8_u32(vdupq_n_u32(a))
         #define vec_add_dpbusd_32 SIMD::neon_m128_add_dpbusd_epi32
     #endif
+		constexpr IndexType NumChunks = ceil_to_multiple<IndexType>(InputDimensions, 8) / ChunkSize;
+		static_assert(NumChunks <= 768);
         static constexpr IndexType OutputSimdWidth = sizeof(outvec_t) / sizeof(OutputType);
 
-        constexpr IndexType NumChunks = ceil_to_multiple<IndexType>(InputDimensions, 8) / ChunkSize;
         constexpr IndexType NumRegs   = OutputDimensions / OutputSimdWidth;
-        std::uint16_t       nnz[NumChunks];
+
+		std::uint16_t       nnz[NumChunks];
         IndexType           count;
 
         const auto input32 = reinterpret_cast<const std::int32_t*>(input);
 
         // Find indices of nonzero 32-bit blocks
-        find_nnz<NumChunks>(input32, nnz, count);
+        find_nnz_bitset<NumChunks>(nnz_bitset, nnz, count);
 
         const outvec_t* biasvec = reinterpret_cast<const outvec_t*>(biases);
         outvec_t        acc[NumRegs];

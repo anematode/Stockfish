@@ -42,17 +42,14 @@ set_arch_x86_64() {
   if check_flags 'avx512f' 'avx512cd' 'avx512vl' 'avx512dq' 'avx512bw' 'avx512ifma' 'avx512vbmi' 'avx512vbmi2' 'avx512vpopcntdq' 'avx512bitalg' 'avx512vnni' 'vpclmulqdq' 'gfni' 'vaes'; then
     true_arch='x86-64-avx512icl'
   elif check_flags 'avx512vnni' 'avx512dq' 'avx512f' 'avx512bw' 'avx512vl'; then
+    echo "This test intended only to run on AVX512"
     true_arch='x86-64-vnni256'
+	exit 1
   elif check_flags 'avx512f' 'avx512bw'; then
     true_arch='x86-64-avx512'
-  elif [ -z "${znver_1_2+1}" ] && check_flags 'bmi2'; then
-    true_arch='x86-64-bmi2'
-  elif check_flags 'avx2'; then
-    true_arch='x86-64-avx2'
-  elif check_flags 'sse41' && check_flags 'popcnt'; then
-    true_arch='x86-64-sse41-popcnt'
   else
-    true_arch='x86-64'
+    echo "This test intended only to run on AVX512"
+	exit 1
   fi
 }
 
