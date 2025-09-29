@@ -294,16 +294,8 @@ class AffineTransformSparseInput {
         auto* start = nnz;
         auto* end   = nnz + count;
 
-        // launder the input pointer to force it into a register (since this function gets
-        // inlined and it by default gets used as an rbp offset) and thereby have fewer 3-op
-        // LEAs below
-        #if defined(__GNUC__) && defined(__x86_64__)
-        asm("" : "+r"(input32) :);
-        #endif
         // convince GCC to not do weird pointer arithmetic in the following loop
         const std::int8_t* weights_cp = weights;
-
-        // dbg_extremes_of(count, 1);
 
         if constexpr (SplitAccums)
         {
@@ -314,8 +306,6 @@ class AffineTransformSparseInput {
                 std::ptrdiff_t i2 = *start++;
                 const invec_t in1  = vec_set_32(input32[i1]);
                 const invec_t in2  = vec_set_32(input32[i2]);
-                /*asm("add %0, %0" : "+r"(i1));
-                asm("add %0, %0" : "+r"(i2));*/
                 const auto    col1 = reinterpret_cast<const invec_t*>(&weights_cp[i1 * OutputDimensions * ChunkSize]);
                 const auto    col2 = reinterpret_cast<const invec_t*>(&weights_cp[i2 * OutputDimensions * ChunkSize]);
                 vec_add_dpbusd_32(acc[0], in1, *col1);
