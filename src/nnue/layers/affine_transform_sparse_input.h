@@ -274,11 +274,14 @@ class AffineTransformSparseInput {
         static constexpr IndexType OutputSimdWidth = sizeof(outvec_t) / sizeof(OutputType);
 
         constexpr IndexType NumChunks = ceil_to_multiple<IndexType>(InputDimensions, 8) / ChunkSize;
-        constexpr IndexType NumRegs   = OutputDimensions / OutputSimdWidth;
+        constexpr IndexType NumAccums   = OutputDimensions / OutputSimdWidth;
+        // If there's only one accumulator, split it to avoid the latency penalty
+        constexpr bool SplitAccums = NumAccums == 1;
+        constexpr IndexType NumRegs = SplitAccums ? NumAccums : NumRegs;
         std::uint16_t       nnz[NumChunks];
         IndexType           count;
 
-        const auto input32 = reinterpret_cast<const std::int32_t*>(input);
+        auto input32 = reinterpret_cast<const std::int32_t*>(input);
 
         // Find indices of nonzero 32-bit blocks
         find_nnz<NumChunks>(input32, nnz, count);
@@ -291,8 +294,34 @@ class AffineTransformSparseInput {
         auto* start = nnz;
         auto* end   = nnz + count;
 
+        // launder the input pointer to force it into a register (since this function gets
+        // inlined and it by default gets used as an rbp offset) and thereby have fewer 3-op
+        // LEAs below
+        #if defined(__GNUC__) && defined(__x86_64__)
+        asm("" : "+r"(input32) :);
+        #endif
         // convince GCC to not do weird pointer arithmetic in the following loop
         const std::int8_t* weights_cp = weights;
+
+        if constexpr (SplitAccums)
+        {
+            acc[1] = vec_zero();
+            while (start + 1 < end)
+            {
+                std::ptrdiff_t i1 = *start++;
+                std::ptrdiff_t i2 = *start++;
+                const invec_t in1  = vec_set_32(input32[i1]);
+                const invec_t in2  = vec_set_32(input32[i2]);
+                /*asm("add %0, %0" : "+r"(i1));
+                asm("add %0, %0" : "+r"(i2));*/
+                const auto    col1 = reinterpret_cast<const invec_t*>(&weights_cp[i1 * OutputDimensions * ChunkSize]);
+                const auto    col2 = reinterpret_cast<const invec_t*>(&weights_cp[i2 * OutputDimensions * ChunkSize]);
+                vec_add_dpbusd_32(acc[0], in1, *col1);
+                vec_add_dpbusd_32(acc[1], in2, *col2);
+            }
+
+            acc[0] = _mm512_add_epi32(acc[0], acc[1]);
+        }
 
         while (start < end)
         {
