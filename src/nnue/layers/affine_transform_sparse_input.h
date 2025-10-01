@@ -294,7 +294,9 @@ class AffineTransformSparseInput {
         // convince GCC to not do weird pointer arithmetic in the following loop
         const std::int8_t* weights_cp = weights;
 
-#ifdef USE_AVX512
+#ifdef USE_AVX512ICL
+#error "Test not intended for this arch ;)"
+#elif defined(USE_AVX512)
 #define vec_add_32 _mm512_add_epi32
 #define vec_maddubs _mm512_maddubs_epi16
 #define vec_hsum16(x) _mm512_madd_epi16(x, _mm512_set1_epi16(1))
