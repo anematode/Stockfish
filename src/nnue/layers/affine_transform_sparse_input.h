@@ -310,6 +310,8 @@ class AffineTransformSparseInput {
                 vec_add2_dpbusd_32(acc[k], in1, col1[k], in2, col2[k]);
             }
         }
+        #else
+        #error "Test not intended for this arch :("
         #endif
 
         while (start < end)
