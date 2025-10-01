@@ -271,6 +271,18 @@ fused(const typename VecWrapper::type& in, const T& operand, const Ts&... operan
     #endif
 }
 
+[[maybe_unused]] static void m512_add2_dpbusd_epi32(__m512i& acc, __m512i a1, __m512i b1, __m512i a2, __m512i b2) {
+
+    #if defined(USE_VNNI)
+    #error "no thx"
+    #else
+    __m512i product0 = _mm512_maddubs_epi16(a1, b1);
+    __m512i product1 = _mm512_maddubs_epi16(a2, b2);
+    product0         = _mm512_madd_epi16(_mm512_adds_epi16(product0, product1), _mm512_set1_epi16(1));
+    acc              = _mm512_add_epi32(acc, product0);
+    #endif
+}
+
 #endif
 
 #if defined(USE_AVX2)
@@ -289,6 +301,18 @@ fused(const typename VecWrapper::type& in, const T& operand, const Ts&... operan
     #else
     __m256i product0 = _mm256_maddubs_epi16(a, b);
     product0         = _mm256_madd_epi16(product0, _mm256_set1_epi16(1));
+    acc              = _mm256_add_epi32(acc, product0);
+    #endif
+}
+
+[[maybe_unused]] static void m256_add2_dpbusd_epi32(__m256i& acc, __m256i a1, __m256i b1, __m256i a2, __m256i b2) {
+
+    #if defined(USE_VNNI)
+    #error "no thx"
+    #else
+    __m256i product0 = _mm256_maddubs_epi16(a1, b1);
+    __m256i product1 = _mm256_maddubs_epi16(a2, b2);
+    product0         = _mm256_madd_epi16(_mm256_adds_epi16(product0, product1), _mm256_set1_epi16(1));
     acc              = _mm256_add_epi32(acc, product0);
     #endif
 }

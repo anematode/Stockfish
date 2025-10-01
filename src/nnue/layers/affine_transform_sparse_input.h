@@ -250,11 +250,13 @@ class AffineTransformSparseInput {
         using outvec_t = __m512i;
         #define vec_set_32 _mm512_set1_epi32
         #define vec_add_dpbusd_32 SIMD::m512_add_dpbusd_epi32
+        #define vec_add2_dpbusd_32 SIMD::m512_add2_dpbusd_epi32
     #elif defined(USE_AVX2)
         using invec_t  = __m256i;
         using outvec_t = __m256i;
         #define vec_set_32 _mm256_set1_epi32
         #define vec_add_dpbusd_32 SIMD::m256_add_dpbusd_epi32
+        #define vec_add2_dpbusd_32 SIMD::m256_add2_dpbusd_epi32
     #elif defined(USE_SSSE3)
         using invec_t  = __m128i;
         using outvec_t = __m128i;
@@ -293,6 +295,22 @@ class AffineTransformSparseInput {
 
         // convince GCC to not do weird pointer arithmetic in the following loop
         const std::int8_t* weights_cp = weights;
+
+        #if !defined(USE_VNNI)
+        while (start + 1 < end)
+        {
+            const std::ptrdiff_t i1 = *start++;
+            const std::ptrdiff_t i2 = *start++;
+            const invec_t in1  = vec_set_32(input32[i1]);
+            const invec_t in2  = vec_set_32(input32[i2]);
+            const auto    col1 = (const invec_t*) (&weights_cp[i1 * OutputDimensions * ChunkSize]);
+            const auto    col2 = (const invec_t*) (&weights_cp[i1 * OutputDimensions * ChunkSize]);
+            for (IndexType k = 0; k < NumRegs; ++k)
+            {
+                vec_add2_dpbusd_32(acc[k], in1, col1[k], in2, col2[k]);
+            }
+        }
+        #endif
 
         while (start < end)
         {
