@@ -294,15 +294,40 @@ class AffineTransformSparseInput {
         // convince GCC to not do weird pointer arithmetic in the following loop
         const std::int8_t* weights_cp = weights;
 
-        while (start < end)
-        {
-            const std::ptrdiff_t i = *start;
-            start++;
-            const invec_t in  = vec_set_32(input32[i]);
-            const auto    col = (const invec_t*) (&weights_cp[i * OutputDimensions * ChunkSize]);
-            for (IndexType k = 0; k < NumRegs; ++k)
-                vec_add_dpbusd_32(acc[k], in, col[k]);
-        }
+#ifdef USE_AVX512
+#define vec_add_32 _mm512_add_epi32
+#define vec_maddubs _mm512_maddubs_epi16
+#define vec_hsum16(x) _mm512_madd_epi16(x, _mm512_set1_epi16(1))
+#elif defined(USE_AVX2)
+#define vec_add_32 _mm256_add_epi32
+#define vec_maddubs _mm256_maddubs_epi16
+#define vec_hsum16(x) _mm256_madd_epi16(x, _mm256_set1_epi16(1))
+#else
+#error "Test not intended for this arch ;)"
+#endif
+
+        auto loop = [&] (int UnrollCount) {
+            while (start + UnrollCount - 1 < end)
+            {
+                outvec_t partials[NumRegs];
+                for (IndexType i = 0; i < NumRegs; ++i)
+                    partials[i] = vec_set_32(0);
+                for (std::ptrdiff_t j = 0; j < UnrollCount; ++j) {
+                    const std::ptrdiff_t i = *(start + j);
+                    const invec_t in  = vec_set_32(input32[i]);
+                    const auto    col = (const invec_t*) (&weights_cp[i * OutputDimensions * ChunkSize]);
+                    for (IndexType k = 0; k < NumRegs; ++k) {
+                        partials[k] = vec_add_16(partials[k], vec_maddubs(in, col[k]));
+                    }
+                }
+                for (IndexType k = 0; k < NumRegs; ++k) {
+                    acc[k] = vec_add_32(acc[k], vec_hsum16(partials[k]));
+                }
+                start += UnrollCount;
+            }
+        };
+        loop(4);
+        loop(1);
 
         outvec_t* outptr = reinterpret_cast<outvec_t*>(output);
         for (IndexType k = 0; k < NumRegs; ++k)
