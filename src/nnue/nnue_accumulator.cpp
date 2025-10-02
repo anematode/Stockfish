@@ -201,8 +201,7 @@ template<typename VectorWrapper,
          IndexType Width,
          UpdateOperation... ops,
          typename ElementType,
-         typename... Ts,
-         std::enable_if_t<is_all_same_v<ElementType, Ts...>, bool> = true>
+         typename... Ts>
 void fused_row_reduce(const ElementType* in, ElementType* out, const Ts* const... rows) {
     constexpr IndexType size = Width * sizeof(ElementType) / sizeof(typename VectorWrapper::type);
 
@@ -211,7 +210,7 @@ void fused_row_reduce(const ElementType* in, ElementType* out, const Ts* const..
 
     for (IndexType i = 0; i < size; ++i)
         vecOut[i] = fused<VectorWrapper, ops...>(
-          vecIn[i], reinterpret_cast<const typename VectorWrapper::type*>(rows)[i]...);
+          vecIn[i], rows[i]...);
 }
 
 template<Color Perspective, IndexType Dimensions>
@@ -232,7 +231,7 @@ struct AccumulatorUpdateContext {
              std::enable_if_t<is_all_same_v<IndexType, Ts...>, bool> = true>
     void apply(const Ts... indices) {
         auto to_weight_vector = [&](const IndexType index) {
-            return &featureTransformer.weights[index * Dimensions];
+            return featureTransformer.get_row(index);
         };
 
         auto to_psqt_weight_vector = [&](const IndexType index) {

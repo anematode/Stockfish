@@ -45,6 +45,16 @@ invert_permutation(const std::array<std::size_t, Len>& order) {
     return inverse;
 }
 
+struct QuWeightReader {
+    const uint8_t * RESTRICT qs;
+    const uint32_t * RESTRICT msb;
+
+    __m512i operator[](const std::ptrdiff_t index) const {
+        __m512i loaded =_mm512_cvtepi8_epi16(_mm256_loadu_si256(qs + index * 16));
+        return _mm512_mask_slli_epi16(loaded, msb[index], loaded, 3);
+    }
+};
+
 // Divide a byte region of size TotalSize to chunks of size
 // BlockSize, and permute the blocks by a given order
 template<std::size_t BlockSize, typename T, std::size_t N, std::size_t OrderSize>
@@ -144,6 +154,22 @@ class FeatureTransformer {
             biases[i] = read ? biases[i] * 2 : biases[i] / 2;
     }
 
+    void quantize() {
+        std::fill(quWeightHuge, quWeightHuge + InputDimensions / 32, 0);
+        for (IndexType i = 0; i < InputDimensions * HalfDimensions; ++i)
+        {
+            WeightType w = weights[i];
+            if ((int8_t)w != w)
+            {
+                quWeightHuge[i / 32] |= (1 << (i % 32));
+                quWeights[i] = w / 8;
+            } else
+            {
+                quWeights[i] = w;
+            }
+        }
+    }
+
     // Read network parameters
     bool read_parameters(std::istream& stream) {
 
@@ -157,7 +183,10 @@ class FeatureTransformer {
         {
             if (i < -128 || i > 127)
             {
-                i = (int)std::round((float)i / 8.f) * 8;
+                int desired = (int)std::round((float)i / 8.f) * 8;
+                if (desired > 127 * 8) desired = 127 * 8;
+                if (desired < -128 * 8) desired = -128 * 8;
+                i = desired;
             }
         }
 
@@ -311,9 +340,15 @@ class FeatureTransformer {
         return psqt;
     }  // end of function transform()
 
+    QuWeightReader get_row(const IndexType row_index) const {
+        return QuWeightReader{&quWeights[row_index * InputDimensions], &quWeightHuge[row_index * (InputDimensions / 32)]};
+    }
+
     alignas(CacheLineSize) BiasType biases[HalfDimensions];
     alignas(CacheLineSize) WeightType weights[HalfDimensions * InputDimensions];
     alignas(CacheLineSize) PSQTWeightType psqtWeights[InputDimensions * PSQTBuckets];
+    alignas(CacheLineSize) int8_t quWeights[HalfDimensions * InputDimensions];
+    alignas(CacheLineSize) uint32_t quWeightHuge[HalfDimensions * InputDimensions / 32];
 };
 
 }  // namespace Stockfish::Eval::NNUE

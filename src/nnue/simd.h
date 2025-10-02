@@ -237,7 +237,6 @@ template<typename VecWrapper,
          UpdateOperation... ops,
          typename T,
          typename... Ts,
-         std::enable_if_t<is_all_same_v<typename VecWrapper::type, T, Ts...>, bool> = true,
          std::enable_if_t<sizeof...(ops) == sizeof...(Ts), bool>                    = true>
 typename VecWrapper::type
 fused(const typename VecWrapper::type& in, const T& operand, const Ts&... operands) {
