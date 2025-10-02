@@ -51,7 +51,8 @@ struct QuWeightReader {
 
     __m512i operator[](const std::ptrdiff_t index) const {
         __m512i loaded =_mm512_cvtepi8_epi16(_mm256_loadu_si256(qs + index * 16));
-        return _mm512_mask_slli_epi16(loaded, msb[index], loaded, 3);
+        auto shapely = _mm512_mask_slli_epi16(loaded, msb[index], loaded, 3);
+        return _mm512_add_epi16(shapely, shapely);  // the other algorithms assume it's doubled...
     }
 };
 
