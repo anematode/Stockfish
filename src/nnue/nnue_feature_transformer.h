@@ -152,6 +152,15 @@ class FeatureTransformer {
         read_leb_128<PSQTWeightType>(stream, psqtWeights, PSQTBuckets * InputDimensions);
 
         permute_weights();
+        // Test a simple future 9-bit quantization formula, x for -128<=x<=127 or 8*(x&0xff) if MSB is set
+        for (auto &i : weights)
+        {
+            if (i < -128 || i > 127)
+            {
+                i = (int)std::round((float)i / 8.f) * 8;
+            }
+        }
+
         scale_weights(true);
         return !stream.fail();
     }
