@@ -214,6 +214,23 @@ void fused_row_reduce(const ElementType* in, ElementType* out, const Ts* const..
           vecIn[i], reinterpret_cast<const typename VectorWrapper::type*>(rows)[i]...);
 }
 
+template<typename VectorWrapper,
+     IndexType Width,
+     UpdateOperation... ops,
+     typename ElementType,
+     typename... Ts,
+     std::enable_if_t<is_all_same_v<CompressedWeightIterator, Ts...>, bool> = true>
+void fused_row_reduce_compressed(const ElementType* in, ElementType* out, Ts... rows) {
+    constexpr IndexType size = Width * sizeof(ElementType) / sizeof(typename VectorWrapper::type);
+
+    auto* vecIn  = reinterpret_cast<const typename VectorWrapper::type*>(in);
+    auto* vecOut = reinterpret_cast<typename VectorWrapper::type*>(out);
+
+    for (IndexType i = 0; i < size; ++i)
+        vecOut[i] = fused<VectorWrapper, ops...>(
+          vecIn[i], rows.next()...);
+}
+
 template<Color Perspective, IndexType Dimensions>
 struct AccumulatorUpdateContext {
     const FeatureTransformer<Dimensions>& featureTransformer;
@@ -232,14 +249,14 @@ struct AccumulatorUpdateContext {
              std::enable_if_t<is_all_same_v<IndexType, Ts...>, bool> = true>
     void apply(const Ts... indices) {
         auto to_weight_vector = [&](const IndexType index) {
-            return &featureTransformer.weights[index * Dimensions];
+            return featureTransformer.compressed_row_iter(index);
         };
 
         auto to_psqt_weight_vector = [&](const IndexType index) {
             return &featureTransformer.psqtWeights[index * PSQTBuckets];
         };
 
-        fused_row_reduce<Vec16Wrapper, Dimensions, ops...>(
+        fused_row_reduce_compressed<Vec16Wrapper, Dimensions, ops...>(
           (from.acc<Dimensions>()).accumulation[Perspective],
           (to.acc<Dimensions>()).accumulation[Perspective], to_weight_vector(indices)...);
 

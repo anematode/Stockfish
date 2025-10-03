@@ -76,6 +76,22 @@ void permute(T (&data)[N], const std::array<std::size_t, OrderSize>& order) {
     }
 }
 
+struct CompressedWeightIterator {
+    const int8_t *RESTRICT compWeight;
+    const uint32_t *RESTRICT fatMask;
+
+    // Not doubled yet, need to double manually
+    __m512i next() {
+        uint32_t fat = *fatMask++;
+        __mmask64 expand_mask = _pdep_u64(fat, 0x5555555555555555ULL) | 0xaaaaaaaaaaaaaaaaULL;
+        __m512i expanded = _mm512_maskz_expandloadu_epi8(expand_mask, compWeight);
+        __m512i shifted = _mm512_mask_srai_epi16(expanded, ~fat, expanded, 8);
+
+        compWeight += __builtin_popcount(fat) + 32;
+        return _mm512_add_epi16(shifted, shifted);
+    }
+};
+
 // Input feature converter
 template<IndexType TransformedFeatureDimensions>
 class FeatureTransformer {
@@ -144,6 +160,31 @@ class FeatureTransformer {
             biases[i] = read ? biases[i] * 2 : biases[i] / 2;
     }
 
+    void compress_weights() {
+        std::fill(fatMasks, fatMasks + sizeof(fatMasks) / sizeof(fatMasks[0]), 0);
+        IndexType compOffset = 0;
+        IndexType m = 0;
+        for (IndexType row = 0; row < InputDimensions; ++row) {
+            const WeightType* w = &weights[row * HalfDimensions];
+            offsetIntoCompWeights[row] = compOffset;
+            for (IndexType col = 0; col < HalfDimensions; ++col) {
+                auto weight = w[col];
+                if ((int8_t)weight == weight) {
+                    compWeights[compOffset++] = weight;
+                } else {
+                    compWeights[compOffset++] = (weight) & 0xff;
+                    compWeights[compOffset++] = (weight >> 8) & 0xff;
+                    fatMasks[m / 32] |= 1U << (m % 32);
+                }
+                m++;
+            }
+        }
+    }
+
+    CompressedWeightIterator compressed_row_iter(const IndexType row) const {
+        return CompressedWeightIterator { &compWeights[offsetIntoCompWeights[row]], &fatMasks[row * HalfDimensions / 32] };
+    }
+
     // Read network parameters
     bool read_parameters(std::istream& stream) {
 
@@ -152,7 +193,22 @@ class FeatureTransformer {
         read_leb_128<PSQTWeightType>(stream, psqtWeights, PSQTBuckets * InputDimensions);
 
         permute_weights();
+        compress_weights();
         scale_weights(true);
+
+        for (IndexType row = 0; row < InputDimensions; ++row) {
+            auto iter = compressed_row_iter(row);
+            for (IndexType j = 0; j < HalfDimensions / 32; ++j) {  // sanity chekc
+                auto data = iter.next();
+                int16_t scalar[32];
+                _mm512_storeu_si512(scalar, data);
+
+                for (int i = 0; i < 32; ++i) {
+                    if (scalar[i] != weights[row * HalfDimensions + j * 32 + i]) abort();
+                }
+            }
+        }
+
         return !stream.fail();
     }
 
@@ -302,9 +358,14 @@ class FeatureTransformer {
         return psqt;
     }  // end of function transform()
 
+
     alignas(CacheLineSize) BiasType biases[HalfDimensions];
     alignas(CacheLineSize) WeightType weights[HalfDimensions * InputDimensions];
     alignas(CacheLineSize) PSQTWeightType psqtWeights[InputDimensions * PSQTBuckets];
+    int8_t compWeights[HalfDimensions * InputDimensions * 2];
+    uint32_t fatMasks[HalfDimensions * InputDimensions / 32];
+    // For each row, where to start decompressing weights from
+    uint32_t offsetIntoCompWeights[InputDimensions];
 };
 
 }  // namespace Stockfish::Eval::NNUE
