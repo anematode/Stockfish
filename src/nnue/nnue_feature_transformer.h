@@ -81,14 +81,12 @@ struct CompressedWeightIterator {
     const uint32_t *RESTRICT fatMask;
 
     // Not doubled yet, need to double manually
-    __m512i next() {
+    __m512i next(bool predouble) {
         uint32_t fat = *fatMask++;
-        __mmask64 expand_mask = _pdep_u64(fat, 0x5555555555555555ULL) | 0xaaaaaaaaaaaaaaaaULL;
-        __m512i expanded = _mm512_maskz_expandloadu_epi8(expand_mask, compWeight);
-        __m512i shifted = _mm512_mask_srai_epi16(expanded, ~fat, expanded, 8);
-
-        compWeight += __builtin_popcount(fat) + 32;
-        return _mm512_add_epi16(shifted, shifted);
+        __m512i expanded = _mm512_cvtepi8_epi16(_mm256_loadu_si256((const __m256i*)compWeight));
+        compWeight += 32;
+        __m512i shifted = _mm512_mask_slli_epi16(expanded, fat, expanded, 3);
+        return predouble ? _mm512_add_epi16(shifted, shifted) : shifted;
     }
 };
 
@@ -165,15 +163,17 @@ class FeatureTransformer {
         IndexType compOffset = 0;
         IndexType m = 0;
         for (IndexType row = 0; row < InputDimensions; ++row) {
-            const WeightType* w = &weights[row * HalfDimensions];
-            offsetIntoCompWeights[row] = compOffset;
+            WeightType* w = &weights[row * HalfDimensions];
             for (IndexType col = 0; col < HalfDimensions; ++col) {
                 auto weight = w[col];
                 if ((int8_t)weight == weight) {
                     compWeights[compOffset++] = weight;
                 } else {
-                    compWeights[compOffset++] = (weight) & 0xff;
-                    compWeights[compOffset++] = (weight >> 8) & 0xff;
+                    int want = (int)std::round((float)weight / 8.f) * 8;
+                    if (want < -128 * 8) want = -128 * 8;
+                    if (want > 127 * 8) want = 127 * 8;
+                    w[col] = weight = want;
+                    compWeights[compOffset++] = weight >> 3;
                     fatMasks[m / 32] |= 1U << (m % 32);
                 }
                 m++;
@@ -181,8 +181,8 @@ class FeatureTransformer {
         }
     }
 
-    CompressedWeightIterator compressed_row_iter(const IndexType row) const {
-        return CompressedWeightIterator { &compWeights[offsetIntoCompWeights[row]], &fatMasks[row * HalfDimensions / 32] };
+    CompressedWeightIterator compressed_row_iter(const IndexType row, const IndexType offset = 0) const {
+        return CompressedWeightIterator { &compWeights[row * HalfDimensions + offset], &fatMasks[row * HalfDimensions / 32 + offset / 32] };
     }
 
     // Read network parameters
@@ -196,10 +196,11 @@ class FeatureTransformer {
         compress_weights();
         scale_weights(true);
 
+#if 0
         for (IndexType row = 0; row < InputDimensions; ++row) {
             auto iter = compressed_row_iter(row);
             for (IndexType j = 0; j < HalfDimensions / 32; ++j) {  // sanity chekc
-                auto data = iter.next();
+                auto data = iter.next(true);
                 int16_t scalar[32];
                 _mm512_storeu_si512(scalar, data);
 
@@ -208,6 +209,7 @@ class FeatureTransformer {
                 }
             }
         }
+#endif
 
         return !stream.fail();
     }
@@ -364,8 +366,6 @@ class FeatureTransformer {
     alignas(CacheLineSize) PSQTWeightType psqtWeights[InputDimensions * PSQTBuckets];
     int8_t compWeights[HalfDimensions * InputDimensions * 2];
     uint32_t fatMasks[HalfDimensions * InputDimensions / 32];
-    // For each row, where to start decompressing weights from
-    uint32_t offsetIntoCompWeights[InputDimensions];
 };
 
 }  // namespace Stockfish::Eval::NNUE

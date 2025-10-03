@@ -228,7 +228,7 @@ void fused_row_reduce_compressed(const ElementType* in, ElementType* out, Ts... 
 
     for (IndexType i = 0; i < size; ++i)
         vecOut[i] = fused<VectorWrapper, ops...>(
-          vecIn[i], rows.next()...);
+          vecIn[i], rows.next(true)...);
 }
 
 template<Color Perspective, IndexType Dimensions>
@@ -428,40 +428,38 @@ void update_accumulator_refresh_cache(const FeatureTransformer<Dimensions>& feat
         auto* entryTile = reinterpret_cast<vec_t*>(&entry.accumulation[j * Tiling::TileHeight]);
 
         for (IndexType k = 0; k < Tiling::NumRegs; ++k)
-            acc[k] = entryTile[k];
+            acc[k] = vec_zero();
 
         IndexType i = 0;
         for (; i < std::min(removed.size(), added.size()); ++i)
         {
             IndexType       indexR  = removed[i];
-            const IndexType offsetR = Dimensions * indexR + j * Tiling::TileHeight;
-            auto* columnR = reinterpret_cast<const vec_t*>(&featureTransformer.weights[offsetR]);
+            auto columnRIter = featureTransformer.compressed_row_iter(indexR, j * Tiling::TileHeight);
             IndexType       indexA  = added[i];
-            const IndexType offsetA = Dimensions * indexA + j * Tiling::TileHeight;
-            auto* columnA = reinterpret_cast<const vec_t*>(&featureTransformer.weights[offsetA]);
+            auto columnAIter = featureTransformer.compressed_row_iter(indexA, j * Tiling::TileHeight);
 
             for (IndexType k = 0; k < Tiling::NumRegs; ++k)
-                acc[k] = fused<Vec16Wrapper, Add, Sub>(acc[k], columnA[k], columnR[k]);
+                acc[k] = fused<Vec16Wrapper, Add, Sub>(acc[k], columnAIter.next(false), columnRIter.next(false));
         }
         for (; i < removed.size(); ++i)
         {
             IndexType       index  = removed[i];
-            const IndexType offset = Dimensions * index + j * Tiling::TileHeight;
-            auto* column = reinterpret_cast<const vec_t*>(&featureTransformer.weights[offset]);
+            auto columnIter = featureTransformer.compressed_row_iter(index, j * Tiling::TileHeight);
 
             for (IndexType k = 0; k < Tiling::NumRegs; ++k)
-                acc[k] = vec_sub_16(acc[k], column[k]);
+                acc[k] = vec_sub_16(acc[k], columnIter.next(false));
         }
         for (; i < added.size(); ++i)
         {
             IndexType       index  = added[i];
-            const IndexType offset = Dimensions * index + j * Tiling::TileHeight;
-            auto* column = reinterpret_cast<const vec_t*>(&featureTransformer.weights[offset]);
+            auto columnIter = featureTransformer.compressed_row_iter(index, j * Tiling::TileHeight);
 
             for (IndexType k = 0; k < Tiling::NumRegs; ++k)
-                acc[k] = vec_add_16(acc[k], column[k]);
+                acc[k] = vec_add_16(acc[k], columnIter.next(false));
         }
 
+        for (IndexType k = 0; k < Tiling::NumRegs; ++k)
+            acc[k] = vec_add_16(entryTile[k], vec_add_16(acc[k], acc[k]));
         for (IndexType k = 0; k < Tiling::NumRegs; k++)
             vec_store(&entryTile[k], acc[k]);
         for (IndexType k = 0; k < Tiling::NumRegs; k++)
