@@ -228,7 +228,7 @@ void fused_row_reduce_compressed(const ElementType* in, ElementType* out, Ts... 
 
     for (IndexType i = 0; i < size; ++i)
         vecOut[i] = fused<VectorWrapper, ops...>(
-          vecIn[i], rows.next(true)...);
+          vecIn[i], rows.next(false)...);
 }
 
 template<Color Perspective, IndexType Dimensions>
@@ -459,7 +459,7 @@ void update_accumulator_refresh_cache(const FeatureTransformer<Dimensions>& feat
         }
 
         for (IndexType k = 0; k < Tiling::NumRegs; ++k)
-            acc[k] = vec_add_16(entryTile[k], vec_add_16(acc[k], acc[k]));
+            acc[k] = vec_add_16(entryTile[k], acc[k]);
         for (IndexType k = 0; k < Tiling::NumRegs; k++)
             vec_store(&entryTile[k], acc[k]);
         for (IndexType k = 0; k < Tiling::NumRegs; k++)

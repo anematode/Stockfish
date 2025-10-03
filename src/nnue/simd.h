@@ -55,9 +55,12 @@ using vec_uint_t = __m512i;
     #define vec_add_16(a, b) _mm512_add_epi16(a, b)
     #define vec_sub_16(a, b) _mm512_sub_epi16(a, b)
     #define vec_mulhi_16(a, b) _mm512_mulhi_epi16(a, b)
+    #define vec_mul_16(a, b) _mm512_mullo_epi16(a, b)
     #define vec_zero() _mm512_setzero_epi32()
     #define vec_set_16(a) _mm512_set1_epi16(a)
     #define vec_max_16(a, b) _mm512_max_epi16(a, b)
+    #define vec_msb_pack_16(a, b) \
+        _mm512_packs_epi16(_mm512_srli_epi16(a, 7), _mm512_srli_epi16(b, 7))
     #define vec_min_16(a, b) _mm512_min_epi16(a, b)
     #define vec_slli_16(a, b) _mm512_slli_epi16(a, b)
     // Inverse permuted at load time

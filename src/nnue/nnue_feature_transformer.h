@@ -86,7 +86,7 @@ struct CompressedWeightIterator {
         __m512i expanded = _mm512_cvtepi8_epi16(_mm256_loadu_si256((const __m256i*)compWeight));
         compWeight += 32;
         __m512i shifted = _mm512_mask_slli_epi16(expanded, fat, expanded, 3);
-        return predouble ? _mm512_add_epi16(shifted, shifted) : shifted;
+        return shifted;
     }
 };
 
@@ -146,18 +146,6 @@ class FeatureTransformer {
         permute<16>(weights, InversePackusEpi16Order);
     }
 
-    inline void scale_weights(bool read) {
-        for (IndexType j = 0; j < InputDimensions; ++j)
-        {
-            WeightType* w = &weights[j * HalfDimensions];
-            for (IndexType i = 0; i < HalfDimensions; ++i)
-                w[i] = read ? w[i] * 2 : w[i] / 2;
-        }
-
-        for (IndexType i = 0; i < HalfDimensions; ++i)
-            biases[i] = read ? biases[i] * 2 : biases[i] / 2;
-    }
-
     void compress_weights() {
         std::fill(fatMasks, fatMasks + sizeof(fatMasks) / sizeof(fatMasks[0]), 0);
         IndexType compOffset = 0;
@@ -194,7 +182,6 @@ class FeatureTransformer {
 
         permute_weights();
         compress_weights();
-        scale_weights(true);
 
 #if 0
         for (IndexType row = 0; row < InputDimensions; ++row) {
@@ -218,14 +205,12 @@ class FeatureTransformer {
     bool write_parameters(std::ostream& stream) {
 
         unpermute_weights();
-        scale_weights(false);
 
         write_leb_128<BiasType>(stream, biases, HalfDimensions);
         write_leb_128<WeightType>(stream, weights, HalfDimensions * InputDimensions);
         write_leb_128<PSQTWeightType>(stream, psqtWeights, PSQTBuckets * InputDimensions);
 
         permute_weights();
-        scale_weights(true);
         return !stream.fail();
     }
 
@@ -260,7 +245,7 @@ class FeatureTransformer {
             constexpr IndexType NumOutputChunks = HalfDimensions / 2 / OutputChunkSize;
 
             const vec_t Zero = vec_zero();
-            const vec_t One  = vec_set_16(127 * 2);
+            const vec_t One  = vec_set_16(127);
 
             const vec_t* in0 = reinterpret_cast<const vec_t*>(&(accumulation[perspectives[p]][0]));
             const vec_t* in1 =
@@ -329,17 +314,16 @@ class FeatureTransformer {
 
             for (IndexType j = 0; j < NumOutputChunks; ++j)
             {
-                const vec_t sum0a =
-                  vec_slli_16(vec_max_16(vec_min_16(in0[j * 2 + 0], One), Zero), shift);
-                const vec_t sum0b =
-                  vec_slli_16(vec_max_16(vec_min_16(in0[j * 2 + 1], One), Zero), shift);
-                const vec_t sum1a = vec_min_16(in1[j * 2 + 0], One);
-                const vec_t sum1b = vec_min_16(in1[j * 2 + 1], One);
+                const vec_t sum0a = vec_max_16(vec_min_16(in0[j * 2 + 0], One), Zero);
+                const vec_t sum0b = vec_max_16(vec_min_16(in0[j * 2 + 1], One), Zero);
+                const vec_t sum1a = vec_max_16(vec_min_16(in1[j * 2 + 0], One), Zero);
+                const vec_t sum1b = vec_max_16(vec_min_16(in1[j * 2 + 1], One), Zero);
+                // What we want to do is multiply inputs in a pairwise manner (after clipping),
 
-                const vec_t pa = vec_mulhi_16(sum0a, sum1a);
-                const vec_t pb = vec_mulhi_16(sum0b, sum1b);
+                const vec_t pa = vec_mul_16(sum0a, sum1a);
+                const vec_t pb = vec_mul_16(sum0b, sum1b);
 
-                out[j] = vec_packus_16(pa, pb);
+                out[j] = vec_msb_pack_16(pa, pb);
             }
 
 #else
