@@ -215,6 +215,7 @@ void TranspositionTable::new_search() {
 
 uint8_t TranspositionTable::generation() const { return generation8; }
 
+#define unpredictable(x) (x)
 
 // Looks up the current position in the transposition
 // table. It returns true if the position is found.
@@ -225,14 +226,27 @@ uint8_t TranspositionTable::generation() const { return generation8; }
 std::tuple<bool, TTData, TTWriter> TranspositionTable::probe(const Key key) const {
 
     TTEntry* const tte   = first_entry(key);
-    const uint16_t key16 = uint16_t(key);  // Use the low 16 bits as key inside the cluster
+    uint16_t key16 = uint16_t(key);  // Use the low 16 bits as key inside the cluster
+    int j;
 
-    for (int i = 0; i < ClusterSize; ++i)
-        if (tte[i].key16 == key16)
-            // This gap is the main place for read races.
-            // After `read()` completes that copy is final, but may be self-inconsistent.
-            return {tte[i].is_occupied(), tte[i].read(), TTWriter(&tte[i])};
+    static_assert(ClusterSize == 3);
+    // I'll rewrite this in C++ later but I can't yet figure out how to get the compiler to generate what I want :P
+    asm goto (
+        "xor %%eax, %%eax\n"
+        "cmpw %1, 20(%2)\n"
+        "sete %%al\n"
+        "shl $16, %%eax\n"
+        "cmpw %1, 10(%2)\n"
+        "sete %%ah\n"
+        "cmpw %1, (%2)\n"
+        "sete %%al\n"
+        "bsrl %%eax, %0\n"
+        "jz %l[none]\n" : "=r"(j) : "r"(key16), "r"(tte) : "rax", "cc" : none
+    );
+    j >>= 3;
+    return {tte[j].is_occupied(), tte[j].read(), TTWriter(&tte[j])};
 
+    none:
     // Find an entry to be replaced according to the replacement strategy
     TTEntry* replace = tte;
     for (int i = 1; i < ClusterSize; ++i)
