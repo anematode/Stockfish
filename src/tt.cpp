@@ -227,26 +227,28 @@ std::tuple<bool, TTData, TTWriter> TranspositionTable::probe(const Key key) cons
 
     TTEntry* const tte   = first_entry(key);
     uint16_t key16 = uint16_t(key);  // Use the low 16 bits as key inside the cluster
-    int j;
+    TTEntry* j = nullptr, *scratch;
 
     static_assert(ClusterSize == 3);
-    // I'll rewrite this in C++ later but I can't yet figure out how to get the compiler to generate what I want :P
-    asm goto (
-        "xor %%eax, %%eax\n"
-        "cmpw %1, 20(%2)\n"
-        "sete %%al\n"
-        "shl $16, %%eax\n"
-        "cmpw %1, 10(%2)\n"
-        "sete %%ah\n"
-        "cmpw %1, (%2)\n"
-        "sete %%al\n"
-        "bsrl %%eax, %0\n"
-        "jz %l[none]\n" : "=r"(j) : "r"(key16), "r"(tte) : "rax", "cc" : none
+    // I'll rewrite this in C++ later but I can't yet figure out how to get the compiler to stop making a branch :sob:
+#ifdef __x86_64__
+    asm (
+        "leaq 20(%[tte]),%[scratch]\n"
+        "cmpw %[key16],(%[scratch])\n"
+        "cmoveq %[scratch], %[j]\n"
+        "leaq 10(%[tte]),%[scratch]\n"
+        "cmpw %[key16],(%[scratch])\n"
+        "cmoveq %[scratch], %[j]\n"
+        "cmpw %[key16],(%[tte])\n"
+        "cmoveq %[tte], %[j]\n": [j]"+r"(j), [scratch]"=&r"(scratch) : [key16]"r"(key16), [tte]"r"(tte) : "cc"
     );
-    j >>= 3;
-    return {tte[j].is_occupied(), tte[j].read(), TTWriter(&tte[j])};
+#else
+#error "sry lol"
+#endif
+    if (j) {
+        return {j->is_occupied(), j->read(), TTWriter(j)};
+    }
 
-    none:
     // Find an entry to be replaced according to the replacement strategy
     TTEntry* replace = tte;
     for (int i = 1; i < ClusterSize; ++i)
