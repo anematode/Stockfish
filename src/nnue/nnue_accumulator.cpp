@@ -362,6 +362,84 @@ void update_accumulator_incremental(
     (target_state.acc<TransformedFeatureDimensions>()).computed[Perspective] = true;
 }
 
+template <int M, int N, int Dimensions>
+void process_data(const IndexType *RESTRICT added, const IndexType *RESTRICT removed,
+        const FeatureTransformer<Dimensions>& featureTransformer,
+        std::int16_t accumulator[Dimensions], std::int32_t psqtAccumulator[PSQTBuckets],
+        typename AccumulatorCaches::Cache<Dimensions>::Entry& entry) {
+    (void)psqtAccumulator;
+    static_assert(Dimensions * sizeof(int16_t) == sizeof(entry.accumulation));
+
+    auto* accTile = reinterpret_cast<vec_t*>(accumulator);
+    auto* entryTile = reinterpret_cast<vec_t*>(&entry.accumulation[0]);
+    for (size_t i = 0; i < Dimensions * sizeof(int16_t) / sizeof(vec_t); ++i) {
+        vec_t result = *entryTile;
+        for (int j = 0; j < M; ++j) {
+            auto *base = reinterpret_cast<const vec_t*>(&featureTransformer.weights[Dimensions * added[j]]);
+            result = vec_add_16(result, base[i]);
+        }
+        for (int j = 0; j < N; ++j) {
+            auto *base = reinterpret_cast<const vec_t*>(&featureTransformer.weights[Dimensions * removed[j]]);
+            result = vec_sub_16(result, base[i]);
+        }
+        *accTile++ = *entryTile++ = result;
+    }
+}
+
+template <int Dimensions>
+using DispatchFunction = decltype(&process_data<0, 0, Dimensions>);
+
+constexpr int MAX_VAL = 8;
+constexpr int TABLE_SIZE = MAX_VAL + 1;
+
+constexpr int supported_m_n(IndexType M, IndexType N) {
+    return M + N <= MAX_VAL;
+}
+
+template <int M, int N, int Dimensions>
+constexpr DispatchFunction<Dimensions> get_dispatch_function() {
+    if constexpr (supported_m_n(M, N)) {
+        return &process_data<M, N, Dimensions>;
+    } else {
+        // Return a nullptr for invalid combinations in the table.
+        return nullptr;
+    }
+}
+
+template <int M, int N, int Dimensions>
+constexpr void fill_row(std::array<DispatchFunction<Dimensions>, TABLE_SIZE>& row) {
+    if constexpr (N < TABLE_SIZE) {
+        row[N] = get_dispatch_function<M, N, Dimensions>();
+        fill_row<M, N + 1, Dimensions>(row);
+    }
+}
+
+template <int M, int Dimensions>
+constexpr void initialize_table(
+    std::array<std::array<DispatchFunction<Dimensions>, TABLE_SIZE>, TABLE_SIZE>& table) {
+    if constexpr (M < TABLE_SIZE) {
+        fill_row<M, 0, Dimensions>(table[M]);
+        initialize_table<M + 1, Dimensions>(table);
+    }
+}
+
+template <int Dimensions>
+class Dispatcher {
+    static constexpr std::array<
+        std::array<DispatchFunction<Dimensions>, TABLE_SIZE>, TABLE_SIZE> dispatch_table =
+        [] {
+            std::array<std::array<DispatchFunction<Dimensions>, TABLE_SIZE>, TABLE_SIZE> table{};
+            initialize_table<0, Dimensions>(table); // Start the compile-time recursion
+            return table;
+    }();
+
+public:
+    static DispatchFunction<Dimensions> get(IndexType M, IndexType N) {
+        assert(supported_m_n(M, N));
+        return dispatch_table[M][N];
+    }
+};
+
 template<Color Perspective, IndexType Dimensions>
 void update_accumulator_refresh_cache(const FeatureTransformer<Dimensions>& featureTransformer,
                                       const Position&                       pos,
@@ -399,6 +477,12 @@ void update_accumulator_refresh_cache(const FeatureTransformer<Dimensions>& feat
 
     auto& accumulator                 = accumulatorState.acc<Dimensions>();
     accumulator.computed[Perspective] = true;
+
+    if (supported_m_n(added.size(), removed.size())) {
+        auto dispatch_to = Dispatcher<Dimensions>::get(added.size(), removed.size());
+        dispatch_to(&added[0], &removed[0], featureTransformer, accumulator.accumulation[Perspective], accumulator.psqtAccumulation[Perspective], entry);
+        goto done;
+    }
 
 #ifdef VECTOR
     vec_t      acc[Tiling::NumRegs];
@@ -451,6 +535,7 @@ void update_accumulator_refresh_cache(const FeatureTransformer<Dimensions>& feat
             vec_store(&accTile[k], acc[k]);
     }
 
+    done:
     for (IndexType j = 0; j < PSQTBuckets / Tiling::PsqtTileHeight; ++j)
     {
         auto* accTilePsqt = reinterpret_cast<psqt_vec_t*>(
@@ -487,7 +572,6 @@ void update_accumulator_refresh_cache(const FeatureTransformer<Dimensions>& feat
         for (IndexType k = 0; k < Tiling::NumPsqtRegs; ++k)
             vec_store_psqt(&accTilePsqt[k], psqt[k]);
     }
-
 #else
 
     for (const auto index : removed)
