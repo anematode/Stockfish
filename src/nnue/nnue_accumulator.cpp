@@ -389,7 +389,7 @@ void process_data(const IndexType *RESTRICT added, const IndexType *RESTRICT rem
 template <int Dimensions>
 using DispatchFunction = decltype(&process_data<0, 0, Dimensions>);
 
-constexpr int MAX_VAL = 8;
+constexpr int MAX_VAL = 4;
 constexpr int TABLE_SIZE = MAX_VAL + 1;
 
 constexpr int supported_m_n(IndexType M, IndexType N) {
@@ -478,6 +478,7 @@ void update_accumulator_refresh_cache(const FeatureTransformer<Dimensions>& feat
     auto& accumulator                 = accumulatorState.acc<Dimensions>();
     accumulator.computed[Perspective] = true;
 
+    dbg_hit_on(supported_m_n(added.size(), removed.size()), 0);
     if (supported_m_n(added.size(), removed.size())) {
         auto dispatch_to = Dispatcher<Dimensions>::get(added.size(), removed.size());
         dispatch_to(&added[0], &removed[0], featureTransformer, accumulator.accumulation[Perspective], accumulator.psqtAccumulation[Perspective], entry);
