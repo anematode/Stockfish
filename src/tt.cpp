@@ -224,12 +224,6 @@ uint8_t TranspositionTable::generation() const { return generation8; }
 std::tuple<bool, TTData, TTWriter> TranspositionTable::probe(const Key key) const {
 
     TTEntry* const tte   = first_entry(key);
-    const uint16_t key16 = uint16_t(key);  // Use the low 16 bits as key inside the cluster
-
-    if (tte[0].key16 == key16) {  // fast path, most likely
-        return {tte[0].is_occupied(), tte[0].read(), TTWriter(&tte[0])};
-    }
-
     TTEntry* select = nullptr, *scratch;
 
     static_assert(ClusterSize == 3);
@@ -240,7 +234,9 @@ std::tuple<bool, TTData, TTWriter> TranspositionTable::probe(const Key key) cons
         "cmoveq %[scratch], %[j]\n"
         "leaq 10(%[tte]), %[scratch]\n"
         "cmpw %[key16],(%[scratch])\n"
-        "cmoveq %[scratch], %[j]\n" : [j]"+r"(select), [scratch]"=&r"(scratch) : [key16]"r"(key16), [tte]"r"(tte) : "cc"
+        "cmoveq %[scratch], %[j]\n"
+        "cmpw %[key16],(%[tte])\n"
+        "cmoveq %[tte],%[j]\n": [j]"+r"(select), [scratch]"=&r"(scratch) : [key16]"r"((uint16_t)key), [tte]"r"(tte) : "cc"
     );
 
     if (select) {
