@@ -71,6 +71,28 @@ struct TTEntry {
     int16_t  eval16;
 };
 
+struct TTEntryFirst8 {
+    uint64_t data;
+
+    uint16_t key16() const { return (uint16_t)data; }
+    uint8_t depth8() const { return (uint8_t)(data >> 16); }
+    uint8_t genBound8() const { return (uint8_t)(data >> 24); }
+    Move move16() const { return (Move)(data >> 32); }
+    int16_t value16() const { return (int16_t)(data >> 48); }
+    bool is_occupied() const {
+        return bool(depth8());
+    }
+
+    TTData read(Value eval16) const {
+        Depth depth = depth8() + DEPTH_ENTRY_OFFSET;
+        return TTData{Move(move16()),           Value(value16()),
+                      eval16,          depth,
+                      Bound(genBound8() & 0x3), bool(genBound8() & 0x4)};
+    }
+
+    uint8_t relative_age(uint8_t generation8) const;
+};
+
 // `genBound8` is where most of the details are. We use the following constants to manipulate 5 leading generation bits
 // and 3 trailing miscellaneous bits.
 
@@ -122,6 +144,10 @@ uint8_t TTEntry::relative_age(const uint8_t generation8) const {
     // the result) to calculate the entry age correctly even after
     // generation8 overflows into the next cycle.
     return (GENERATION_CYCLE + generation8 - genBound8) & GENERATION_MASK;
+}
+
+uint8_t TTEntryFirst8::relative_age(const uint8_t generation8) const {
+    return (GENERATION_CYCLE + generation8 - genBound8()) & GENERATION_MASK;
 }
 
 
@@ -223,22 +249,36 @@ uint8_t TranspositionTable::generation() const { return generation8; }
 // minus 8 times its relative age. TTEntry t1 is considered more valuable than
 // TTEntry t2 if its replace value is greater than that of t2.
 std::tuple<bool, TTData, TTWriter> TranspositionTable::probe(const Key key) const {
-
     TTEntry* const tte   = first_entry(key);
     const uint16_t key16 = uint16_t(key);  // Use the low 16 bits as key inside the cluster
 
-    for (int i = 0; i < ClusterSize; ++i)
-        if (tte[i].key16 == key16)
-            // This gap is the main place for read races.
-            // After `read()` completes that copy is final, but may be self-inconsistent.
-            return {tte[i].is_occupied(), tte[i].read(), TTWriter(&tte[i])};
+    TTEntryFirst8 a, b, c;
+    memcpy(&a, tte, sizeof(TTEntryFirst8));
+    if (a.key16() == key16) {
+        return {a.is_occupied(),a.read(tte[0].eval16), TTWriter(&tte[0])};
+    }
+    memcpy(&b, tte + 1, sizeof(TTEntryFirst8));
+    if (b.key16() == key16) {
+        return {b.is_occupied(),b.read(tte[1].eval16), TTWriter(&tte[1])};
+    }
+    memcpy(&c, tte + 2, sizeof(TTEntryFirst8));
+    if (c.key16() == key16) {
+        return {c.is_occupied(),c.read(tte[2].eval16), TTWriter(&tte[2])};
+    }
 
     // Find an entry to be replaced according to the replacement strategy
-    TTEntry* replace = tte;
-    for (int i = 1; i < ClusterSize; ++i)
-        if (replace->depth8 - replace->relative_age(generation8)
-            > tte[i].depth8 - tte[i].relative_age(generation8))
-            replace = &tte[i];
+    int b_fitness = b.depth8() - b.relative_age(generation8);
+    int c_fitness = c.depth8() - b.relative_age(generation8);
+    int best_i = 0;
+    int best_fitness = a.depth8() - a.relative_age(generation8);
+    if (b_fitness > best_fitness) {
+        best_i = 1;
+        best_fitness = b_fitness;
+    }
+    if (c_fitness > best_fitness) {
+        best_i = 2;
+    }
+    TTEntry* replace = tte + best_i;
 
     return {false,
             TTData{Move::none(), VALUE_NONE, VALUE_NONE, DEPTH_ENTRY_OFFSET, BOUND_NONE, false},
