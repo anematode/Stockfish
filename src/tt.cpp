@@ -254,28 +254,28 @@ std::tuple<bool, TTData, TTWriter> TranspositionTable::probe(const Key key) cons
 
     TTEntryFirst8 a, b, c;
     memcpy(&a, tte, sizeof(TTEntryFirst8));
+    memcpy(&b, tte + 1, sizeof(TTEntryFirst8));
+    memcpy(&c, tte + 2, sizeof(TTEntryFirst8));
     if (a.key16() == key16) {
         return {a.is_occupied(),a.read(tte[0].eval16), TTWriter(&tte[0])};
     }
-    memcpy(&b, tte + 1, sizeof(TTEntryFirst8));
     if (b.key16() == key16) {
         return {b.is_occupied(),b.read(tte[1].eval16), TTWriter(&tte[1])};
     }
-    memcpy(&c, tte + 2, sizeof(TTEntryFirst8));
     if (c.key16() == key16) {
         return {c.is_occupied(),c.read(tte[2].eval16), TTWriter(&tte[2])};
     }
 
     // Find an entry to be replaced according to the replacement strategy
     int b_fitness = b.depth8() - b.relative_age(generation8);
-    int c_fitness = c.depth8() - b.relative_age(generation8);
+    int c_fitness = c.depth8() - c.relative_age(generation8);
     int best_i = 0;
     int best_fitness = a.depth8() - a.relative_age(generation8);
-    if (b_fitness > best_fitness) {
+    if (b_fitness < best_fitness) {
         best_i = 1;
         best_fitness = b_fitness;
     }
-    if (c_fitness > best_fitness) {
+    if (c_fitness < best_fitness) {
         best_i = 2;
     }
     TTEntry* replace = tte + best_i;
