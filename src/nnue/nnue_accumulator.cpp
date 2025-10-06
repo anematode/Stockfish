@@ -410,6 +410,7 @@ void update_accumulator_refresh_cache(const FeatureTransformer<Dimensions>& feat
           reinterpret_cast<vec_t*>(&accumulator.accumulation[Perspective][j * Tiling::TileHeight]);
         auto* entryTile = reinterpret_cast<vec_t*>(&entry.accumulation[j * Tiling::TileHeight]);
 
+#pragma GCC unroll 32
         for (IndexType k = 0; k < Tiling::NumRegs; ++k)
             acc[k] = entryTile[k];
 
@@ -422,7 +423,7 @@ void update_accumulator_refresh_cache(const FeatureTransformer<Dimensions>& feat
             IndexType       indexA  = added[i];
             const IndexType offsetA = Dimensions * indexA + j * Tiling::TileHeight;
             auto* columnA = reinterpret_cast<const vec_t*>(&featureTransformer.weights[offsetA]);
-
+#pragma GCC unroll 32
             for (IndexType k = 0; k < Tiling::NumRegs; ++k)
                 acc[k] = fused<Vec16Wrapper, Add, Sub>(acc[k], columnA[k], columnR[k]);
         }
@@ -431,7 +432,7 @@ void update_accumulator_refresh_cache(const FeatureTransformer<Dimensions>& feat
             IndexType       index  = removed[i];
             const IndexType offset = Dimensions * index + j * Tiling::TileHeight;
             auto* column = reinterpret_cast<const vec_t*>(&featureTransformer.weights[offset]);
-
+#pragma GCC unroll 32
             for (IndexType k = 0; k < Tiling::NumRegs; ++k)
                 acc[k] = vec_sub_16(acc[k], column[k]);
         }
@@ -440,13 +441,14 @@ void update_accumulator_refresh_cache(const FeatureTransformer<Dimensions>& feat
             IndexType       index  = added[i];
             const IndexType offset = Dimensions * index + j * Tiling::TileHeight;
             auto* column = reinterpret_cast<const vec_t*>(&featureTransformer.weights[offset]);
-
+#pragma GCC unroll 32
             for (IndexType k = 0; k < Tiling::NumRegs; ++k)
                 acc[k] = vec_add_16(acc[k], column[k]);
         }
-
+#pragma GCC unroll 32
         for (IndexType k = 0; k < Tiling::NumRegs; k++)
             vec_store(&entryTile[k], acc[k]);
+#pragma GCC unroll 32
         for (IndexType k = 0; k < Tiling::NumRegs; k++)
             vec_store(&accTile[k], acc[k]);
     }

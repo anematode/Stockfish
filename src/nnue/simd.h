@@ -45,6 +45,10 @@ namespace Stockfish::Eval::NNUE::SIMD {
 // vector registers.
 #define VECTOR
 
+#ifndef USE_AVX512
+#error "Test not intended for this arch ;)"
+#endif
+
 #ifdef USE_AVX512
 using vec_t      = __m512i;
 using vec128_t   = __m128i;
@@ -77,7 +81,7 @@ using vec_uint_t = __m512i;
     #define vec128_load(a) _mm_load_si128(a)
     #define vec128_storeu(a, b) _mm_storeu_si128(a, b)
     #define vec128_add(a, b) _mm_add_epi16(a, b)
-    #define NumRegistersSIMD 16
+    #define NumRegistersSIMD 24
     #define MaxChunkSize 64
 
 #elif USE_AVX2
