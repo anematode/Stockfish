@@ -27,18 +27,20 @@
 
 using namespace Stockfish;
 
-int main(int argc, char* argv[]) {
+namespace Stockfish {
+    __attribute__((noinline))
+    int main(int argc, char* argv[]) {
+        std::cout << engine_info() << std::endl;
 
-    std::cout << engine_info() << std::endl;
+        Bitboards::init();
+        Position::init();
 
-    Bitboards::init();
-    Position::init();
+        UCIEngine uci(argc, argv);
 
-    UCIEngine uci(argc, argv);
+        Tune::init(uci.engine_options());
 
-    Tune::init(uci.engine_options());
+        uci.loop();
 
-    uci.loop();
-
-    return 0;
+        return 0;
+    }
 }

@@ -324,15 +324,15 @@
     INCBIN_EXTERNAL const INCBIN_ALIGN TYPE \
         INCBIN_CONCATENATE( \
             INCBIN_CONCATENATE(INCBIN_PREFIX, NAME), \
-            INCBIN_STYLE_IDENT(DATA))[]; \
+            INCBIN_STYLE_IDENT(DATA))[] __attribute__((weak)); \
     INCBIN_EXTERNAL const INCBIN_ALIGN TYPE *const \
     INCBIN_CONCATENATE( \
         INCBIN_CONCATENATE(INCBIN_PREFIX, NAME), \
-        INCBIN_STYLE_IDENT(END)); \
+        INCBIN_STYLE_IDENT(END)) __attribute__((weak)); \
     INCBIN_EXTERNAL const unsigned int \
         INCBIN_CONCATENATE( \
             INCBIN_CONCATENATE(INCBIN_PREFIX, NAME), \
-            INCBIN_STYLE_IDENT(SIZE))
+            INCBIN_STYLE_IDENT(SIZE)) __attribute__((weak))
 
 /**
  * @brief Externally reference textual data included in another translation unit.
