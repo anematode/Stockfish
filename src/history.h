@@ -33,7 +33,7 @@
 
 namespace Stockfish {
 
-constexpr int PAWN_HISTORY_SIZE        = 1024;   // has to be a power of 2
+constexpr int PAWN_HISTORY_SIZE        = 8192;   // has to be a power of 2
 constexpr int CORRECTION_HISTORY_SIZE  = 32768;  // has to be a power of 2
 constexpr int CORRECTION_HISTORY_LIMIT = 1024;
 constexpr int LOW_PLY_HISTORY_SIZE     = 5;
@@ -98,6 +98,40 @@ enum StatsType {
 template<typename T, int D, std::size_t... Sizes>
 using Stats = MultiArray<StatsEntry<T, D>, Sizes...>;
 
+template<typename T, int D, std::size_t... Sizes>
+struct BufferedStats : Stats<T, D, Sizes...> {
+    StatsEntry<T, D>* queued = reinterpret_cast<StatsEntry<T, D>*>(this);
+    int queued_bonus = 0;
+
+    struct BufferedEntry {
+        BufferedStats* stats;
+        StatsEntry<T, D>* target;
+
+        void operator<<(int bonus) {
+            prefetch(target);
+            *stats->queued << stats->queued_bonus;
+            stats->queued = target;
+            stats->queued_bonus = bonus;
+        }
+    };
+
+    template <typename A, typename I0>
+    static decltype(auto) get_impl(A& a, I0 i) {
+        return a[i];
+    }
+
+    template <typename A, typename I0, typename... IRest>
+    static decltype(auto) get_impl(A& a, I0 i0, IRest... rest) {
+        return get_impl(a[i0], rest...);
+    }
+
+    template <typename... I, std::enable_if_t<sizeof...(I) == sizeof...(Sizes), bool> = true>
+    BufferedEntry get(I... sizes) {
+        StatsEntry<T, D>* entry = &get_impl(*this, sizes...);
+        return { this, entry };
+    }
+};
+
 // ButterflyHistory records how often quiet moves have been successful or unsuccessful
 // during the current search, and is used for reduction and move ordering decisions.
 // It uses 2 tables (one for each color) indexed by the move's from and to squares,
@@ -121,7 +155,7 @@ using PieceToHistory = Stats<std::int16_t, 30000, PIECE_NB, SQUARE_NB>;
 using ContinuationHistory = MultiArray<PieceToHistory, PIECE_NB, SQUARE_NB>;
 
 // PawnHistory is addressed by the pawn structure and a move's [piece][to]
-using PawnHistory = Stats<std::int16_t, 8192, PAWN_HISTORY_SIZE, PIECE_NB, SQUARE_NB>;
+using PawnHistory = BufferedStats<std::int16_t, 8192, PAWN_HISTORY_SIZE, PIECE_NB, SQUARE_NB>;
 
 // Correction histories record differences between the static evaluation of
 // positions and their search score. It is used to improve the static evaluation
