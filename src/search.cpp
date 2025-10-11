@@ -105,7 +105,9 @@ void update_correction_history(const Position& pos,
 
     constexpr int nonPawnWeight = 165;
 
-    workerThread.pawnCorrectionHistory[pawn_correction_history_index(pos)][us] << bonus;
+    if (m.type_of() != PROMOTION || m.promotion_type() == QUEEN) {
+        workerThread.pawnCorrectionHistory[pawn_correction_history_index(pos)][us] << bonus;
+    }
     workerThread.minorPieceCorrectionHistory[minor_piece_index(pos)][us] << bonus * 145 / 128;
     workerThread.nonPawnCorrectionHistory[non_pawn_index<WHITE>(pos)][WHITE][us]
       << bonus * nonPawnWeight / 128;
