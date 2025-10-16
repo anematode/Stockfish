@@ -804,9 +804,14 @@ DirtyPiece Position::do_move(Move                      m,
         k ^= Zobrist::castling[st->castlingRights];
     }
 
+    st->key = k;
+    if (tt)  // speculatively prefetch, even if we have the key wrong
+        prefetch(tt->first_entry(key()));
+
     // Move the piece. The tricky Chess960 castling is handled earlier
     if (m.type_of() != CASTLING)
         move_piece(from, to);
+
 
     // If the moving piece is a pawn do some special extra work
     if (type_of(pc) == PAWN)
@@ -923,7 +928,7 @@ DirtyPiece Position::do_move(Move                      m,
 
     // Update the key with the final value
     st->key = k;
-    if (tt)
+    if (tt && k != st->key)  // we prefetched the wrong address before, do it now
         prefetch(tt->first_entry(key()));
 
     // Calculate the repetition info. It is the ply distance from the previous
