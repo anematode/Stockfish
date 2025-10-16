@@ -926,9 +926,10 @@ DirtyPiece Position::do_move(Move                      m,
         break;
     }
 
+    bool prefetched_wrong = k != st->key;
     // Update the key with the final value
     st->key = k;
-    if (tt && k != st->key)  // we prefetched the wrong address before, do it now
+    if (tt && prefetched_wrong)  // in case we prefetched the wrong address before, do it now
         prefetch(tt->first_entry(key()));
 
     // Calculate the repetition info. It is the ply distance from the previous
