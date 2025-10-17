@@ -215,16 +215,21 @@ void TranspositionTable::new_search() {
 
 uint8_t TranspositionTable::generation() const { return generation8; }
 
-
 // Looks up the current position in the transposition
 // table. It returns true if the position is found.
 // Otherwise, it returns false and a pointer to an empty or least valuable TTEntry
 // to be replaced later. The replace value of an entry is calculated as its depth
 // minus 8 times its relative age. TTEntry t1 is considered more valuable than
 // TTEntry t2 if its replace value is greater than that of t2.
-std::tuple<bool, TTData, TTWriter> TranspositionTable::probe(const Key key) const {
-
-    TTEntry* const tte   = first_entry(key);
+std::tuple<bool, TTData, TTWriter> TranspositionTable::probe(const Key key, TTEntry* tte) const {
+    if (!tte)
+    {
+        tte = first_entry(key);
+    }
+    else
+    {
+        assert(tte == first_entry(key));
+    }
     const uint16_t key16 = uint16_t(key);  // Use the low 16 bits as key inside the cluster
 
     for (int i = 0; i < ClusterSize; ++i)

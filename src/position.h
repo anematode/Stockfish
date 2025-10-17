@@ -31,6 +31,7 @@
 namespace Stockfish {
 
 class TranspositionTable;
+class TTEntry;
 
 // StateInfo struct stores information needed to restore a Position object to
 // its previous state when we retract a move. Whenever a move is made on the
@@ -51,6 +52,7 @@ struct StateInfo {
 
     // Not copied when making a move (will be recomputed anyhow)
     Key        key;
+    TTEntry*   tte;
     Bitboard   checkersBB;
     StateInfo* previous;
     Bitboard   blockersForKing[COLOR_NB];
@@ -141,11 +143,12 @@ class Position {
     bool see_ge(Move m, int threshold = 0) const;
 
     // Accessing hash keys
-    Key key() const;
-    Key material_key() const;
-    Key pawn_key() const;
-    Key minor_piece_key() const;
-    Key non_pawn_key(Color c) const;
+    Key      key() const;
+    TTEntry* ttEntry() const;
+    Key      material_key() const;
+    Key      pawn_key() const;
+    Key      minor_piece_key() const;
+    Key      non_pawn_key(Color c) const;
 
     // Other properties of the position
     Color side_to_move() const;
@@ -283,6 +286,8 @@ inline Bitboard Position::pinners(Color c) const { return st->pinners[c]; }
 inline Bitboard Position::check_squares(PieceType pt) const { return st->checkSquares[pt]; }
 
 inline Key Position::key() const { return adjust_key50(st->key); }
+
+inline TTEntry* Position::ttEntry() const { return st->tte; }
 
 inline Key Position::adjust_key50(Key k) const {
     return st->rule50 < 14 ? k : k ^ make_key((st->rule50 - 14) / 8);
