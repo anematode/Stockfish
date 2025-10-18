@@ -56,12 +56,72 @@ enum Stages {
     QCAPTURE
 };
 
+void insertion_sort(ExtMove* begin, ExtMove* end) {
+    for (ExtMove *sortedEnd = begin, *p = begin + 1; p < end; ++p) {
+        ExtMove tmp = *p, *q;
+        *p          = *++sortedEnd;
+        for (q = sortedEnd; q != begin && *(q - 1) < tmp; --q)
+            *q = *(q - 1);
+        *q = tmp;
+    }
+}
+
 
 // Sort moves in descending order up to and including a given limit.
 // The order of moves smaller than the limit is left unspecified.
 void partial_insertion_sort(ExtMove* begin, ExtMove* end, int limit) {
+    if (begin == end) {
+        return;
+    }
 
-    for (ExtMove *sortedEnd = begin, *p = begin + 1; p < end; ++p)
+    ExtMove *sortedEnd = begin;
+    ExtMove *p = begin + 1;
+
+#ifdef USE_AVX512
+    // Up to 16 moves are built up here
+    __m512i sorted_moves = _mm512_set1_epi32(begin->value);
+    // Up to 16 limits are built up here (and match 1-1 with the moves)
+    __m512i sorted_limits = _mm512_set1_epi16(begin->raw());
+
+    int sorted_count = 1;
+    for (; p < end; ++p) {
+        if (p->value >= limit) {
+            if (sorted_count >= 15) {
+                break;
+            }
+
+            __mmask16 relevant = (1 << sorted_count) - 1;
+            __m512i the_move = _mm512_set1_epi16(p->raw());
+            __m512i the_limit = _mm512_set1_epi32(p->value);
+            __mmask16 left_of_ins = _mm512_mask_cmpge_epi32_mask(relevant, the_limit, sorted_limits);
+            __mmask16 expand = ~(left_of_ins + 1);
+            sorted_moves = _mm512_mask_expand_epi32(the_move, expand, sorted_moves);
+            sorted_limits = _mm512_mask_expand_epi32(the_limit, expand, sorted_limits);
+
+            sorted_count++;
+        }
+    }
+
+    const __m512i idx_lo = _mm512_setr_epi32(
+             0, 16,  1, 17,  2, 18,  3, 19,
+             4, 20,  5, 21,  6, 22,  7, 23);
+
+    // idx_hi:  a8, b8, a9, b9, ..., a15, b15
+    const __m512i idx_hi = _mm512_setr_epi32(
+         8, 24,  9, 25, 10, 26, 11, 27,
+        12, 28, 13, 29, 14, 30, 15, 31);
+
+    __m512i first_8 = _mm512_permutex2var_epi32(sorted_moves, idx_lo, sorted_limits);
+    __m512i second_8 = _mm512_permutex2var_epi32(sorted_moves, idx_hi, sorted_limits);
+
+    _mm512_mask_store_epi64(begin, (1 << sorted_count) - 1, first_8);
+    if (sorted_count > 8)
+        _mm512_mask_store_epi32(begin + 8, (1 << (sorted_count - 8)) - 1, second_8);
+
+    sortedEnd = begin + sorted_count;
+#endif
+
+    for (; p < end; ++p) {
         if (p->value >= limit)
         {
             ExtMove tmp = *p, *q;
@@ -70,6 +130,7 @@ void partial_insertion_sort(ExtMove* begin, ExtMove* end, int limit) {
                 *q = *(q - 1);
             *q = tmp;
         }
+    }
 }
 
 }  // namespace
@@ -232,7 +293,7 @@ top:
         cur = endBadCaptures = moves;
         endCur = endCaptures = score<CAPTURES>(ml);
 
-        partial_insertion_sort(cur, endCur, std::numeric_limits<int>::min());
+        insertion_sort(cur, endCur);
         ++stage;
         goto top;
     }
@@ -296,7 +357,7 @@ top:
         cur    = moves;
         endCur = endGenerated = score<EVASIONS>(ml);
 
-        partial_insertion_sort(cur, endCur, std::numeric_limits<int>::min());
+        insertion_sort(cur, endCur);
         ++stage;
         [[fallthrough]];
     }
