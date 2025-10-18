@@ -153,30 +153,34 @@ class AccumulatorStack {
     void pop() noexcept;
 
     template<IndexType Dimensions>
-    void evaluate(const Position&                       pos,
+    int evaluate(const Position&                       pos,
                   const FeatureTransformer<Dimensions>& featureTransformer,
-                  AccumulatorCaches::Cache<Dimensions>& cache) noexcept;
+                  AccumulatorCaches::Cache<Dimensions>& cache,
+                  TransformedFeatureType* output) noexcept;
 
    private:
     [[nodiscard]] AccumulatorState& mut_latest() noexcept;
 
     template<Color Perspective, IndexType Dimensions>
-    void evaluate_side(const Position&                       pos,
+    bool evaluate_side(const Position&                       pos,
                        const FeatureTransformer<Dimensions>& featureTransformer,
-                       AccumulatorCaches::Cache<Dimensions>& cache) noexcept;
+                       AccumulatorCaches::Cache<Dimensions>& cache,
+                       TransformedFeatureType* output) noexcept;
 
     template<Color Perspective, IndexType Dimensions>
     [[nodiscard]] std::size_t find_last_usable_accumulator() const noexcept;
 
     template<Color Perspective, IndexType Dimensions>
-    void forward_update_incremental(const Position&                       pos,
+    bool forward_update_incremental(const Position&                       pos,
                                     const FeatureTransformer<Dimensions>& featureTransformer,
-                                    const std::size_t                     begin) noexcept;
+                                    const std::size_t                     begin,
+                                    TransformedFeatureType* output) noexcept;
 
     template<Color Perspective, IndexType Dimensions>
-    void backward_update_incremental(const Position&                       pos,
+    bool backward_update_incremental(const Position&                       pos,
                                      const FeatureTransformer<Dimensions>& featureTransformer,
-                                     const std::size_t                     end) noexcept;
+                                     const std::size_t                     end,
+                                     TransformedFeatureType* output) noexcept;
 
     std::vector<AccumulatorState> accumulators;
     std::size_t                   size;

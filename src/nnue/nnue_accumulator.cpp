@@ -44,12 +44,13 @@ void double_inc_update(const FeatureTransformer<TransformedFeatureDimensions>& f
                        AccumulatorState&                                       target_state,
                        const AccumulatorState&                                 computed);
 
-template<Color Perspective, bool Forward, IndexType TransformedFeatureDimensions>
+template<Color Perspective, bool Forward, bool DoTransform, IndexType TransformedFeatureDimensions>
 void update_accumulator_incremental(
   const FeatureTransformer<TransformedFeatureDimensions>& featureTransformer,
   const Square                                            ksq,
   AccumulatorState&                                       target_state,
-  const AccumulatorState&                                 computed);
+  const AccumulatorState&                                 computed,
+  TransformedFeatureType* output);
 
 template<Color Perspective, IndexType Dimensions>
 void update_accumulator_refresh_cache(const FeatureTransformer<Dimensions>& featureTransformer,
@@ -86,28 +87,32 @@ void AccumulatorStack::pop() noexcept {
 }
 
 template<IndexType Dimensions>
-void AccumulatorStack::evaluate(const Position&                       pos,
+int AccumulatorStack::evaluate(const Position&                       pos,
                                 const FeatureTransformer<Dimensions>& featureTransformer,
-                                AccumulatorCaches::Cache<Dimensions>& cache) noexcept {
+                                AccumulatorCaches::Cache<Dimensions>& cache,
+                                TransformedFeatureType* output) noexcept {
 
-    evaluate_side<WHITE>(pos, featureTransformer, cache);
-    evaluate_side<BLACK>(pos, featureTransformer, cache);
+    int whites_move = pos.side_to_move() == WHITE;
+    int computed = evaluate_side<WHITE>(pos, featureTransformer, cache, output + !whites_move * Dimensions / 2);
+    computed |= evaluate_side<BLACK>(pos, featureTransformer, cache, output + whites_move * Dimensions / 2) << 1;
+    return computed;
 }
 
 template<Color Perspective, IndexType Dimensions>
-void AccumulatorStack::evaluate_side(const Position&                       pos,
+bool AccumulatorStack::evaluate_side(const Position&                       pos,
                                      const FeatureTransformer<Dimensions>& featureTransformer,
-                                     AccumulatorCaches::Cache<Dimensions>& cache) noexcept {
+                                     AccumulatorCaches::Cache<Dimensions>& cache,
+                                     TransformedFeatureType* output) noexcept {
 
     const auto last_usable_accum = find_last_usable_accumulator<Perspective, Dimensions>();
 
     if ((accumulators[last_usable_accum].template acc<Dimensions>()).computed[Perspective])
-        forward_update_incremental<Perspective>(pos, featureTransformer, last_usable_accum);
+        return forward_update_incremental<Perspective>(pos, featureTransformer, last_usable_accum, output);
 
     else
     {
         update_accumulator_refresh_cache<Perspective>(featureTransformer, pos, mut_latest(), cache);
-        backward_update_incremental<Perspective>(pos, featureTransformer, last_usable_accum);
+        return backward_update_incremental<Perspective>(pos, featureTransformer, last_usable_accum, output);
     }
 }
 
@@ -129,17 +134,20 @@ std::size_t AccumulatorStack::find_last_usable_accumulator() const noexcept {
 }
 
 template<Color Perspective, IndexType Dimensions>
-void AccumulatorStack::forward_update_incremental(
+bool AccumulatorStack::forward_update_incremental(
   const Position&                       pos,
   const FeatureTransformer<Dimensions>& featureTransformer,
-  const std::size_t                     begin) noexcept {
+  const std::size_t                     begin,
+  TransformedFeatureType* output) noexcept {
 
     assert(begin < accumulators.size());
     assert((accumulators[begin].acc<Dimensions>()).computed[Perspective]);
 
     const Square ksq = pos.square<KING>(Perspective);
+    bool transformed = false;
 
-    for (std::size_t next = begin + 1; next < size; next++)
+    std::size_t next = begin + 1;
+    for (; next + 1 < size; next++)
     {
         if (next + 1 < size)
         {
@@ -158,18 +166,26 @@ void AccumulatorStack::forward_update_incremental(
                 continue;
             }
         }
-        update_accumulator_incremental<Perspective, true>(
-          featureTransformer, ksq, accumulators[next], accumulators[next - 1]);
+        update_accumulator_incremental<Perspective, true, false>(
+          featureTransformer, ksq, accumulators[next], accumulators[next - 1], nullptr);
+    }
+
+    if (next < size) {
+        update_accumulator_incremental<Perspective, true, false>(
+          featureTransformer, ksq, accumulators[next], accumulators[next - 1], output);
+        transformed = false;
     }
 
     assert((latest().acc<Dimensions>()).computed[Perspective]);
+    return transformed;
 }
 
 template<Color Perspective, IndexType Dimensions>
-void AccumulatorStack::backward_update_incremental(
+bool AccumulatorStack::backward_update_incremental(
   const Position&                       pos,
   const FeatureTransformer<Dimensions>& featureTransformer,
-  const std::size_t                     end) noexcept {
+  const std::size_t                     end,
+  TransformedFeatureType* output) noexcept {
 
     assert(end < accumulators.size());
     assert(end < size);
@@ -177,22 +193,34 @@ void AccumulatorStack::backward_update_incremental(
 
     const Square ksq = pos.square<KING>(Perspective);
 
-    for (std::int64_t next = std::int64_t(size) - 2; next >= std::int64_t(end); next--)
-        update_accumulator_incremental<Perspective, false>(
-          featureTransformer, ksq, accumulators[next], accumulators[next + 1]);
+    std::int64_t next = std::int64_t(size) - 2;
+    for (; next > std::int64_t(end); next--) {
+        update_accumulator_incremental<Perspective, false, false>(
+          featureTransformer, ksq, accumulators[next], accumulators[next + 1], nullptr);
+    }
+
+    bool transformed = false;
+    if (next == std::int64_t(end)) {
+        update_accumulator_incremental<Perspective, false, false>(
+          featureTransformer, ksq, accumulators[next], accumulators[next + 1], output);
+        transformed = false;
+    }
 
     assert((accumulators[end].acc<Dimensions>()).computed[Perspective]);
+    return transformed;
 }
 
 // Explicit template instantiations
-template void AccumulatorStack::evaluate<TransformedFeatureDimensionsBig>(
+template int AccumulatorStack::evaluate<TransformedFeatureDimensionsBig>(
   const Position&                                            pos,
   const FeatureTransformer<TransformedFeatureDimensionsBig>& featureTransformer,
-  AccumulatorCaches::Cache<TransformedFeatureDimensionsBig>& cache) noexcept;
-template void AccumulatorStack::evaluate<TransformedFeatureDimensionsSmall>(
+  AccumulatorCaches::Cache<TransformedFeatureDimensionsBig>& cache,
+  TransformedFeatureType* output) noexcept;
+template int AccumulatorStack::evaluate<TransformedFeatureDimensionsSmall>(
   const Position&                                              pos,
   const FeatureTransformer<TransformedFeatureDimensionsSmall>& featureTransformer,
-  AccumulatorCaches::Cache<TransformedFeatureDimensionsSmall>& cache) noexcept;
+  AccumulatorCaches::Cache<TransformedFeatureDimensionsSmall>& cache,
+  TransformedFeatureType* output) noexcept;
 
 
 namespace {
@@ -227,10 +255,11 @@ struct AccumulatorUpdateContext {
         from{accF},
         to{accT} {}
 
-    template<UpdateOperation... ops,
+    template<bool DoTransform,
+            UpdateOperation... ops,
              typename... Ts,
              std::enable_if_t<is_all_same_v<IndexType, Ts...>, bool> = true>
-    void apply(const Ts... indices) {
+    void apply(TransformedFeatureType *output, const Ts... indices) {
         auto to_weight_vector = [&](const IndexType index) {
             return &featureTransformer.weights[index * Dimensions];
         };
@@ -239,9 +268,58 @@ struct AccumulatorUpdateContext {
             return &featureTransformer.psqtWeights[index * PSQTBuckets];
         };
 
-        fused_row_reduce<Vec16Wrapper, Dimensions, ops...>(
-          (from.acc<Dimensions>()).accumulation[Perspective],
-          (to.acc<Dimensions>()).accumulation[Perspective], to_weight_vector(indices)...);
+        if constexpr (DoTransform) {
+            assert(output);
+
+            const vec_t Zero = vec_zero();
+            const vec_t One  = vec_set_16(127 * 2);
+
+            constexpr int shift =
+#if defined(USE_SSE2)
+              7;
+#else
+                  6;
+#endif
+
+            vec_t *RESTRICT vec_output = reinterpret_cast<vec_t*>(output);
+
+            // Read four vectors at a time, one from each half
+            constexpr IndexType ChunkSize = sizeof(vec_t) / sizeof(WeightType);
+            constexpr IndexType HalfOutputChunks = Dimensions / 2 / ChunkSize;
+#pragma GCC unroll 2
+#pragma GCC ivdep
+            for (IndexType offset = 0; offset < HalfOutputChunks; offset += 2) {
+                const IndexType other_offset = offset + HalfOutputChunks;
+
+                auto* RESTRICT accumIn0 = reinterpret_cast<const vec_t*>(&from.acc<Dimensions>().accumulation[Perspective]) + offset;
+                auto* RESTRICT accumIn1 = reinterpret_cast<const vec_t*>(&from.acc<Dimensions>().accumulation[Perspective]) + other_offset;
+
+                auto* RESTRICT accumOut0 = reinterpret_cast<vec_t*>(&to.acc<Dimensions>().accumulation[Perspective]) + offset;
+                auto* RESTRICT accumOut1 = reinterpret_cast<vec_t*>(&to.acc<Dimensions>().accumulation[Perspective]) + other_offset;
+
+                for (int j = 0; j < 2; ++j) {
+                    accumOut0[j] = fused<Vec16Wrapper, ops...>(accumIn0[j], reinterpret_cast<const vec_t* RESTRICT>(to_weight_vector(indices))[offset + j]...);
+                    accumOut1[j] = fused<Vec16Wrapper, ops...>(accumIn1[j], reinterpret_cast<const vec_t* RESTRICT>(to_weight_vector(indices))[other_offset + j]...);
+                }
+
+                const vec_t sum0a =
+                  vec_slli_16(vec_max_16(vec_min_16(accumOut0[0], One), Zero), shift);
+                const vec_t sum0b =
+                  vec_slli_16(vec_max_16(vec_min_16(accumOut0[1], One), Zero), shift);
+                const vec_t sum1a = vec_min_16(accumOut1[0], One);
+                const vec_t sum1b = vec_min_16(accumOut1[1], One);
+
+                const vec_t pa = vec_mulhi_16(sum0a, sum1a);
+                const vec_t pb = vec_mulhi_16(sum0b, sum1b);
+
+                *vec_output++ = vec_packus_16(pa, pb);
+            }
+        } else {
+            assert(output == nullptr);
+            fused_row_reduce<Vec16Wrapper, Dimensions, ops...>(
+              (from.acc<Dimensions>()).accumulation[Perspective],
+              (to.acc<Dimensions>()).accumulation[Perspective], to_weight_vector(indices)...);
+        }
 
         fused_row_reduce<Vec32Wrapper, PSQTBuckets, ops...>(
           (from.acc<Dimensions>()).psqtAccumulation[Perspective],
@@ -289,23 +367,24 @@ void double_inc_update(const FeatureTransformer<TransformedFeatureDimensions>& f
 
     if (removed.size() == 2)
     {
-        updateContext.template apply<Add, Sub, Sub>(added[0], removed[0], removed[1]);
+        updateContext.template apply<false, Add, Sub, Sub>(nullptr, added[0], removed[0], removed[1]);
     }
     else
     {
-        updateContext.template apply<Add, Sub, Sub, Sub>(added[0], removed[0], removed[1],
+        updateContext.template apply<false, Add, Sub, Sub, Sub>(nullptr, added[0], removed[0], removed[1],
                                                          removed[2]);
     }
 
     target_state.acc<TransformedFeatureDimensions>().computed[Perspective] = true;
 }
 
-template<Color Perspective, bool Forward, IndexType TransformedFeatureDimensions>
+template<Color Perspective, bool Forward, bool DoTransform, IndexType TransformedFeatureDimensions>
 void update_accumulator_incremental(
   const FeatureTransformer<TransformedFeatureDimensions>& featureTransformer,
   const Square                                            ksq,
   AccumulatorState&                                       target_state,
-  const AccumulatorState&                                 computed) {
+  const AccumulatorState&                                 computed,
+  TransformedFeatureType* output) {
 
     assert((computed.acc<TransformedFeatureDimensions>()).computed[Perspective]);
     assert(!(target_state.acc<TransformedFeatureDimensions>()).computed[Perspective]);
@@ -340,22 +419,22 @@ void update_accumulator_incremental(
     if ((Forward && removed.size() == 1) || (!Forward && added.size() == 1))
     {
         assert(added.size() == 1 && removed.size() == 1);
-        updateContext.template apply<Add, Sub>(added[0], removed[0]);
+        updateContext.template apply<DoTransform, Add, Sub>(output, added[0], removed[0]);
     }
     else if (Forward && added.size() == 1)
     {
         assert(removed.size() == 2);
-        updateContext.template apply<Add, Sub, Sub>(added[0], removed[0], removed[1]);
+        updateContext.template apply<DoTransform, Add, Sub, Sub>(output, added[0], removed[0], removed[1]);
     }
     else if (!Forward && removed.size() == 1)
     {
         assert(added.size() == 2);
-        updateContext.template apply<Add, Add, Sub>(added[0], added[1], removed[0]);
+        updateContext.template apply<DoTransform, Add, Add, Sub>(output, added[0], added[1], removed[0]);
     }
     else
     {
         assert(added.size() == 2 && removed.size() == 2);
-        updateContext.template apply<Add, Add, Sub, Sub>(added[0], added[1], removed[0],
+        updateContext.template apply<DoTransform, Add, Add, Sub, Sub>(output, added[0], added[1], removed[0],
                                                          removed[1]);
     }
 

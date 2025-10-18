@@ -180,8 +180,11 @@ class FeatureTransformer {
 
         using namespace SIMD;
 
-        accumulatorStack.evaluate(pos, *this, *cache);
+        int computed = accumulatorStack.evaluate(pos, *this, *cache, output);
         const auto& accumulatorState = accumulatorStack.latest();
+
+        //unsigned _;
+        //auto start = __rdtscp(&_);
 
         const Color perspectives[2]  = {pos.side_to_move(), ~pos.side_to_move()};
         const auto& psqtAccumulation = (accumulatorState.acc<HalfDimensions>()).psqtAccumulation;
@@ -193,6 +196,9 @@ class FeatureTransformer {
 
         for (IndexType p = 0; p < 2; ++p)
         {
+            if (computed & (1 << perspectives[p])) {
+                continue;
+            }
             const IndexType offset = (HalfDimensions / 2) * p;
 
 #if defined(VECTOR)
@@ -299,6 +305,7 @@ class FeatureTransformer {
 #endif
         }
 
+        //dbg_mean_of(__rdtsc() - start, 1);
         return psqt;
     }  // end of function transform()
 
