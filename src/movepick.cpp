@@ -66,93 +66,67 @@ void insertion_sort(ExtMove* begin, ExtMove* end) {
     }
 }
 
-struct PartialInsertionSorter {
-    // We store the limits as (limit << 8) | <original index>, and mask off the index before doing the compare, so that
-    // ties are broken exactly as in the normal implementation
+struct SorterFromHell {
     __m512i sorted_limits;
-    int count = 1;
+    __m512i indices;
+    // Elements that need sorting are appended here.
+    alignas(64) ExtMove moves[16];
+    // Number of elements that are in the sorted list. There is always at least one element, inserted at construction
+    int count;
 
-    struct PackedLimit { uint8_t index; uint8_t _limit[3]; };
-
-    explicit PartialInsertionSorter(ExtMove *begin) {
-        sorted_limits = _mm512_castsi128_si512(_mm_cvtsi32_si128((begin->value & 0xffffff) << 8));
+    explicit SorterFromHell(const ExtMove *begin) {
+        sorted_limits = _mm512_castsi128_si512(_mm_cvtsi32_si128(begin->value));
+        indices = _mm512_setzero_si512();
+        moves[0] = *begin;
+        count = 1;
     }
 
-    static __m512i mask_off_index(const __m512i vec) {
-        return _mm512_maskz_mov_epi8(0xeeeeeeeeeeeeeeeeULL, vec);
-    }
-
-    bool insert(ExtMove *move, int move_index) {
-        if (count > 15) {
+    // Returns true if the sorter is full and therefore needs to be written out.
+    bool insert(const ExtMove *move) {
+        if (count == 16) {
             return true;
         }
-        assert(move_index < 256);
         // Only the first `count` elements should be considered for sorting.
         const __mmask16 relevant = (1 << count) - 1;
-        const __m512i packed_limit = _mm512_set1_epi32((move->value & 0xffffff) << 8 | move_index);
-        // Each 1 bit corresponds to an element that should be to the left of the element to be inserted. By
-        // construction, this will be one less than a power of two.
-        const __mmask16 limits_ge = _mm512_mask_cmpge_epi32_mask(relevant, mask_off_index(sorted_limits), mask_off_index(packed_limit));
+        const __m512i new_limit = _mm512_set1_epi32(move->value);
+        // Each 1 bit corresponds to a limit that should be to the left of the element to be inserted. By
+        // construction -- these elements are in descending order -- the mask will be one less than a power of two.
+        const __mmask16 limits_ge = _mm512_mask_cmpge_epi32_mask(relevant, sorted_limits, new_limit);
         // By adding 1, we get a single bit that is the correct insertion point of the new element.
         // Then, the bitwise negation gives us those bits where the old elements should be expanded.
-        sorted_limits = _mm512_mask_expand_epi32(packed_limit, ~(limits_ge + 1), sorted_limits);
-        count++;
+        const __mmask16 expand_mask = ~(limits_ge + 1);
+        // Insert the limit and the index.
+        sorted_limits = _mm512_mask_expand_epi32(new_limit, expand_mask, sorted_limits);
+        indices = _mm512_mask_expand_epi32(_mm512_set1_epi32(count), expand_mask, indices);
+        // Record the move.
+        moves[count++] = *move;
         return false;
     }
 
-    void apply(ExtMove copy[16], ExtMove *begin) {
-        alignas(64) PackedLimit ls[16];
-        _mm512_store_si512(ls, sorted_limits);
+    // Write out up to 16 elements in sorted form.
+    void write_sorted(ExtMove *begin) {
+        alignas(64) int list[16];
+        _mm512_store_si512(list, indices);
         for (int i = 0; i < count; ++i) {
-            begin[ls[i].index] = copy[i];
+            begin[i] = moves[list[i]];
         }
     }
 };
 
-// Sort moves in descending order up to and including a given limit.
-// The order of moves smaller than the limit is left unspecified.
 void partial_insertion_sort(ExtMove* begin, ExtMove* end, int limit) {
-    if (begin == end) {
-        return;
-    }
-
-    ExtMove *sortedEnd = begin;
-    ExtMove *p = begin + 1;
-
-    if (begin->value < limit) {
-
-        for (; p < end; ++p) {
-            if (p->value >= limit)
-            {
-                ExtMove tmp = *p, *q;
-                *p          = *++sortedEnd;
-                for (q = sortedEnd; q != begin && *(q - 1) < tmp; --q)
-                    *q = *(q - 1);
-                *q = tmp;
-            }
-        }
-        /*
-        // sortedEnd and p won't alias, which is required for this to work straightforwardly
-        PartialInsertionSorter sorter { begin };
-
-        ExtMove copy[16];
-        std::copy_n(begin, std::min(std::ptrdiff_t(16), end - begin), copy);
-
-        for (; p < end; ++p) {
-            if (p->value >= limit)
-            {
-                if (sorter.insert(p, p - begin)) {
-                    break;
-                }
-                *p = *++sortedEnd;
-            }
-        }
-        sorter.apply(copy, begin);*/
-    }
-
+    ExtMove *sortedEnd = begin, *p = begin + 1;
+    SorterFromHell sorter(begin);
     for (; p < end; ++p) {
-        if (p->value >= limit)
-        {
+        if (p->value >= limit) {
+            if (sorter.insert(p)) {
+                break;
+            }
+            *p = *++sortedEnd;
+        }
+    }
+    sorter.write_sorted(begin);
+    for (; p < end; ++p) {
+        if (p->value >= limit) {
             ExtMove tmp = *p, *q;
             *p          = *++sortedEnd;
             for (q = sortedEnd; q != begin && *(q - 1) < tmp; --q)
@@ -161,6 +135,7 @@ void partial_insertion_sort(ExtMove* begin, ExtMove* end, int limit) {
         }
     }
 }
+
 
 }  // namespace
 
