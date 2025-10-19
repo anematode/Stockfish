@@ -66,6 +66,48 @@ void insertion_sort(ExtMove* begin, ExtMove* end) {
     }
 }
 
+struct PartialInsertionSorter {
+    // We store the limits as (limit << 8) | <original index>, and mask off the index before doing the compare, so that
+    // ties are broken exactly as in the normal implementation
+    __m512i sorted_limits;
+    int count = 1;
+
+    struct PackedLimit { uint8_t index; uint8_t _limit[3]; };
+
+    explicit PartialInsertionSorter(ExtMove *begin) {
+        sorted_limits = _mm512_castsi128_si512(_mm_cvtsi32_si128((begin->value & 0xffffff) << 8));
+    }
+
+    static __m512i mask_off_index(const __m512i vec) {
+        return _mm512_maskz_mov_epi8(0xeeeeeeeeeeeeeeeeULL, vec);
+    }
+
+    bool insert(ExtMove *move, int move_index) {
+        if (count > 15) {
+            return true;
+        }
+        assert(move_index < 256);
+        // Only the first `count` elements should be considered for sorting.
+        const __mmask16 relevant = (1 << count) - 1;
+        const __m512i packed_limit = _mm512_set1_epi32((move->value & 0xffffff) << 8 | move_index);
+        // Each 1 bit corresponds to an element that should be to the left of the element to be inserted. By
+        // construction, this will be one less than a power of two.
+        const __mmask16 limits_ge = _mm512_mask_cmpge_epi32_mask(relevant, mask_off_index(sorted_limits), mask_off_index(packed_limit));
+        // By adding 1, we get a single bit that is the correct insertion point of the new element.
+        // Then, the bitwise negation gives us those bits where the old elements should be expanded.
+        sorted_limits = _mm512_mask_expand_epi32(packed_limit, ~(limits_ge + 1), sorted_limits);
+        count++;
+        return false;
+    }
+
+    void apply(ExtMove copy[16], ExtMove *begin) {
+        alignas(64) PackedLimit ls[16];
+        _mm512_store_si512(ls, sorted_limits);
+        for (int i = 0; i < count; ++i) {
+            begin[ls[i].index] = copy[i];
+        }
+    }
+};
 
 // Sort moves in descending order up to and including a given limit.
 // The order of moves smaller than the limit is left unspecified.
@@ -77,49 +119,36 @@ void partial_insertion_sort(ExtMove* begin, ExtMove* end, int limit) {
     ExtMove *sortedEnd = begin;
     ExtMove *p = begin + 1;
 
-#ifdef USE_AVX512
-    // Up to 16 moves are built up here
-    __m512i sorted_moves = _mm512_set1_epi32(begin->value);
-    // Up to 16 limits are built up here (and match 1-1 with the moves)
-    __m512i sorted_limits = _mm512_set1_epi16(begin->raw());
+    if (begin->value < limit) {
 
-    int sorted_count = 1;
-    for (; p < end; ++p) {
-        if (p->value >= limit) {
-            if (sorted_count >= 15) {
-                break;
+        for (; p < end; ++p) {
+            if (p->value >= limit)
+            {
+                ExtMove tmp = *p, *q;
+                *p          = *++sortedEnd;
+                for (q = sortedEnd; q != begin && *(q - 1) < tmp; --q)
+                    *q = *(q - 1);
+                *q = tmp;
             }
-
-            __mmask16 relevant = (1 << sorted_count) - 1;
-            __m512i the_move = _mm512_set1_epi16(p->raw());
-            __m512i the_limit = _mm512_set1_epi32(p->value);
-            __mmask16 left_of_ins = _mm512_mask_cmpge_epi32_mask(relevant, the_limit, sorted_limits);
-            __mmask16 expand = ~(left_of_ins + 1);
-            sorted_moves = _mm512_mask_expand_epi32(the_move, expand, sorted_moves);
-            sorted_limits = _mm512_mask_expand_epi32(the_limit, expand, sorted_limits);
-
-            sorted_count++;
         }
+        /*
+        // sortedEnd and p won't alias, which is required for this to work straightforwardly
+        PartialInsertionSorter sorter { begin };
+
+        ExtMove copy[16];
+        std::copy_n(begin, std::min(std::ptrdiff_t(16), end - begin), copy);
+
+        for (; p < end; ++p) {
+            if (p->value >= limit)
+            {
+                if (sorter.insert(p, p - begin)) {
+                    break;
+                }
+                *p = *++sortedEnd;
+            }
+        }
+        sorter.apply(copy, begin);*/
     }
-
-    const __m512i idx_lo = _mm512_setr_epi32(
-             0, 16,  1, 17,  2, 18,  3, 19,
-             4, 20,  5, 21,  6, 22,  7, 23);
-
-    // idx_hi:  a8, b8, a9, b9, ..., a15, b15
-    const __m512i idx_hi = _mm512_setr_epi32(
-         8, 24,  9, 25, 10, 26, 11, 27,
-        12, 28, 13, 29, 14, 30, 15, 31);
-
-    __m512i first_8 = _mm512_permutex2var_epi32(sorted_moves, idx_lo, sorted_limits);
-    __m512i second_8 = _mm512_permutex2var_epi32(sorted_moves, idx_hi, sorted_limits);
-
-    _mm512_mask_store_epi64(begin, (1 << sorted_count) - 1, first_8);
-    if (sorted_count > 8)
-        _mm512_mask_store_epi32(begin + 8, (1 << (sorted_count - 8)) - 1, second_8);
-
-    sortedEnd = begin + sorted_count;
-#endif
 
     for (; p < end; ++p) {
         if (p->value >= limit)
@@ -317,7 +346,10 @@ top:
 
             endCur = endGenerated = score<QUIETS>(ml);
 
+            unsigned _;
+            auto start = __rdtscp(&_);
             partial_insertion_sort(cur, endCur, -3560 * depth);
+            dbg_mean_of(__rdtsc() - start, 2);
         }
 
         ++stage;
