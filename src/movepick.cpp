@@ -94,7 +94,7 @@ struct SorterFromHell {
         const __mmask16 limits_ge = _mm512_mask_cmpge_epi32_mask(relevant, sorted_limits, new_limit);
         // By adding 1, we get a single bit that is the correct insertion point of the new element.
         // Then, the bitwise negation gives us those bits where the old elements should be expanded.
-        const __mmask16 expand_mask = ~(limits_ge + 1);
+        const __mmask16 expand_mask = _knot_mask16(_kadd_mask16(limits_ge, 1));
         // Insert the limit and the index.
         sorted_limits = _mm512_mask_expand_epi32(new_limit, expand_mask, sorted_limits);
         indices = _mm512_mask_expand_epi32(_mm512_set1_epi32(count), expand_mask, indices);
@@ -105,17 +105,34 @@ struct SorterFromHell {
 
     // Write out up to 16 elements in sorted form.
     void write_sorted(ExtMove *begin) {
-        alignas(64) int list[16];
-        _mm512_store_si512(list, indices);
-        for (int i = 0; i < count; ++i) {
-            begin[i] = moves[list[i]];
+        if constexpr (sizeof(ExtMove) == 8) {
+            const __m512i tbl1 = _mm512_load_si512(moves);
+            const __m512i tbl2 = _mm512_load_si512(moves + 8);
+            auto lookup_moves = [&] (const __m256i indices) {
+                const __m512i widened = _mm512_cvtepi32_epi64(indices);
+                return _mm512_permutex2var_epi64(tbl1, widened, tbl2);
+            };
+            const __m512i first_8 = lookup_moves(_mm512_castsi512_si256(indices));
+            _mm512_mask_storeu_epi64(begin, (1 << count) - 1, first_8);
+            if (count > 8) {
+                const __m512i last_8  = lookup_moves(_mm512_extracti64x4_epi64(indices, 1));
+                _mm512_mask_storeu_epi64(begin + 8, (1 << (count - 8)) - 1, last_8);
+            }
+        } else {
+            int list[16];
+            _mm512_storeu_si512(list, indices);
+            for (int i = 0; i < count; ++i) {
+                begin[i] = moves[list[i]];
+            }
         }
     }
 };
 
+__attribute__((noinline))
 void partial_insertion_sort(ExtMove* begin, ExtMove* end, int limit) {
     ExtMove *sortedEnd = begin, *p = begin + 1;
     SorterFromHell sorter(begin);
+#pragma GCC unroll 1
     for (; p < end; ++p) {
         if (p->value >= limit) {
             if (sorter.insert(p)) {
@@ -321,10 +338,10 @@ top:
 
             endCur = endGenerated = score<QUIETS>(ml);
 
-            unsigned _;
-            auto start = __rdtscp(&_);
+            //unsigned _;
+            //auto start = __rdtscp(&_);
             partial_insertion_sort(cur, endCur, -3560 * depth);
-            dbg_mean_of(__rdtsc() - start, 2);
+            //dbg_mean_of(__rdtsc() - start, 2);
         }
 
         ++stage;
