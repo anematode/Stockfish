@@ -105,25 +105,10 @@ struct SorterFromHell {
 
     // Write out up to 16 elements in sorted form.
     void write_sorted(ExtMove *begin) {
-        if constexpr (sizeof(ExtMove) == 8) {
-            const __m512i tbl1 = _mm512_load_si512(moves);
-            const __m512i tbl2 = _mm512_load_si512(moves + 8);
-            auto lookup_moves = [&] (const __m256i indices) {
-                const __m512i widened = _mm512_cvtepi32_epi64(indices);
-                return _mm512_permutex2var_epi64(tbl1, widened, tbl2);
-            };
-            const __m512i first_8 = lookup_moves(_mm512_castsi512_si256(indices));
-            _mm512_mask_storeu_epi64(begin, (1 << count) - 1, first_8);
-            if (count > 8) {
-                const __m512i last_8  = lookup_moves(_mm512_extracti64x4_epi64(indices, 1));
-                _mm512_mask_storeu_epi64(begin + 8, (1 << (count - 8)) - 1, last_8);
-            }
-        } else {
-            int list[16];
-            _mm512_storeu_si512(list, indices);
-            for (int i = 0; i < count; ++i) {
-                begin[i] = moves[list[i]];
-            }
+        int list[16];
+        _mm512_storeu_si512(list, indices);
+        for (int i = 0; i < count; ++i) {
+            begin[i] = moves[list[i]];
         }
     }
 };
