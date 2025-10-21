@@ -59,17 +59,16 @@ enum Stages {
 
 // Sort moves in descending order up to and including a given limit.
 // The order of moves smaller than the limit is left unspecified.
-void partial_insertion_sort(ExtMove* begin, ExtMove* end, int limit) {
+void insertion_sort(ExtMove* begin, ExtMove* end) {
 
     for (ExtMove *sortedEnd = begin, *p = begin + 1; p < end; ++p)
-        if (p->value >= limit)
-        {
-            ExtMove tmp = *p, *q;
-            *p          = *++sortedEnd;
-            for (q = sortedEnd; q != begin && *(q - 1) < tmp; --q)
-                *q = *(q - 1);
-            *q = tmp;
-        }
+    {
+        ExtMove tmp = *p, *q;
+        *p          = *++sortedEnd;
+        for (q = sortedEnd; q != begin && *(q - 1) < tmp; --q)
+            *q = *(q - 1);
+        *q = tmp;
+    }
 }
 
 }  // namespace
@@ -140,10 +139,11 @@ ExtMove* MovePicker::score(MoveList<Type>& ml) {
     }
 
     ExtMove* it = cur;
+    ExtMove* it2 = cur + ml.size();
     for (auto move : ml)
     {
-        ExtMove& m = *it++;
-        m          = move;
+        ExtMove m{};
+        m = move;
 
         const Square    from          = m.from_sq();
         const Square    to            = m.to_sq();
@@ -175,9 +175,13 @@ ExtMove* MovePicker::score(MoveList<Type>& ml) {
             int v = threatByLesser[pt] & to ? -95 : 100 * bool(threatByLesser[pt] & from);
             m.value += bonus[pt] * v;
 
-
             if (ply < LOW_PLY_HISTORY_SIZE)
                 m.value += 8 * (*lowPlyHistory)[ply][m.from_to()] / (1 + ply);
+
+            if (m.value <= -3560 * depth) {
+                *--it2 = m;
+                continue;
+            }
         }
 
         else  // Type == EVASIONS
@@ -191,6 +195,10 @@ ExtMove* MovePicker::score(MoveList<Type>& ml) {
                     m.value += (*lowPlyHistory)[ply][m.from_to()];
             }
         }
+        *it++ = m;
+    }
+    if constexpr (Type == QUIETS) {
+        assert(it == it2);
     }
     return it;
 }
@@ -232,7 +240,7 @@ top:
         cur = endBadCaptures = moves;
         endCur = endCaptures = score<CAPTURES>(ml);
 
-        partial_insertion_sort(cur, endCur, std::numeric_limits<int>::min());
+        insertion_sort(cur, endCur);
         ++stage;
         goto top;
     }
@@ -254,9 +262,9 @@ top:
         {
             MoveList<QUIETS> ml(pos);
 
-            endCur = endGenerated = score<QUIETS>(ml);
-
-            partial_insertion_sort(cur, endCur, -3560 * depth);
+            ExtMove *goose = score<QUIETS>(ml);
+            endGenerated = endCur = cur + ml.size();
+            insertion_sort(cur, goose);
         }
 
         ++stage;
@@ -296,7 +304,7 @@ top:
         cur    = moves;
         endCur = endGenerated = score<EVASIONS>(ml);
 
-        partial_insertion_sort(cur, endCur, std::numeric_limits<int>::min());
+        insertion_sort(cur, endCur);
         ++stage;
         [[fallthrough]];
     }
