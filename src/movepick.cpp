@@ -323,10 +323,7 @@ top:
 
             endCur = endGenerated = score<QUIETS>(ml);
 
-            //unsigned _;
-            //auto start = __rdtscp(&_);
             partial_insertion_sort(cur, endCur, -3560 * depth);
-            //dbg_mean_of(__rdtsc() - start, 2);
         }
 
         ++stage;
