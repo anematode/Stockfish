@@ -215,6 +215,7 @@ void TranspositionTable::new_search() {
 
 uint8_t TranspositionTable::generation() const { return generation8; }
 
+constexpr uint8_t mod_3[6] = { 0, 1, 2, 0, 1, 2 };
 
 // Looks up the current position in the transposition
 // table. It returns true if the position is found.
@@ -223,22 +224,26 @@ uint8_t TranspositionTable::generation() const { return generation8; }
 // minus 8 times its relative age. TTEntry t1 is considered more valuable than
 // TTEntry t2 if its replace value is greater than that of t2.
 std::tuple<bool, TTData, TTWriter> TranspositionTable::probe(const Key key) const {
-
     TTEntry* const tte   = first_entry(key);
     const uint16_t key16 = uint16_t(key);  // Use the low 16 bits as key inside the cluster
 
-    for (int i = 0; i < ClusterSize; ++i)
-        if (tte[i].key16 == key16)
+    int slot = uint32_t(key) % 3;
+    for (int j = 0; j < 3; ++j) {
+        int k = mod_3[slot + j];
+        if (tte[k].key16 == key16)
             // This gap is the main place for read races.
             // After `read()` completes that copy is final, but may be self-inconsistent.
-            return {tte[i].is_occupied(), tte[i].read(), TTWriter(&tte[i])};
+            return {tte[k].is_occupied(), tte[k].read(), TTWriter(&tte[k])};
+    }
 
     // Find an entry to be replaced according to the replacement strategy
-    TTEntry* replace = tte;
-    for (int i = 1; i < ClusterSize; ++i)
+    TTEntry* replace = tte + slot;
+    for (int j = 1; j < 3; ++j) {
+        int k = mod_3[slot + j];
         if (replace->depth8 - replace->relative_age(generation8)
-            > tte[i].depth8 - tte[i].relative_age(generation8))
-            replace = &tte[i];
+            > tte[k].depth8 - tte[k].relative_age(generation8))
+            replace = &tte[k];
+    }
 
     return {false,
             TTData{Move::none(), VALUE_NONE, VALUE_NONE, DEPTH_ENTRY_OFFSET, BOUND_NONE, false},
