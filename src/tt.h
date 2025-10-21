@@ -69,7 +69,7 @@ struct TTData {
 // This is used to make racy writes to the global TT.
 struct TTWriter {
    public:
-    void write(Key k, Value v, bool pv, Bound b, Depth d, Move m, Value ev, uint8_t generation8);
+    void write(Key k, Value v, bool pv, Bound b, Depth d, Move m, Value ev, uint8_t generation8, int piece_count = 0);
 
    private:
     friend class TranspositionTable;
@@ -89,12 +89,13 @@ class TranspositionTable {
       const;  // Approximate what fraction of entries (permille) have been written to during this root search
 
     void
-    new_search();  // This must be called at the beginning of each root search to track entry aging
+    new_search(int max_pc);  // This must be called at the beginning of each root search to track entry aging
     uint8_t generation() const;  // The current age, used when writing new data to the TT
     std::tuple<bool, TTData, TTWriter>
     probe(const Key key) const;  // The main method, whose retvals separate local vs global objects
     TTEntry* first_entry(const Key key)
       const;  // This is the hash function; its only external use is memory prefetching.
+    int max_pc;
 
    private:
     friend struct TTEntry;

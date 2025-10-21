@@ -129,11 +129,6 @@ uint8_t TTEntry::relative_age(const uint8_t generation8) const {
 TTWriter::TTWriter(TTEntry* tte) :
     entry(tte) {}
 
-void TTWriter::write(
-  Key k, Value v, bool pv, Bound b, Depth d, Move m, Value ev, uint8_t generation8) {
-    entry->save(k, v, pv, b, d, m, ev, generation8);
-}
-
 
 // A TranspositionTable is an array of Cluster, of size clusterCount. Each cluster consists of ClusterSize number
 // of TTEntry. Each non-empty TTEntry contains information on exactly one position. The size of a Cluster should
@@ -143,11 +138,35 @@ static constexpr int ClusterSize = 3;
 
 struct Cluster {
     TTEntry entry[ClusterSize];
-    char    padding[2];  // Pad to 32 bytes
+    // each quintuplet of bits is the # of pieces in the corresponding entry
+    uint16_t piece_count;
+
+    // Returns
+    TTEntry *find_unreachable_slot(int max_pc) {
+        assert(2 <= max_pc && max_pc <= 32);
+        const int mask = (1 | 1 << 5 | 1 << 10);
+        int splat = (max_pc - 2) * mask;
+        int gt_mask = ((splat - piece_count) ^ splat ^ piece_count) & mask << 5;
+        return gt_mask ? (TTEntry*)((char*)this + 2 * (__builtin_ctz(gt_mask) - 5)) : nullptr;
+    }
+
+    void set_pc(int offset_times_5, int count) {
+        assert(0 <= offset_times_5 && offset_times_5 < 15 && offset_times_5 % 5 == 0);
+        assert(2 <= count && count <= 32);
+        piece_count = (piece_count & ~(0x1f << offset_times_5)) | (count - 2) << offset_times_5;
+    }
 };
 
 static_assert(sizeof(Cluster) == 32, "Suboptimal Cluster size");
 
+void TTWriter::write(
+  Key k, Value v, bool pv, Bound b, Depth d, Move m, Value ev, uint8_t generation8, int piece_count) {
+    entry->save(k, v, pv, b, d, m, ev, generation8);
+    // Avert your eyes, children
+    Cluster *cluster = reinterpret_cast<Cluster*>((uintptr_t)entry & ~0x1fULL);
+    int offset_times_5 = ((uintptr_t)entry & 0x1fULL) >> 1;
+    cluster->set_pc(offset_times_5, piece_count);
+}
 
 // Sets the size of the transposition table,
 // measured in megabytes. Transposition table consists
@@ -173,6 +192,7 @@ void TranspositionTable::resize(size_t mbSize, ThreadPool& threads) {
 // in a multi-threaded way.
 void TranspositionTable::clear(ThreadPool& threads) {
     generation8              = 0;
+    max_pc = 32;
     const size_t threadCount = threads.num_threads();
 
     for (size_t i = 0; i < threadCount; ++i)
@@ -207,9 +227,10 @@ int TranspositionTable::hashfull(int maxAge) const {
 }
 
 
-void TranspositionTable::new_search() {
+void TranspositionTable::new_search(int max_pc) {
     // increment by delta to keep lower bits as is
     generation8 += GENERATION_DELTA;
+    this->max_pc  = max_pc;
 }
 
 
@@ -233,13 +254,15 @@ std::tuple<bool, TTData, TTWriter> TranspositionTable::probe(const Key key) cons
             // After `read()` completes that copy is final, but may be self-inconsistent.
             return {tte[i].is_occupied(), tte[i].read(), TTWriter(&tte[i])};
 
-    // Find an entry to be replaced according to the replacement strategy
-    TTEntry* replace = tte;
-    for (int i = 1; i < ClusterSize; ++i)
-        if (replace->depth8 - replace->relative_age(generation8)
-            > tte[i].depth8 - tte[i].relative_age(generation8))
-            replace = &tte[i];
-
+    TTEntry* replace = reinterpret_cast<Cluster*>(tte)->find_unreachable_slot(max_pc);
+    if (!replace) {
+        replace = tte;
+        // Find an entry to be replaced according to the replacement strategy
+        for (int i = 1; i < ClusterSize; ++i)
+            if (replace->depth8 - replace->relative_age(generation8)
+                > tte[i].depth8 - tte[i].relative_age(generation8))
+                replace = &tte[i];
+    }
     return {false,
             TTData{Move::none(), VALUE_NONE, VALUE_NONE, DEPTH_ENTRY_OFFSET, BOUND_NONE, false},
             TTWriter(replace)};
