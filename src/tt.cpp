@@ -23,6 +23,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
+#include <numeric>
 
 #include "memory.h"
 #include "misc.h"
@@ -215,6 +216,9 @@ void TranspositionTable::new_search() {
 
 uint8_t TranspositionTable::generation() const { return generation8; }
 
+int argmin(int fitnesses[ClusterSize]) {
+
+}
 
 // Looks up the current position in the transposition
 // table. It returns true if the position is found.
@@ -234,15 +238,14 @@ std::tuple<bool, TTData, TTWriter> TranspositionTable::probe(const Key key) cons
             return {tte[i].is_occupied(), tte[i].read(), TTWriter(&tte[i])};
 
     // Find an entry to be replaced according to the replacement strategy
-    TTEntry* replace = tte;
-    for (int i = 1; i < ClusterSize; ++i)
-        if (replace->depth8 - replace->relative_age(generation8)
-            > tte[i].depth8 - tte[i].relative_age(generation8))
-            replace = &tte[i];
-
+    int i = 0;
+    auto argmin = std::accumulate(tte, tte + ClusterSize,
+        std::numeric_limits<int>::max(), [&] (int val, const TTEntry& entry) {
+        return std::min(val, ((entry.depth8 - entry.relative_age(generation8)) << 8) + i++);
+    });
     return {false,
             TTData{Move::none(), VALUE_NONE, VALUE_NONE, DEPTH_ENTRY_OFFSET, BOUND_NONE, false},
-            TTWriter(replace)};
+            TTWriter(tte + (argmin & 0xff))};
 }
 
 
