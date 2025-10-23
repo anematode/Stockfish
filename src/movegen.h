@@ -36,9 +36,11 @@ enum GenType {
     LEGAL
 };
 
-struct ExtMove: public Move {
+struct ExtMoveValue {
     int value;
+};
 
+struct ExtMove: public ExtMoveValue, public Move {
     void operator=(Move m) { data = m.raw(); }
 
     // Inhibit unwanted implicit conversions to Move
