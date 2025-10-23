@@ -20,7 +20,6 @@
 
 #include <cassert>
 #include <limits>
-#include <utility>
 
 #include "bitboard.h"
 #include "misc.h"
@@ -56,20 +55,43 @@ enum Stages {
     QCAPTURE
 };
 
+void insertion_sort(ExtMove* begin, ExtMove* end) {
+    int v = begin[-1].value;
+    begin[-1].value = std::numeric_limits<int>::max();
+
+    for (ExtMove *sortedEnd = begin, *p = begin + 1; p < end; ++p)
+    {
+        ExtMove tmp = *p, *q;
+        *p          = *++sortedEnd;
+        for (q = sortedEnd; *(q - 1) < tmp; --q)
+            *q = *(q - 1);
+        *q = tmp;
+    }
+
+    begin[-1].value = v;
+}
 
 // Sort moves in descending order up to and including a given limit.
 // The order of moves smaller than the limit is left unspecified.
 void partial_insertion_sort(ExtMove* begin, ExtMove* end, int limit) {
+    auto val = begin[-1].value;
+    begin[-1].value = std::numeric_limits<int>::max();
 
-    for (ExtMove *sortedEnd = begin, *p = begin + 1; p < end; ++p)
-        if (p->value >= limit)
+    for (ExtMove *sortedEnd = begin, *p = begin + 1; p < end; ++p) {
+        uint64_t tmp;
+        memcpy(&tmp, p, sizeof(ExtMove));
+        if (static_cast<int>(tmp) >= limit)
         {
-            ExtMove tmp = *p, *q;
-            *p          = *++sortedEnd;
-            for (q = sortedEnd; q != begin && *(q - 1) < tmp; --q)
-                *q = *(q - 1);
-            *q = tmp;
+            ExtMove *q = ++sortedEnd;
+            memcpy(p, q, sizeof(ExtMove));
+            uint64_t b;
+            for (; static_cast<int>(memcpy(&b, q - 1, sizeof(uint64_t)), b) < static_cast<int>(tmp); --q)
+                memcpy(q, &b, sizeof(ExtMove));
+            memcpy(q, &tmp, sizeof(ExtMove));
         }
+    }
+
+    begin[-1].value = val;
 }
 
 }  // namespace
@@ -229,10 +251,10 @@ top:
     case QCAPTURE_INIT : {
         MoveList<CAPTURES> ml(pos);
 
-        cur = endBadCaptures = moves;
+        cur = endBadCaptures = moves + 1;
         endCur = endCaptures = score<CAPTURES>(ml);
 
-        partial_insertion_sort(cur, endCur, std::numeric_limits<int>::min());
+        insertion_sort(cur, endCur);
         ++stage;
         goto top;
     }
@@ -255,7 +277,6 @@ top:
             MoveList<QUIETS> ml(pos);
 
             endCur = endGenerated = score<QUIETS>(ml);
-
             partial_insertion_sort(cur, endCur, -3560 * depth);
         }
 
@@ -267,7 +288,7 @@ top:
             return *(cur - 1);
 
         // Prepare the pointers to loop over the bad captures
-        cur    = moves;
+        cur    = moves + 1;
         endCur = endBadCaptures;
 
         ++stage;
@@ -293,10 +314,10 @@ top:
     case EVASION_INIT : {
         MoveList<EVASIONS> ml(pos);
 
-        cur    = moves;
+        cur    = moves + 1;
         endCur = endGenerated = score<EVASIONS>(ml);
 
-        partial_insertion_sort(cur, endCur, std::numeric_limits<int>::min());
+        insertion_sort(cur, endCur);
         ++stage;
         [[fallthrough]];
     }
