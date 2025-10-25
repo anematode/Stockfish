@@ -60,10 +60,11 @@ struct TTEntry {
     // The returned age is a multiple of TranspositionTable::GENERATION_DELTA
     uint8_t relative_age(const uint8_t generation8) const;
 
+    uint16_t *key16_access();
+
    private:
     friend class TranspositionTable;
 
-    uint16_t key16;
     uint8_t  depth8;
     uint8_t  genBound8;
     Move     move16;
@@ -92,6 +93,8 @@ bool TTEntry::is_occupied() const { return bool(depth8); }
 // overwriting an old position. The update is not atomic and can be racy.
 void TTEntry::save(
   Key k, Value v, bool pv, Bound b, Depth d, Move m, Value ev, uint8_t generation8) {
+    auto *accessor = key16_access();
+    auto key16 = *accessor;
 
     // Preserve the old ttmove if we don't have a new one
     if (m || uint16_t(k) != key16)
@@ -104,7 +107,7 @@ void TTEntry::save(
         assert(d > DEPTH_ENTRY_OFFSET);
         assert(d < 256 + DEPTH_ENTRY_OFFSET);
 
-        key16     = uint16_t(k);
+        *accessor = uint16_t(k);
         depth8    = uint8_t(d - DEPTH_ENTRY_OFFSET);
         genBound8 = uint8_t(generation8 | uint8_t(pv) << 2 | b);
         value16   = int16_t(v);
@@ -124,7 +127,6 @@ uint8_t TTEntry::relative_age(const uint8_t generation8) const {
     return (GENERATION_CYCLE + generation8 - genBound8) & GENERATION_MASK;
 }
 
-
 // TTWriter is but a very thin wrapper around the pointer
 TTWriter::TTWriter(TTEntry* tte) :
     entry(tte) {}
@@ -142,11 +144,18 @@ void TTWriter::write(
 static constexpr int ClusterSize = 3;
 
 struct Cluster {
+    uint16_t key16[4];
     TTEntry entry[ClusterSize];
-    char    padding[2];  // Pad to 32 bytes
 };
 
 static_assert(sizeof(Cluster) == 32, "Suboptimal Cluster size");
+
+uint16_t *TTEntry::key16_access() {
+    Cluster* cls = reinterpret_cast<Cluster*>(reinterpret_cast<uintptr_t>(this) & ~0x1fULL);
+    int i = reinterpret_cast<uintptr_t>(this) & 0x1fULL;
+    sf_assume(i == 8 || i == 18 || i == 28);
+    return &cls->key16[(i >> 3) - 1];
+}
 
 
 // Sets the size of the transposition table,
@@ -215,6 +224,14 @@ void TranspositionTable::new_search() {
 
 uint8_t TranspositionTable::generation() const { return generation8; }
 
+static TTEntry *find(TTEntry *tte, uint64_t haystack, uint16_t needle) {
+    const uint64_t magic_sub = 0x0001000100010001ULL;
+    uint64_t broadcast_needle = magic_sub * needle;
+    uint64_t xor_result = haystack ^ broadcast_needle;
+    const uint64_t magic_msb = 0x800080008000ULL;
+    uint64_t matches = (xor_result - magic_sub) & ~xor_result & magic_msb;
+    return matches ? &tte[__builtin_ctzll(matches) / 16] : nullptr;
+}
 
 // Looks up the current position in the transposition
 // table. It returns true if the position is found.
@@ -224,14 +241,16 @@ uint8_t TranspositionTable::generation() const { return generation8; }
 // TTEntry t2 if its replace value is greater than that of t2.
 std::tuple<bool, TTData, TTWriter> TranspositionTable::probe(const Key key) const {
 
-    TTEntry* const tte   = first_entry(key);
+    Cluster* const cls   = first_entry(key);
     const uint16_t key16 = uint16_t(key);  // Use the low 16 bits as key inside the cluster
+    TTEntry* tte = &cls->entry[0];
 
-    for (int i = 0; i < ClusterSize; ++i)
-        if (tte[i].key16 == key16)
-            // This gap is the main place for read races.
-            // After `read()` completes that copy is final, but may be self-inconsistent.
-            return {tte[i].is_occupied(), tte[i].read(), TTWriter(&tte[i])};
+    uint64_t keys;
+    memcpy(&keys, &cls->key16[0], sizeof(keys));
+    auto *match = find(tte, keys, key16);
+    if (match) {
+        return {match->is_occupied(), match-> read(), TTWriter(match)};
+    }
 
     // Find an entry to be replaced according to the replacement strategy
     TTEntry* replace = tte;
@@ -246,8 +265,8 @@ std::tuple<bool, TTData, TTWriter> TranspositionTable::probe(const Key key) cons
 }
 
 
-TTEntry* TranspositionTable::first_entry(const Key key) const {
-    return &table[mul_hi64(key, clusterCount)].entry[0];
+Cluster* TranspositionTable::first_entry(const Key key) const {
+    return &table[mul_hi64(key, clusterCount)];
 }
 
 }  // namespace Stockfish
