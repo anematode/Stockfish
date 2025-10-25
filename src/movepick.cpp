@@ -139,7 +139,7 @@ ExtMove* MovePicker::score(MoveList<Type>& ml) {
     }
 
     ExtMove* it = cur;
-    ExtMove* it2 = cur + ml.size();
+    [[maybe_unused]] ExtMove* cursors[2] = { cur, cur + ml.size() - 1 };
     for (auto move : ml)
     {
         ExtMove m{};
@@ -178,10 +178,11 @@ ExtMove* MovePicker::score(MoveList<Type>& ml) {
             if (ply < LOW_PLY_HISTORY_SIZE)
                 m.value += 8 * (*lowPlyHistory)[ply][m.from_to()] / (1 + ply);
 
-            if (m.value <= -3560 * depth) {
-                *--it2 = m;
-                continue;
-            }
+            bool ci = m.value < -3560 * depth;
+            ExtMove* &cursor = cursors[ci];
+            *cursor = m;
+            cursor += ci ? -1 : 1;
+            continue;
         }
 
         else  // Type == EVASIONS
@@ -198,7 +199,8 @@ ExtMove* MovePicker::score(MoveList<Type>& ml) {
         *it++ = m;
     }
     if constexpr (Type == QUIETS) {
-        assert(it == it2);
+        assert(cursors[0] - 1 == cursors[1]);
+        return cursors[0];
     }
     return it;
 }
