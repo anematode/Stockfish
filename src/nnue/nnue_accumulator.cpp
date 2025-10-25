@@ -307,7 +307,65 @@ struct AccumulatorUpdateContext {
           to_psqt_weight_vector(indices)...);
     }
 
+    template<UpdateOperation... ops,
+             typename... Ts,
+             std::enable_if_t<is_all_same_v<IndexType, Ts...>, bool> = true>
+    void apply_threats(const Ts... indices) {
+        auto to_weight_vector = [&](const IndexType index) {
+            return &featureTransformer.threatWeights[index * Dimensions];
+        };
+
+        auto to_psqt_weight_vector = [&](const IndexType index) {
+            return &featureTransformer.threatPsqtWeights[index * PSQTBuckets];
+        };
+
+        fused_row_reduce<Vec16Wrapper, Dimensions, ops...>(
+          (from.template acc<Dimensions>()).accumulation[Perspective],
+          (to.template acc<Dimensions>()).accumulation[Perspective], to_weight_vector(indices)...);
+
+        fused_row_reduce<Vec32Wrapper, PSQTBuckets, ops...>(
+          (from.template acc<Dimensions>()).psqtAccumulation[Perspective],
+          (to.template acc<Dimensions>()).psqtAccumulation[Perspective],
+          to_psqt_weight_vector(indices)...);
+    }
+
+    static constexpr int MAX_M = 6;
+
+    template <int M, int N>
+    static void apply_threats_known_size(AccumulatorUpdateContext* ctx, typename FeatureSet::IndexList& added, typename FeatureSet::IndexList& removed) {
+#include "goober.inc"
+    }
+
+    using Inst = void(*)(AccumulatorUpdateContext* ctx, typename FeatureSet::IndexList& added, typename FeatureSet::IndexList& removed);
+
+#define INC(m, n) if constexpr (M == m && N == n && M + N <= 7) { return ; }
+
+    template <int M, int N>
+    static constexpr Inst get_func_ptr() {
+        return &apply_threats_known_size<M, N>;
+    }
+
+    template <int M, std::size_t... Ns>
+    static constexpr std::array<Inst, MAX_M> make_row(std::index_sequence<Ns...>) {
+        return {get_func_ptr<M, Ns>()...};
+    }
+
+    template <std::size_t... Ms>
+    static constexpr auto make_func_array(std::index_sequence<Ms...>) {
+        return std::array<std::array<Inst, MAX_M>, MAX_M>{make_row<Ms>(
+            std::make_index_sequence<MAX_M>{}
+        )...};
+    }
+
+    static constexpr auto function_array = make_func_array(std::make_index_sequence<MAX_M>{});
+
     void apply(typename FeatureSet::IndexList added, typename FeatureSet::IndexList removed) {
+        int C = added.size() + removed.size();
+        if (C < MAX_M) {
+            auto *fn = function_array[added.size()][removed.size()];
+            fn(this, added, removed);
+            return;
+        }
         const auto fromAcc = from.template acc<Dimensions>().accumulation[Perspective];
         const auto toAcc   = to.template acc<Dimensions>().accumulation[Perspective];
 
