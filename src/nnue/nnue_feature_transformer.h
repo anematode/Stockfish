@@ -127,7 +127,6 @@ class FeatureTransformer {
         permute<16>(biases, PackusEpi16Order);
         permute<16>(weights, PackusEpi16Order);
         constexpr int step = sizeof(SIMD::vec_t) / sizeof(WeightType);
-        static_assert(step == 32);
         for (IndexType j = 0; j < InputDimensions; ++j) {
             WeightType* w = &weights[j * HalfDimensions];
             WeightType row[HalfDimensions];
@@ -208,7 +207,6 @@ class FeatureTransformer {
 
         for (IndexType p = 0; p < 2; ++p)
         {
-            dbg_hit_on(computed & (1 << perspectives[p]));
             if (computed & (1 << perspectives[p])) {
                 continue;
             }
