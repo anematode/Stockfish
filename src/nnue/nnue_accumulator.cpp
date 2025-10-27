@@ -171,9 +171,9 @@ bool AccumulatorStack::forward_update_incremental(
     }
 
     if (next < size) {
-        update_accumulator_incremental<Perspective, true, false>(
+        update_accumulator_incremental<Perspective, true, true>(
           featureTransformer, ksq, accumulators[next], accumulators[next - 1], output);
-        transformed = false;
+        transformed = true;
     }
 
     assert((latest().acc<Dimensions>()).computed[Perspective]);
@@ -286,11 +286,7 @@ struct AccumulatorUpdateContext {
             // Read four vectors at a time, one from each half
             constexpr IndexType ChunkSize = sizeof(vec_t) / sizeof(WeightType);
             constexpr IndexType HalfOutputChunks = Dimensions / 2 / ChunkSize;
-#pragma GCC unroll 2
-#pragma GCC ivdep
-            for (IndexType offset = 0; offset < HalfOutputChunks; offset += 2) {
-                const IndexType other_offset = offset + HalfOutputChunks;
-
+            for (IndexType offset = 0, other_offset = HalfOutputChunks; offset < HalfOutputChunks; offset += 2, other_offset += 2) {
                 auto* RESTRICT accumIn0 = reinterpret_cast<const vec_t*>(&from.acc<Dimensions>().accumulation[Perspective]) + offset;
                 auto* RESTRICT accumIn1 = reinterpret_cast<const vec_t*>(&from.acc<Dimensions>().accumulation[Perspective]) + other_offset;
 
