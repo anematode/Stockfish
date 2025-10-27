@@ -45,7 +45,7 @@ void double_inc_update(const FeatureTransformer<TransformedFeatureDimensions>& f
                        const AccumulatorState&                                 computed);
 
 template<Color Perspective, bool Forward, bool DoTransform, IndexType TransformedFeatureDimensions>
-__attribute__((always_inline)) inline void update_accumulator_incremental(
+void update_accumulator_incremental(
   const FeatureTransformer<TransformedFeatureDimensions>& featureTransformer,
   const Square                                            ksq,
   AccumulatorState&                                       target_state,
@@ -99,7 +99,7 @@ int AccumulatorStack::evaluate(const Position&                       pos,
 }
 
 template<Color Perspective, IndexType Dimensions>
-__attribute__((always_inline)) inline bool AccumulatorStack::evaluate_side(const Position&                       pos,
+bool AccumulatorStack::evaluate_side(const Position&                       pos,
                                      const FeatureTransformer<Dimensions>& featureTransformer,
                                      AccumulatorCaches::Cache<Dimensions>& cache,
                                      TransformedFeatureType* output) noexcept {
@@ -134,7 +134,7 @@ std::size_t AccumulatorStack::find_last_usable_accumulator() const noexcept {
 }
 
 template<Color Perspective, IndexType Dimensions>
-__attribute__((always_inline)) inline bool AccumulatorStack::forward_update_incremental(
+bool AccumulatorStack::forward_update_incremental(
   const Position&                       pos,
   const FeatureTransformer<Dimensions>& featureTransformer,
   const std::size_t                     begin,
