@@ -106,7 +106,7 @@ bool AccumulatorStack::evaluate_side(const Position&                       pos,
 
     const auto last_usable_accum = find_last_usable_accumulator<Perspective, Dimensions>();
 
-    if ((accumulators[last_usable_accum].template acc<Dimensions>()).computed[Perspective])
+    if (false && (accumulators[last_usable_accum].template acc<Dimensions>()).computed[Perspective])
         return forward_update_incremental<Perspective>(pos, featureTransformer, last_usable_accum, output);
 
     else
@@ -139,7 +139,6 @@ bool AccumulatorStack::forward_update_incremental(
   const FeatureTransformer<Dimensions>& featureTransformer,
   const std::size_t                     begin,
   TransformedFeatureType* output) noexcept {
-
     assert(begin < accumulators.size());
     assert((accumulators[begin].acc<Dimensions>()).computed[Perspective]);
 
@@ -186,6 +185,7 @@ bool AccumulatorStack::backward_update_incremental(
   const FeatureTransformer<Dimensions>& featureTransformer,
   const std::size_t                     end,
   TransformedFeatureType* output) noexcept {
+
 
     assert(end < accumulators.size());
     assert(end < size);
@@ -278,6 +278,7 @@ struct AccumulatorUpdateContext {
         };
 
         if constexpr (DoTransform) {
+            static_assert(false);
             assert(output);
 
             const vec_t Zero = vec_zero();
