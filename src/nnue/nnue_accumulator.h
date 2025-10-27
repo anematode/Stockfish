@@ -77,7 +77,6 @@ struct AccumulatorCaches {
             // To initialize a refresh entry, we set all its bitboards empty,
             // so we put the biases in the accumulation, without any weights on top
             void clear(const BiasType* biases) {
-
                 std::memcpy(accumulation, biases, sizeof(accumulation));
                 std::memset((uint8_t*) this + offsetof(Entry, psqtAccumulation), 0,
                             sizeof(Entry) - offsetof(Entry, psqtAccumulation));

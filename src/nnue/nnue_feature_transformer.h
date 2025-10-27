@@ -133,8 +133,8 @@ class FeatureTransformer {
             WeightType row[HalfDimensions];
             std::copy_n(w, HalfDimensions, row);
             for (IndexType k = 0; k < HalfDimensions; k += step * 2) {
-                std::copy_n(row + k, step, w + k / 2);
-                std::copy_n(row + k + step, step, w + k / 2 + HalfDimensions / 2);
+                std::copy_n(row + k / 2, step, w + k);
+                std::copy_n(row + k / 2 + HalfDimensions / 2, step, w + k + step);
             }
         }
     }
@@ -208,6 +208,7 @@ class FeatureTransformer {
 
         for (IndexType p = 0; p < 2; ++p)
         {
+            dbg_hit_on(computed & (1 << perspectives[p]));
             if (computed & (1 << perspectives[p])) {
                 continue;
             }
