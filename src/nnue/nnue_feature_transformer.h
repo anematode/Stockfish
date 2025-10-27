@@ -25,6 +25,7 @@
 #include <cstdint>
 #include <cstring>
 #include <iosfwd>
+#include <numeric>
 
 #include "../position.h"
 #include "../types.h"
@@ -125,6 +126,17 @@ class FeatureTransformer {
     void permute_weights() {
         permute<16>(biases, PackusEpi16Order);
         permute<16>(weights, PackusEpi16Order);
+        constexpr int step = sizeof(SIMD::vec_t) / sizeof(WeightType);
+        static_assert(step == 32);
+        for (IndexType j = 0; j < InputDimensions; ++j) {
+            WeightType* w = &weights[j * HalfDimensions];
+            WeightType row[HalfDimensions];
+            std::copy_n(w, HalfDimensions, row);
+            for (IndexType k = 0; k < HalfDimensions; k += step * 2) {
+                std::copy_n(row + k, step, w + k / 2);
+                std::copy_n(row + k + step, step, w + k / 2 + HalfDimensions / 2);
+            }
+        }
     }
 
     void unpermute_weights() {

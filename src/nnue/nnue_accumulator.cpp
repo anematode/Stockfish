@@ -171,9 +171,9 @@ bool AccumulatorStack::forward_update_incremental(
     }
 
     if (next < size) {
-        update_accumulator_incremental<Perspective, true, true>(
+        update_accumulator_incremental<Perspective, true, false>(
           featureTransformer, ksq, accumulators[next], accumulators[next - 1], output);
-        transformed = true;
+        transformed = false;
     }
 
     assert((latest().acc<Dimensions>()).computed[Perspective]);
@@ -237,9 +237,18 @@ void fused_row_reduce(const ElementType* in, ElementType* out, const Ts* const..
     auto* vecIn  = reinterpret_cast<const typename VectorWrapper::type*>(in);
     auto* vecOut = reinterpret_cast<typename VectorWrapper::type*>(out);
 
-    for (IndexType i = 0; i < size; ++i)
-        vecOut[i] = fused<VectorWrapper, ops...>(
-          vecIn[i], reinterpret_cast<const typename VectorWrapper::type*>(rows)[i]...);
+    if constexpr (std::is_same_v<VectorWrapper, Vec16Wrapper>) {
+        for (IndexType i = 0; i < size / 2; ++i) {
+            vecOut[i] = fused<VectorWrapper, ops...>(
+             vecIn[i], reinterpret_cast<const typename VectorWrapper::type*>(rows)[2 * i]...);
+            vecOut[i + size / 2] = fused<VectorWrapper, ops...>(
+              vecIn[i + size / 2], reinterpret_cast<const typename VectorWrapper::type*>(rows)[2 * i + 1]...);
+        }
+    } else {
+        for (IndexType i = 0; i < size; ++i)
+            vecOut[i] = fused<VectorWrapper, ops...>(
+              vecIn[i], reinterpret_cast<const typename VectorWrapper::type*>(rows)[i]...);
+    }
 }
 
 template<Color Perspective, IndexType Dimensions>
@@ -294,8 +303,8 @@ struct AccumulatorUpdateContext {
                 auto* RESTRICT accumOut1 = reinterpret_cast<vec_t*>(&to.acc<Dimensions>().accumulation[Perspective]) + other_offset;
 
                 for (int j = 0; j < 2; ++j) {
-                    accumOut0[j] = fused<Vec16Wrapper, ops...>(accumIn0[j], reinterpret_cast<const vec_t* RESTRICT>(to_weight_vector(indices))[offset + j]...);
-                    accumOut1[j] = fused<Vec16Wrapper, ops...>(accumIn1[j], reinterpret_cast<const vec_t* RESTRICT>(to_weight_vector(indices))[other_offset + j]...);
+                    accumOut0[j] = fused<Vec16Wrapper, ops...>(accumIn0[j], reinterpret_cast<const vec_t* RESTRICT>(to_weight_vector(indices))[2 * offset + 2 * j]...);
+                    accumOut1[j] = fused<Vec16Wrapper, ops...>(accumIn1[j], reinterpret_cast<const vec_t* RESTRICT>(to_weight_vector(indices))[2 * offset + 2 * j + 1]...);
                 }
 
                 const vec_t sum0a =
@@ -311,7 +320,7 @@ struct AccumulatorUpdateContext {
                 *vec_output++ = vec_packus_16(pa, pb);
             }
         } else {
-            assert(output == nullptr);
+            //assert(output == nullptr);
             fused_row_reduce<Vec16Wrapper, Dimensions, ops...>(
               (from.acc<Dimensions>()).accumulation[Perspective],
               (to.acc<Dimensions>()).accumulation[Perspective], to_weight_vector(indices)...);
@@ -479,18 +488,20 @@ void update_accumulator_refresh_cache(const FeatureTransformer<Dimensions>& feat
     vec_t      acc[Tiling::NumRegs];
     psqt_vec_t psqt[Tiling::NumPsqtRegs];
 
+    auto HalfStep = Dimensions / 2 * sizeof(WeightType) / sizeof(vec_t);
+
     for (IndexType j = 0; j < Dimensions / Tiling::TileHeight; ++j)
     {
         auto* accTile =
-          reinterpret_cast<vec_t*>(&accumulator.accumulation[Perspective][j * Tiling::TileHeight]);
-        auto* entryTile = reinterpret_cast<vec_t*>(&entry.accumulation[j * Tiling::TileHeight]);
+          reinterpret_cast<vec_t*>(&accumulator.accumulation[Perspective][j * Tiling::TileHeight / 2]);
+        auto* entryTile = reinterpret_cast<vec_t*>(&entry.accumulation[j * Tiling::TileHeight / 2]);
 
-        for (IndexType k = 0; k < Tiling::NumRegs; ++k)
-            acc[k] = entryTile[k];
+        for (IndexType k = 0; k < Tiling::NumRegs; ++k) {
+            acc[k] = entryTile[k / 2 + HalfStep * (k & 1)];
+        }
 
         IndexType i = 0;
-        for (; i < std::min(removed.size(), added.size()); ++i)
-        {
+        for (; i < std::min(removed.size(), added.size()); ++i) {
             IndexType       indexR  = removed[i];
             const IndexType offsetR = Dimensions * indexR + j * Tiling::TileHeight;
             auto* columnR = reinterpret_cast<const vec_t*>(&featureTransformer.weights[offsetR]);
@@ -498,8 +509,9 @@ void update_accumulator_refresh_cache(const FeatureTransformer<Dimensions>& feat
             const IndexType offsetA = Dimensions * indexA + j * Tiling::TileHeight;
             auto* columnA = reinterpret_cast<const vec_t*>(&featureTransformer.weights[offsetA]);
 
-            for (IndexType k = 0; k < Tiling::NumRegs; ++k)
+            for (IndexType k = 0; k < Tiling::NumRegs; ++k) {
                 acc[k] = fused<Vec16Wrapper, Add, Sub>(acc[k], columnA[k], columnR[k]);
+            }
         }
         for (; i < removed.size(); ++i)
         {
@@ -521,9 +533,9 @@ void update_accumulator_refresh_cache(const FeatureTransformer<Dimensions>& feat
         }
 
         for (IndexType k = 0; k < Tiling::NumRegs; k++)
-            vec_store(&entryTile[k], acc[k]);
+            vec_store(&entryTile[k / 2 + HalfStep * (k & 1)], acc[k]);
         for (IndexType k = 0; k < Tiling::NumRegs; k++)
-            vec_store(&accTile[k], acc[k]);
+            vec_store(&accTile[k / 2 + HalfStep * (k & 1)], acc[k]);
     }
 
     for (IndexType j = 0; j < PSQTBuckets / Tiling::PsqtTileHeight; ++j)
