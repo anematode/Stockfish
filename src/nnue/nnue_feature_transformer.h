@@ -153,8 +153,11 @@ class FeatureTransformer {
         for (IndexType j = 0; j < ThreatInputDimensions; ++j)
         {
             WeightType* w = &threatWeights[j * HalfDimensions];
-            for (IndexType i = 0; i < HalfDimensions; ++i)
+            ThreatWeightType* th = &threatWeightsI8[j * HalfDimensions];
+            for (IndexType i = 0; i < HalfDimensions; ++i) {
+                w[i] = th[64 * (i / 64) + 2 * (i % 32) + (i % 64 >= 32)] = w[i] >= 128 ? 127 : w[i] < -128 ? -128 : w[i];
                 w[i] = read ? w[i] * 2 : w[i] / 2;
+            }
         }
 
         for (IndexType i = 0; i < HalfDimensions; ++i)
@@ -339,10 +342,10 @@ class FeatureTransformer {
               &(threatAccumulation[perspectives[p]][HalfDimensions / 2]));
                 for (IndexType j = 0; j < NumOutputChunks; ++j)
                 {
-                    const vec_t acc0a = vec_add_16(in0[j * 2 + 0], tin0[j * 2 + 0]);
-                    const vec_t acc0b = vec_add_16(in0[j * 2 + 1], tin0[j * 2 + 1]);
-                    const vec_t acc1a = vec_add_16(in1[j * 2 + 0], tin1[j * 2 + 0]);
-                    const vec_t acc1b = vec_add_16(in1[j * 2 + 1], tin1[j * 2 + 1]);
+                    const vec_t acc0a = vec_add_16(in0[j * 2 + 0], vec_slli_16(tin0[j * 2 + 0], 1));
+                    const vec_t acc0b = vec_add_16(in0[j * 2 + 1], vec_slli_16(tin0[j * 2 + 1], 1));
+                    const vec_t acc1a = vec_add_16(in1[j * 2 + 0], vec_slli_16(tin1[j * 2 + 0], 1));
+                    const vec_t acc1b = vec_add_16(in1[j * 2 + 1], vec_slli_16(tin1[j * 2 + 1], 1));
 
                     const vec_t sum0a = vec_slli_16(vec_max_16(vec_min_16(acc0a, One), Zero), shift);
                     const vec_t sum0b = vec_slli_16(vec_max_16(vec_min_16(acc0b, One), Zero), shift);
@@ -402,6 +405,7 @@ class FeatureTransformer {
     alignas(CacheLineSize) BiasType biases[HalfDimensions];
     alignas(CacheLineSize) WeightType weights[HalfDimensions * InputDimensions];
     alignas(CacheLineSize) WeightType threatWeights[HalfDimensions * ThreatInputDimensions];
+    alignas(CacheLineSize) ThreatWeightType threatWeightsI8[HalfDimensions * ThreatInputDimensions];
     alignas(CacheLineSize) PSQTWeightType psqtWeights[InputDimensions * PSQTBuckets];
     alignas(CacheLineSize) PSQTWeightType threatPsqtWeights[ThreatInputDimensions * PSQTBuckets];
 };

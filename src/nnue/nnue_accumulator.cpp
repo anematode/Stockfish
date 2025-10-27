@@ -272,6 +272,11 @@ void fused_row_reduce(const ElementType* in, ElementType* out, const Ts* const..
           vecIn[i], reinterpret_cast<const typename VectorWrapper::type*>(rows)[i]...);
 }
 
+
+auto unpack = [] (vec_t v) {
+    return std::pair( _mm512_maddubs_epi16(_mm512_set1_epi16(1), v), _mm512_srai_epi16(v, 8) );
+};
+
 template<typename FeatureSet, Color Perspective, IndexType Dimensions>
 struct AccumulatorUpdateContext {
     const FeatureTransformer<Dimensions>& featureTransformer;
@@ -332,10 +337,13 @@ struct AccumulatorUpdateContext {
                 IndexType       index  = removed[i];
                 const IndexType offset = Dimensions * index + j * Tiling::TileHeight;
                 auto*           column =
-                  reinterpret_cast<const vec_t*>(&featureTransformer.threatWeights[offset]);
+                  reinterpret_cast<const vec_t*>(&featureTransformer.threatWeightsI8[offset]);
 
-                for (IndexType k = 0; k < Tiling::NumRegs; ++k)
-                    acc[k] = vec_sub_16(acc[k], column[k]);
+                for (IndexType k = 0; k < Tiling::NumRegs / 2; ++k) {
+                    auto [a,b] = unpack(column[k]);
+                    acc[2 * k] = vec_sub_16(acc[2 * k], a);
+                    acc[2 * k + 1] = vec_sub_16(acc[2 * k + 1], b);
+                }
             }
 
             for (IndexType i = 0; i < added.size(); ++i)
@@ -343,10 +351,13 @@ struct AccumulatorUpdateContext {
                 IndexType       index  = added[i];
                 const IndexType offset = Dimensions * index + j * Tiling::TileHeight;
                 auto*           column =
-                  reinterpret_cast<const vec_t*>(&featureTransformer.threatWeights[offset]);
+                  reinterpret_cast<const vec_t*>(&featureTransformer.threatWeightsI8[offset]);
 
-                for (IndexType k = 0; k < Tiling::NumRegs; ++k)
-                    acc[k] = vec_add_16(acc[k], column[k]);
+                for (IndexType k = 0; k < Tiling::NumRegs / 2; ++k) {
+                    auto [a,b] = unpack(column[k]);
+                    acc[2 * k] = vec_add_16(acc[2 * k], a);
+                    acc[2 * k + 1] = vec_add_16(acc[2 * k + 1], b);
+                }
             }
 
             for (IndexType k = 0; k < Tiling::NumRegs; k++)
@@ -736,10 +747,13 @@ void update_threats_accumulator_full(const FeatureTransformer<Dimensions>& featu
             IndexType       index  = active[i];
             const IndexType offset = Dimensions * index + j * Tiling::TileHeight;
             auto*           column =
-              reinterpret_cast<const vec_t*>(&featureTransformer.threatWeights[offset]);
+              reinterpret_cast<const vec_t*>(&featureTransformer.threatWeightsI8[offset]);
 
-            for (IndexType k = 0; k < Tiling::NumRegs; ++k)
-                acc[k] = vec_add_16(acc[k], column[k]);
+            for (IndexType k = 0; k < Tiling::NumRegs / 2; ++k) {
+                auto [a, b]  = unpack(column[k]);
+                acc[2 * k] = vec_add_16(acc[2 * k], a);
+                acc[2 * k + 1] = vec_add_16(acc[2 * k + 1], b);
+            }
         }
 
         for (IndexType k = 0; k < Tiling::NumRegs; k++)
