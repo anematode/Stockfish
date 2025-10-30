@@ -125,6 +125,22 @@ class FeatureTransformer {
     void permute_weights() {
         permute<16>(biases, PackusEpi16Order);
         permute<16>(weights, PackusEpi16Order);
+        constexpr int step = sizeof(SIMD::vec_t) / sizeof(WeightType);
+        for (IndexType j = 0; j < InputDimensions; ++j) {
+            WeightType* w = &weights[j * HalfDimensions];
+            WeightType row[HalfDimensions];
+            std::copy_n(w, HalfDimensions, row);
+            for (IndexType k = 0; k < HalfDimensions; k += step * 2) {
+                std::copy_n(row + k / 2, step, w + k);
+                std::copy_n(row + k / 2 + HalfDimensions / 2, step, w + k + step);
+            }
+        }
+        BiasType row[HalfDimensions];
+        std::copy_n(biases, HalfDimensions, row);
+        for (IndexType k = 0; k < HalfDimensions; k += step * 2) {
+            std::copy_n(row + k / 2, step, biases + k);
+            std::copy_n(row + k / 2 + HalfDimensions / 2, step, biases + k + step);
+        }
     }
 
     void unpermute_weights() {
@@ -205,8 +221,6 @@ class FeatureTransformer {
             const vec_t One  = vec_set_16(127 * 2);
 
             const vec_t* in0 = reinterpret_cast<const vec_t*>(&(accumulation[perspectives[p]][0]));
-            const vec_t* in1 =
-              reinterpret_cast<const vec_t*>(&(accumulation[perspectives[p]][HalfDimensions / 2]));
             vec_t* out = reinterpret_cast<vec_t*>(output + offset);
 
             // Per the NNUE architecture, here we want to multiply pairs of
@@ -272,11 +286,11 @@ class FeatureTransformer {
             for (IndexType j = 0; j < NumOutputChunks; ++j)
             {
                 const vec_t sum0a =
-                  vec_slli_16(vec_max_16(vec_min_16(in0[j * 2 + 0], One), Zero), shift);
+                  vec_slli_16(vec_max_16(vec_min_16(in0[j * 4 + 0], One), Zero), shift);
+                const vec_t sum1a = vec_min_16(in0[j * 4 + 1], One);
                 const vec_t sum0b =
-                  vec_slli_16(vec_max_16(vec_min_16(in0[j * 2 + 1], One), Zero), shift);
-                const vec_t sum1a = vec_min_16(in1[j * 2 + 0], One);
-                const vec_t sum1b = vec_min_16(in1[j * 2 + 1], One);
+                  vec_slli_16(vec_max_16(vec_min_16(in0[j * 4 + 2], One), Zero), shift);
+                const vec_t sum1b = vec_min_16(in0[j * 4 + 3], One);
 
                 const vec_t pa = vec_mulhi_16(sum0a, sum1a);
                 const vec_t pb = vec_mulhi_16(sum0b, sum1b);
@@ -310,3 +324,4 @@ class FeatureTransformer {
 }  // namespace Stockfish::Eval::NNUE
 
 #endif  // #ifndef NNUE_FEATURE_TRANSFORMER_H_INCLUDED
+
