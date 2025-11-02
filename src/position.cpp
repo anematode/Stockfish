@@ -681,6 +681,11 @@ bool Position::gives_check(Move m) const {
     }
 }
 
+bool Position::discovered_check(Move m) const {
+    Square from = m.from_sq();
+    Square to = m.to_sq();
+    return (blockers_for_king(~sideToMove) & from) && !(line_bb(from, to) & pieces(~sideToMove, KING));
+}
 
 // Makes a move, and saves all information necessary
 // to a StateInfo object. The move is assumed to be legal. Pseudo-legal
