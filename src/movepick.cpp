@@ -139,7 +139,7 @@ ExtMove* MovePicker::score(MoveList<Type>& ml) {
     }
 
     ExtMove* it = cur;
-    [[maybe_unused]] ExtMove* cursors[2] = { cur, cur + ml.size() - 1 };
+    [[maybe_unused]] ExtMove* cursors[2] = { cur, cur + (ml.size() - 1) };
     for (auto move : ml)
     {
         ExtMove m{};
