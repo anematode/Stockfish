@@ -334,6 +334,8 @@ class AffineTransformSparseInput {
         }
         for (IndexType k = 0; k < NumAccums; ++k)
             acc[k] = vec_add_32(vec_add_32(acc[k], acc[k + NumAccums]), acc[k + 2 * NumAccums]);
+#else
+        #error "Test not intended for this architecture"
     #endif
         while (start < end)
         {
