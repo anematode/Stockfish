@@ -308,9 +308,12 @@ class AffineTransformSparseInput {
 
         while (start < end - 2)
         {
-            const std::ptrdiff_t i0  = *start++;
-            const std::ptrdiff_t i1  = *start++;
-            const std::ptrdiff_t i2  = *start++;
+            uint32_t indices;
+            memcpy(&indices, start, sizeof(indices));
+            const std::ptrdiff_t i0  = indices & 0x7fff;
+            const std::ptrdiff_t i1  = indices >> 16;
+            const std::ptrdiff_t i2  = start[2];
+
             const invec_t        in0 = vec_set_32(input32[i0]);
             const invec_t        in1 = vec_set_32(input32[i1]);
             const invec_t        in2 = vec_set_32(input32[i2]);
@@ -326,6 +329,8 @@ class AffineTransformSparseInput {
                 vec_add_dpbusd_32(acc[k + NumAccums], in1, col1[k]);
                 vec_add_dpbusd_32(acc[k + 2 * NumAccums], in2, col2[k]);
             }
+
+            start += 3;
         }
         for (IndexType k = 0; k < NumAccums; ++k)
             acc[k] = vec_add_32(vec_add_32(acc[k], acc[k + NumAccums]), acc[k + 2 * NumAccums]);
