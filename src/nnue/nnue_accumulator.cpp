@@ -402,7 +402,7 @@ void update_accumulator_refresh_cache(const FeatureTransformer<Dimensions>& feat
     Bitboard removed_bb, added_bb;
 
     if (goose) {
-        entry.clear(featureTransformer.biases);
+        //entry.clear(featureTransformer.biases);
         removed_bb = 0;
         added_bb = pos.pieces();
         goto quesadilla_explosion_salad;
@@ -441,9 +441,10 @@ quesadilla_explosion_salad:
             auto* accTile = \
               reinterpret_cast<vec_t*>(&accumulator.accumulation[Perspective][j * Tiling::TileHeight]); \
             auto* entryTile = reinterpret_cast<vec_t*>(&entry.accumulation[j * Tiling::TileHeight]); \
+            [[maybe_unused]] auto* biases = reinterpret_cast<const vec_t*>(&featureTransformer.biases[j * Tiling::TileHeight])\
  \
             for (IndexType k = 0; k < Tiling::NumRegs; ++k) \
-                acc[k] = entryTile[k]; \
+                acc[k] = no_removed ? biases[k] : entryTile[k]; \
  \
             int i = 0; \
             if (!no_removed) { \
