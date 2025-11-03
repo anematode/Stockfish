@@ -25,7 +25,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
-#include <vector>
 
 #include "../types.h"
 #include "nnue_architecture.h"
@@ -48,7 +47,7 @@ template<IndexType Size>
 struct alignas(CacheLineSize) Accumulator {
     std::int16_t               accumulation[COLOR_NB][Size];
     std::int32_t               psqtAccumulation[COLOR_NB][PSQTBuckets];
-    std::array<bool, COLOR_NB> computed;
+    std::array<bool, COLOR_NB> computed = {};
 };
 
 
@@ -71,8 +70,8 @@ struct AccumulatorCaches {
         struct alignas(CacheLineSize) Entry {
             BiasType       accumulation[Size];
             PSQTWeightType psqtAccumulation[PSQTBuckets];
-            Bitboard       byColorBB[COLOR_NB];
-            Bitboard       byTypeBB[PIECE_TYPE_NB];
+            Piece          pieces[SQUARE_NB];
+            Bitboard       pieceBB;
 
             // To initialize a refresh entry, we set all its bitboards empty,
             // so we put the biases in the accumulation, without any weights on top
@@ -87,7 +86,7 @@ struct AccumulatorCaches {
         void clear(const Network& network) {
             for (auto& entries1D : entries)
                 for (auto& entry : entries1D)
-                    entry.clear(network.featureTransformer->biases);
+                    entry.clear(network.featureTransformer.biases);
         }
 
         std::array<Entry, COLOR_NB>& operator[](Square sq) { return entries[sq]; }
@@ -141,10 +140,6 @@ struct AccumulatorState {
 
 class AccumulatorStack {
    public:
-    AccumulatorStack() :
-        accumulators(MAX_PLY + 1),
-        size{1} {}
-
     [[nodiscard]] const AccumulatorState& latest() const noexcept;
 
     void reset() noexcept;
@@ -181,8 +176,8 @@ class AccumulatorStack {
                                      const std::size_t                     end,
                                      TransformedFeatureType* output) noexcept;
 
-    std::vector<AccumulatorState> accumulators;
-    std::size_t                   size;
+    std::array<AccumulatorState, MAX_PLY + 1> accumulators;
+    std::size_t                               size = 1;
 };
 
 }  // namespace Stockfish::Eval::NNUE
