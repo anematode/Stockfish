@@ -323,12 +323,24 @@ class AffineTransformSparseInput {
             const invec_t        in0 = vec_set_32(input32[i0]);
             const invec_t        in1 = vec_set_32(input32[i1]);
             const invec_t        in2 = vec_set_32(input32[i2]);
+
+#define BARRIER(x) asm ("" : "+r"(x))
+
+            auto i0_8 = i0 * 8;
+            BARRIER(i0_8);
             const auto           col0 =
-              reinterpret_cast<const invec_t*>(&weights_cp[i0 * OutputDimensions * ChunkSize]);
+              reinterpret_cast<const invec_t*>(&weights_cp[i0_8 * (OutputDimensions * ChunkSize / 8)]);
+
+            auto i1_8 = i1 * 8;
+            BARRIER(i1_8);
             const auto col1 =
-              reinterpret_cast<const invec_t*>(&weights_cp[i1 * OutputDimensions * ChunkSize]);
+              reinterpret_cast<const invec_t*>(&weights_cp[i1_8 * (OutputDimensions * ChunkSize / 8)]);
+
+            auto i2_8 = i2 * 8;
+            BARRIER(i2_8);
             const auto col2 =
-              reinterpret_cast<const invec_t*>(&weights_cp[i2 * OutputDimensions * ChunkSize]);
+              reinterpret_cast<const invec_t*>(&weights_cp[i2_8 * (OutputDimensions * ChunkSize / 8)]);
+
             for (IndexType k = 0; k < NumAccums; ++k)
             {
                 vec_add_dpbusd_32(acc[k], in0, col0[k]);
