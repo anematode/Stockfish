@@ -432,18 +432,6 @@ void update_accumulator_refresh_cache(const FeatureTransformer<Dimensions>& feat
             acc[k] = entryTile[k];
 
         IndexType i = 0;
-        for (; i < std::min(removed.size(), added.size()); ++i)
-        {
-            IndexType       indexR  = removed[i];
-            const IndexType offsetR = Dimensions * indexR + j * Tiling::TileHeight;
-            auto* columnR = reinterpret_cast<const vec_t*>(&featureTransformer.weights[offsetR]);
-            IndexType       indexA  = added[i];
-            const IndexType offsetA = Dimensions * indexA + j * Tiling::TileHeight;
-            auto* columnA = reinterpret_cast<const vec_t*>(&featureTransformer.weights[offsetA]);
-
-            for (IndexType k = 0; k < Tiling::NumRegs; ++k)
-                acc[k] = fused<Vec16Wrapper, Add, Sub>(acc[k], columnA[k], columnR[k]);
-        }
         for (; i < removed.size(); ++i)
         {
             IndexType       index  = removed[i];
@@ -453,7 +441,7 @@ void update_accumulator_refresh_cache(const FeatureTransformer<Dimensions>& feat
             for (IndexType k = 0; k < Tiling::NumRegs; ++k)
                 acc[k] = vec_sub_16(acc[k], column[k]);
         }
-        for (; i < added.size(); ++i)
+        for (i = 0; i < added.size(); ++i)
         {
             IndexType       index  = added[i];
             const IndexType offset = Dimensions * index + j * Tiling::TileHeight;
