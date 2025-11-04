@@ -356,10 +356,12 @@ struct AccumulatorUpdateContext {
                 IndexType       index  = removed[i];
                 const IndexType offset = Dimensions * index + j * Tiling::TileHeight;
                 auto*           column =
-                  reinterpret_cast<const vec_i8_t*>(&featureTransformer.threatWeights[offset]);
+                  reinterpret_cast<const int8x16_t*>(&featureTransformer.threatWeights[offset]);
 
-                for (IndexType k = 0; k < Tiling::NumRegs; ++k)
-                    acc[k] = vec_sub_16(acc[k], vec_convert_8_16(column[k]));
+                for (IndexType k = 0; k < Tiling::NumRegs; k += 2) {
+                    acc[k] = vec_sub_16(acc[k], vmovl_s8(vget_low_s8(column[k / 2])));
+                    acc[k+1] = vec_sub_16(acc[k+1], vmovl_high_s8(column[k / 2]));
+                }
             }
 
             for (IndexType i = 0; i < added.size(); ++i)
@@ -367,10 +369,12 @@ struct AccumulatorUpdateContext {
                 IndexType       index  = added[i];
                 const IndexType offset = Dimensions * index + j * Tiling::TileHeight;
                 auto*           column =
-                  reinterpret_cast<const vec_i8_t*>(&featureTransformer.threatWeights[offset]);
+                  reinterpret_cast<const int8x16_t*>(&featureTransformer.threatWeights[offset]);
 
-                for (IndexType k = 0; k < Tiling::NumRegs; ++k)
-                    acc[k] = vec_add_16(acc[k], vec_convert_8_16(column[k]));
+                for (IndexType k = 0; k < Tiling::NumRegs; k += 2) {
+                    acc[k] = vec_add_16(acc[k], vmovl_s8(vget_low_s8(column[k / 2])));
+                    acc[k+1] = vec_add_16(acc[k+1], vmovl_high_s8(column[k / 2]));
+                }
             }
 
             for (IndexType k = 0; k < Tiling::NumRegs; k++)
@@ -804,10 +808,12 @@ void update_threats_accumulator_full(const FeatureTransformer<Dimensions>& featu
             IndexType       index  = active[i];
             const IndexType offset = Dimensions * index + j * Tiling::TileHeight;
             auto*           column =
-              reinterpret_cast<const vec_i8_t*>(&featureTransformer.threatWeights[offset]);
+              reinterpret_cast<const int8x16_t*>(&featureTransformer.threatWeights[offset]);
 
-            for (IndexType k = 0; k < Tiling::NumRegs; ++k)
-                acc[k] = vec_add_16(acc[k], vec_convert_8_16(column[k]));
+            for (IndexType k = 0; k < Tiling::NumRegs; k += 2) {
+                acc[k] = vec_add_16(acc[k], vmovl_s8(vget_low_s8(column[k / 2])));
+                acc[k + 1] = vec_add_16(acc[k + 1], vmovl_high_s8(column[k / 2]));
+            }
         }
 
         for (IndexType k = 0; k < Tiling::NumRegs; k++)
