@@ -401,15 +401,23 @@ void update_accumulator_refresh_cache(const FeatureTransformer<Dimensions>& feat
     Bitboard       removed_bb = changed_bb & entry.pieceBB;
     Bitboard       added_bb   = changed_bb & pos.pieces();
 
-    while (removed_bb)
-    {
+    auto remove_one = [&] () {
         Square sq = pop_lsb(removed_bb);
         removed.push_back(FeatureSet::make_index<Perspective>(sq, entry.pieces[sq], ksq));
-    }
-    while (added_bb)
-    {
+    };
+    auto add_one = [&] () {
         Square sq = pop_lsb(added_bb);
         added.push_back(FeatureSet::make_index<Perspective>(sq, pos.piece_on(sq), ksq));
+    };
+
+    if (popcount(removed_bb) == popcount(added_bb)) {
+        while (removed_bb) {
+            remove_one();
+            add_one();
+        }
+    } else {
+        while (removed_bb) remove_one();
+        while (added_bb) add_one();
     }
 
     entry.pieceBB = pos.pieces();
