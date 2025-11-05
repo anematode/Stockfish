@@ -227,7 +227,8 @@ struct AccumulatorUpdateContext {
         from{accF},
         to{accT} {}
 
-    template<UpdateOperation... ops,
+    template<bool PsqtOnly,
+        UpdateOperation... ops,
              typename... Ts,
              std::enable_if_t<is_all_same_v<IndexType, Ts...>, bool> = true>
     void apply(const Ts... indices) {
@@ -239,9 +240,11 @@ struct AccumulatorUpdateContext {
             return &featureTransformer.psqtWeights[index * PSQTBuckets];
         };
 
-        fused_row_reduce<Vec16Wrapper, Dimensions, ops...>(
-          (from.acc<Dimensions>()).accumulation[Perspective],
-          (to.acc<Dimensions>()).accumulation[Perspective], to_weight_vector(indices)...);
+        if constexpr (!PsqtOnly) {
+            fused_row_reduce<Vec16Wrapper, Dimensions, ops...>(
+              (from.acc<Dimensions>()).accumulation[Perspective],
+              (to.acc<Dimensions>()).accumulation[Perspective], to_weight_vector(indices)...);
+        }
 
         fused_row_reduce<Vec32Wrapper, PSQTBuckets, ops...>(
           (from.acc<Dimensions>()).psqtAccumulation[Perspective],
@@ -289,16 +292,71 @@ void double_inc_update(const FeatureTransformer<TransformedFeatureDimensions>& f
 
     if (removed.size() == 2)
     {
-        updateContext.template apply<Add, Sub, Sub>(added[0], removed[0], removed[1]);
+        updateContext.template apply<false, Add, Sub, Sub>(added[0], removed[0], removed[1]);
     }
     else
     {
-        updateContext.template apply<Add, Sub, Sub, Sub>(added[0], removed[0], removed[1],
+        updateContext.template apply<false, Add, Sub, Sub, Sub>(added[0], removed[0], removed[1],
                                                          removed[2]);
     }
 
     target_state.acc<TransformedFeatureDimensions>().computed[Perspective] = true;
 }
+
+struct LRUCache {
+    static constexpr int CacheEntries = 8;
+
+    alignas(16) uint16_t last_used[CacheEntries] = {};
+    alignas(32) int32_t pair[CacheEntries] = {0};
+
+    alignas(64) uint16_t diffs[CacheEntries][TransformedFeatureDimensionsBig];
+
+    LRUCache() {
+    }
+
+    int get_lru(const __m128i data) {
+        auto index = _mm_cvtsi128_si32(_mm_minpos_epu16(data)) >> 16;
+        assert(0 <= index && index < CacheEntries);
+        return index;
+    }
+
+    template <bool DoReplace>
+    std::pair<uint16_t *, bool> get_entry(int key) {
+        const __m256i splat = _mm256_set1_epi32(key);
+        __m256i pairs = _mm256_load_si256((const __m256i*) pair);
+        const __m256i eq_mask_v = _mm256_cmpeq_epi32(splat, pairs);
+
+        int eq_mask = _mm256_movemask_ps(_mm256_castsi256_ps(eq_mask_v));
+
+        __m128i data = _mm_loadu_si128(reinterpret_cast<const __m128i*>(last_used));
+
+        if (!eq_mask) {
+            if constexpr (!DoReplace) {
+                return { nullptr, false };
+            }
+            // Perform cache replacement
+            int index = get_lru(data);
+            last_used[index] = UINT16_MAX;
+            pair[index] = key;
+            return { diffs[index], false };
+        }
+
+        assert((eq_mask & (eq_mask - 1)) == 0); // only one should be set
+        int index = lsb(eq_mask);
+
+        for (int i = 0; i < CacheEntries; i++) {
+            last_used[i]--;
+        }
+        last_used[index] = UINT16_MAX;
+
+        // Ages all entries and sets the used one to UINT16_MAX
+        return { diffs[index], true };
+    }
+};
+
+constexpr int CacheCount = 8;
+LRUCache cache[CacheCount];
+int insertion_timer;
 
 template<Color Perspective, bool Forward, IndexType TransformedFeatureDimensions>
 void update_accumulator_incremental(
@@ -340,22 +398,73 @@ void update_accumulator_incremental(
     if ((Forward && removed.size() == 1) || (!Forward && added.size() == 1))
     {
         assert(added.size() == 1 && removed.size() == 1);
-        updateContext.template apply<Add, Sub>(added[0], removed[0]);
+        auto key = added[0] << 16 | removed[0];
+        auto cacheable = [&] (int key) {
+            return true; //(added[0] & 0xf) == (removed[0] & 0xf);
+        };
+        if (cacheable(key) && TransformedFeatureDimensions == TransformedFeatureDimensionsBig) {
+            uint16_t *addr;
+            bool hit;
+            if (insertion_timer++ % 16 == 0) {
+                insertion_timer = 1;
+                std::tie(addr, hit) = cache[key % CacheCount].get_entry<true>(key);
+            } else {
+                std::tie(addr, hit) = cache[key % CacheCount].get_entry<false>(key);
+            }
+
+            const vec_t *RESTRICT from = reinterpret_cast<const vec_t*>((computed.acc<TransformedFeatureDimensions>()).accumulation[Perspective]);
+            vec_t *RESTRICT to = reinterpret_cast<vec_t*>((target_state.acc<TransformedFeatureDimensions>()).accumulation[Perspective]);
+
+            vec_t *RESTRICT cache_addr = reinterpret_cast<vec_t*>(addr);
+            assert(cache_addr != nullptr);
+
+            constexpr IndexType Iters = TransformedFeatureDimensions * sizeof(WeightType) / sizeof(vec_t);
+
+            // dbg_hit_on(hit);
+            if (!addr) {
+                // no cache, no insertion
+
+            } else if (hit) {
+                for (IndexType i = 0; i < Iters; ++i) {
+                    to[i] = vec_add_16(from[i], cache_addr[i]);
+                }
+                goto out;
+            } else {
+                auto to_weight_vector = [&](const IndexType index) {
+                    return reinterpret_cast<const vec_t*>(&featureTransformer.weights[index * TransformedFeatureDimensions]);
+                };
+
+                auto *a = to_weight_vector(added[0]);
+                auto *b = to_weight_vector(removed[0]);
+                for (IndexType i = 0; i < Iters; ++i) {
+                    auto diff = vec_sub_16(a[i], b[i]);
+                    cache_addr[i] = diff;
+                    to[i] = vec_add_16(from[i], diff);
+                }
+                goto out;
+            }
+        }
+
+        updateContext.template apply<false, Add, Sub>(added[0], removed[0]);
+        if (false) {
+            out:
+            updateContext.template apply<true, Add, Sub>(added[0], removed[0]);
+        }
     }
     else if (Forward && added.size() == 1)
     {
         assert(removed.size() == 2);
-        updateContext.template apply<Add, Sub, Sub>(added[0], removed[0], removed[1]);
+        updateContext.template apply<false, Add, Sub, Sub>(added[0], removed[0], removed[1]);
     }
     else if (!Forward && removed.size() == 1)
     {
         assert(added.size() == 2);
-        updateContext.template apply<Add, Add, Sub>(added[0], added[1], removed[0]);
+        updateContext.template apply<false, Add, Add, Sub>(added[0], added[1], removed[0]);
     }
     else
     {
         assert(added.size() == 2 && removed.size() == 2);
-        updateContext.template apply<Add, Add, Sub, Sub>(added[0], added[1], removed[0],
+        updateContext.template apply<false, Add, Add, Sub, Sub>(added[0], added[1], removed[0],
                                                          removed[1]);
     }
 
