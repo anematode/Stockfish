@@ -401,10 +401,24 @@ void update_accumulator_refresh_cache(const FeatureTransformer<Dimensions>& feat
     Bitboard       removed_bb = changed_bb & entry.pieceBB;
     Bitboard       added_bb   = changed_bb & pos.pieces();
 
+    auto prefetch_weights = [&] (IndexType index) {
+        auto addr = reinterpret_cast<const char*>(&featureTransformer.weights[Dimensions * index]);
+        constexpr int CacheLineCount = sizeof(vec_t) * Tiling::NumRegs / CacheLineSize;
+        if constexpr (CacheLineCount <= 4) {
+            for (int i = 0; i < CacheLineCount; ++i) {
+                prefetch(addr + CacheLineCount * i);
+            }
+        } else {
+            static_assert("Test not intended for this arch");
+        }
+    };
+
     while (removed_bb)
     {
         Square sq = pop_lsb(removed_bb);
-        removed.push_back(FeatureSet::make_index<Perspective>(sq, entry.pieces[sq], ksq));
+        IndexType index = FeatureSet::make_index<Perspective>(sq, entry.pieces[sq], ksq);
+        removed.push_back(index);
+        prefetch_weights(index);
     }
     while (added_bb)
     {
@@ -437,12 +451,16 @@ void update_accumulator_refresh_cache(const FeatureTransformer<Dimensions>& feat
             IndexType       indexR  = removed[i];
             const IndexType offsetR = Dimensions * indexR + j * Tiling::TileHeight;
             auto* columnR = reinterpret_cast<const vec_t*>(&featureTransformer.weights[offsetR]);
+
+            for (IndexType k = 0; k < Tiling::NumRegs; ++k)
+                acc[k] = vec_sub_16(acc[k], columnR[k]);
+
             IndexType       indexA  = added[i];
             const IndexType offsetA = Dimensions * indexA + j * Tiling::TileHeight;
             auto* columnA = reinterpret_cast<const vec_t*>(&featureTransformer.weights[offsetA]);
 
             for (IndexType k = 0; k < Tiling::NumRegs; ++k)
-                acc[k] = fused<Vec16Wrapper, Add, Sub>(acc[k], columnA[k], columnR[k]);
+                acc[k] = vec_add_16(acc[k], columnA[k]);
         }
         for (; i < removed.size(); ++i)
         {
