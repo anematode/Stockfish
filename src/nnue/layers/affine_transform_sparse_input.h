@@ -309,6 +309,13 @@ class AffineTransformSparseInput {
         const auto* start = nnz;
         const auto* end   = nnz + count;
 
+#if defined(__GNUC__) && !defined(USE_NEON)
+        auto times_8 = [] (std::ptrdiff_t v) { auto y = 8 * (v); asm ("" : "+r"(y)); return y; };
+#else
+        static_assert(false && "Test not intended for this architecture");
+        auto times_8 = [] (std::ptrdiff_t x) { return (8 * (x)); };
+#endif
+
         // convince GCC to not do weird pointer arithmetic in the following loop
         const std::int8_t* weights_cp = weights;
     #if defined(USE_VNNI)
@@ -324,22 +331,12 @@ class AffineTransformSparseInput {
             const invec_t        in1 = vec_set_32(input32[i1]);
             const invec_t        in2 = vec_set_32(input32[i2]);
 
-#define BARRIER(x) asm ("" : "+r"(x))
-
-            auto i0_8 = i0 * 8;
-            BARRIER(i0_8);
             const auto           col0 =
-              reinterpret_cast<const invec_t*>(&weights_cp[i0_8 * (OutputDimensions * ChunkSize / 8)]);
-
-            auto i1_8 = i1 * 8;
-            BARRIER(i1_8);
+              reinterpret_cast<const invec_t*>(&weights_cp[times_8(i0) * (OutputDimensions * ChunkSize / 8)]);
             const auto col1 =
-              reinterpret_cast<const invec_t*>(&weights_cp[i1_8 * (OutputDimensions * ChunkSize / 8)]);
-
-            auto i2_8 = i2 * 8;
-            BARRIER(i2_8);
+              reinterpret_cast<const invec_t*>(&weights_cp[times_8(i1) * (OutputDimensions * ChunkSize / 8)]);
             const auto col2 =
-              reinterpret_cast<const invec_t*>(&weights_cp[i2_8 * (OutputDimensions * ChunkSize / 8)]);
+              reinterpret_cast<const invec_t*>(&weights_cp[times_8(i2) * (OutputDimensions * ChunkSize / 8)]);
 
             for (IndexType k = 0; k < NumAccums; ++k)
             {
@@ -350,15 +347,13 @@ class AffineTransformSparseInput {
         }
         for (IndexType k = 0; k < NumAccums; ++k)
             acc[k] = vec_add_32(vec_add_32(acc[k], acc[k + NumAccums]), acc[k + 2 * NumAccums]);
-#else
-        static_assert("Test not intended for this architecture!");
-    #endif
+#endif
         while (start < end)
         {
             const std::ptrdiff_t i  = *start++;
             const invec_t        in = vec_set_32(input32[i]);
             const auto           col =
-              reinterpret_cast<const invec_t*>(&weights_cp[i * OutputDimensions * ChunkSize]);
+              reinterpret_cast<const invec_t*>(&weights_cp[times_8(i) * (OutputDimensions * ChunkSize / 8)]);
             for (IndexType k = 0; k < NumAccums; ++k)
                 vec_add_dpbusd_32(acc[k], in, col[k]);
         }
@@ -373,7 +368,6 @@ class AffineTransformSparseInput {
         #undef vec_add_32
     #endif
 #else
-        static_assert("Test not intended for this architecture!");
 
         // Use dense implementation for the other architectures.
         affine_transform_non_ssse3<InputDimensions, PaddedInputDimensions, OutputDimensions>(
