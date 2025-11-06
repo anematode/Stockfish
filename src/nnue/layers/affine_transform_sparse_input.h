@@ -390,8 +390,8 @@ class AffineTransformSparseInput {
     using BiasType   = OutputType;
     using WeightType = std::int8_t;
 
-    alignas(CacheLineSize) BiasType biases[OutputDimensions];
     alignas(CacheLineSize) WeightType weights[OutputDimensions * PaddedInputDimensions];
+    alignas(CacheLineSize) BiasType biases[OutputDimensions];
 };
 
 }  // namespace Stockfish::Eval::NNUE::Layers
