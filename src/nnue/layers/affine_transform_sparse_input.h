@@ -317,9 +317,9 @@ class AffineTransformSparseInput {
 
         while (start < end - 2)
         {
-            const std::ptrdiff_t i0  = *start++;
-            const std::ptrdiff_t i1  = *start++;
-            const std::ptrdiff_t i2  = *start++;
+            std::ptrdiff_t i0  = *start++;
+            std::ptrdiff_t i1  = *start++;
+            std::ptrdiff_t i2  = *start++;
             const invec_t        in0 = vec_set_32(input32[i0]);
             const invec_t        in1 = vec_set_32(input32[i1]);
             const invec_t        in2 = vec_set_32(input32[i2]);
@@ -327,25 +327,23 @@ class AffineTransformSparseInput {
             // Normally, GCC and clang (sensibly) calculate the offset with a shift by 5 or 6. By compelling the
             // compiler to compute index * 8, the remaining scale (by 4 or by 8) can be folded into the memory
             // operand of the dot product instructions, while index * 8 becomes an LEA instruction, faster than a shift.
+            // clang pessimizes the scale to a shl by 3, so force an LEA here.
 #ifdef __GNUC__
-#define BARRIER(x) asm ("" : "+r"(x))
+#define SCALE_8(x) asm ("leaq (,%0,8),%0" : "+r"(x))
 #else
-#define BARRIER(x)
+#define SCALE_8(x) x *= 8
 #endif
-            auto i0_8 = i0 * 8;
-            BARRIER(i0_8);
+            SCALE_8(i0);
             const auto           col0 =
-              reinterpret_cast<const invec_t*>(&weights_cp[i0_8 * (OutputDimensions * ChunkSize / 8)]);
+              reinterpret_cast<const invec_t*>(&weights_cp[i0 * (OutputDimensions * ChunkSize / 8)]);
 
-            auto i1_8 = i1 * 8;
-            BARRIER(i1_8);
+            SCALE_8(i1);
             const auto col1 =
-              reinterpret_cast<const invec_t*>(&weights_cp[i1_8 * (OutputDimensions * ChunkSize / 8)]);
+              reinterpret_cast<const invec_t*>(&weights_cp[i1 * (OutputDimensions * ChunkSize / 8)]);
 
-            auto i2_8 = i2 * 8;
-            BARRIER(i2_8);
+            SCALE_8(i2);
             const auto col2 =
-              reinterpret_cast<const invec_t*>(&weights_cp[i2_8 * (OutputDimensions * ChunkSize / 8)]);
+              reinterpret_cast<const invec_t*>(&weights_cp[i2 * (OutputDimensions * ChunkSize / 8)]);
 #undef BARRIER
 
             for (IndexType k = 0; k < NumAccums; ++k)
