@@ -252,6 +252,9 @@ class AffineTransformSparseInput {
 
     // Forward propagation
     void propagate(const InputType* input, OutputType* output) const {
+#ifndef USE_VNNI
+#error "Test not intended for this architecture"
+#endif
 
 #if (USE_SSSE3 | (USE_NEON >= 8))
     #if defined(USE_AVX512)
