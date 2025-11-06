@@ -351,7 +351,7 @@ class AffineTransformSparseInput {
         for (IndexType k = 0; k < NumAccums; ++k)
             acc[k] = vec_add_32(vec_add_32(acc[k], acc[k + NumAccums]), acc[k + 2 * NumAccums]);
 #else
-        static_assert("Test not intended for this architecture!");
+        static_assert(false && "Test not intended for this architecture!");
     #endif
         while (start < end)
         {
@@ -373,7 +373,7 @@ class AffineTransformSparseInput {
         #undef vec_add_32
     #endif
 #else
-        static_assert("Test not intended for this architecture!");
+        static_assert(false && "Test not intended for this architecture!");
 
         // Use dense implementation for the other architectures.
         affine_transform_non_ssse3<InputDimensions, PaddedInputDimensions, OutputDimensions>(
