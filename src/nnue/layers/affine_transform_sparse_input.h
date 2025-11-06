@@ -323,6 +323,10 @@ class AffineTransformSparseInput {
             const invec_t        in0 = vec_set_32(input32[i0]);
             const invec_t        in1 = vec_set_32(input32[i1]);
             const invec_t        in2 = vec_set_32(input32[i2]);
+            // The scale factor when loading from the weights vector is sizeof(invec_t) == either 2^5 or 2^6.
+            // Normally, GCC and clang (sensibly) calculate the offset with a shift by 5 or 6. By compelling the
+            // compiler to compute index * 8, the remaining scale (by 4 or by 8) can be folded into the memory
+            // operand of the dot product instructions, while index * 8 becomes an LEA instruction, faster than a shift.
 #ifdef __GNUC__
 #define BARRIER(x) asm ("" : "+r"(x))
 #else
