@@ -330,23 +330,24 @@ class AffineTransformSparseInput {
             // Normally, GCC and clang (sensibly) calculate the offset with a shift by 5 or 6. By compelling the
             // compiler to compute index * 8, the remaining scale (by 4 or by 8) can be folded into the memory
             // operand of the dot product instructions, while index * 8 becomes an LEA instruction, faster than a shift.
-            // clang pessimizes the scale to a shl by 3, so force an LEA here.
+            std::ptrdiff_t i0_8, i1_8, i2_8;
 #ifdef __GNUC__
-#define SCALE_8(x) asm ("leaq (,%0,8),%0" : "+r"(x))
+            // clang pessimizes the scale to a shl by 3 (probably for code size), so force an LEA here.
+#define SCALE_8(x) asm ("leaq (,%1,8),%0" : "=r"(x##_8) :  "r"(x))
 #else
-#define SCALE_8(x) x *= 8
+#define SCALE_8(x) x##_8 = x * 8
 #endif
             SCALE_8(i0);
-            const auto           col0 =
-              reinterpret_cast<const invec_t*>(&weights_cp[i0 * (OutputDimensions * ChunkSize / 8)]);
-
             SCALE_8(i1);
-            const auto col1 =
-              reinterpret_cast<const invec_t*>(&weights_cp[i1 * (OutputDimensions * ChunkSize / 8)]);
-
             SCALE_8(i2);
+            const auto           col0 =
+              reinterpret_cast<const invec_t*>(&weights_cp[i0_8 * (OutputDimensions * ChunkSize / 8)]);
+
+            const auto col1 =
+              reinterpret_cast<const invec_t*>(&weights_cp[i1_8 * (OutputDimensions * ChunkSize / 8)]);
+
             const auto col2 =
-              reinterpret_cast<const invec_t*>(&weights_cp[i2 * (OutputDimensions * ChunkSize / 8)]);
+              reinterpret_cast<const invec_t*>(&weights_cp[i2_8 * (OutputDimensions * ChunkSize / 8)]);
 #undef BARRIER
 
             for (IndexType k = 0; k < NumAccums; ++k)
