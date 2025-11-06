@@ -378,7 +378,6 @@ class AffineTransformSparseInput {
         #undef vec_add_32
     #endif
 #else
-
         // Use dense implementation for the other architectures.
         affine_transform_non_ssse3<InputDimensions, PaddedInputDimensions, OutputDimensions>(
           output, weights, biases, input);
