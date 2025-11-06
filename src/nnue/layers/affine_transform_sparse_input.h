@@ -323,9 +323,11 @@ class AffineTransformSparseInput {
             const invec_t        in0 = vec_set_32(input32[i0]);
             const invec_t        in1 = vec_set_32(input32[i1]);
             const invec_t        in2 = vec_set_32(input32[i2]);
-
+#ifdef __GNUC__
 #define BARRIER(x) asm ("" : "+r"(x))
-
+#else
+#define BARRIER(x)
+#endif
             auto i0_8 = i0 * 8;
             BARRIER(i0_8);
             const auto           col0 =
@@ -340,6 +342,7 @@ class AffineTransformSparseInput {
             BARRIER(i2_8);
             const auto col2 =
               reinterpret_cast<const invec_t*>(&weights_cp[i2_8 * (OutputDimensions * ChunkSize / 8)]);
+#undef BARRIER
 
             for (IndexType k = 0; k < NumAccums; ++k)
             {
@@ -350,8 +353,6 @@ class AffineTransformSparseInput {
         }
         for (IndexType k = 0; k < NumAccums; ++k)
             acc[k] = vec_add_32(vec_add_32(acc[k], acc[k + NumAccums]), acc[k + 2 * NumAccums]);
-#else
-        static_assert(false && "Test not intended for this architecture!");
     #endif
         while (start < end)
         {
@@ -373,7 +374,6 @@ class AffineTransformSparseInput {
         #undef vec_add_32
     #endif
 #else
-        static_assert(false && "Test not intended for this architecture!");
 
         // Use dense implementation for the other architectures.
         affine_transform_non_ssse3<InputDimensions, PaddedInputDimensions, OutputDimensions>(
