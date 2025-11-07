@@ -27,6 +27,52 @@ namespace Stockfish::Eval::NNUE::Features {
 
 // Lookup array for indexing threats
 IndexType offsets[PIECE_NB][SQUARE_NB + 2];
+constexpr int LUT_SIZE = 1 << 20;
+struct Index {
+    uint8_t data[3];
+    Index() {}
+    Index(uint32_t v) {
+        memcpy(&data[0], &v, 3);
+        assert(*this == v);
+    }
+    operator uint32_t() const {
+        uint32_t v = 0;
+        memcpy(&v, &data[0], 3);
+        return v;
+    }
+};
+uint32_t index_lut[LUT_SIZE];
+
+void init() {
+    for (int data = 0; data < LUT_SIZE; ++data) {
+        uint32_t goose;
+        Piece attkr = Piece(data >> 16 & 15);
+        Piece attkd = Piece(data >> 6 & 15);
+        Square to = Square(data & 63);
+        Square from = Square(data >> 10 & 63);
+        // return index_lut[attkr << 16 | from << 10 | attkd << 6 | to << 0];
+        if (attkr == NO_PIECE || attkd == NO_PIECE) continue;
+        bool enemy = (attkr ^ attkd) == 8;
+
+        // Some threats imply the existence of the corresponding ones in the opposite
+        // direction. We filter them here to ensure only one such threat is active.
+        if ((FullThreats::map[type_of(attkr) - 1][type_of(attkd) - 1] < 0)
+            || (type_of(attkr) == type_of(attkd) && (enemy || type_of(attkr) != PAWN) && from < to))
+        {
+            goose = FullThreats::Dimensions;
+        } else {
+            Bitboard attacks = attacks_bb(attkr, from);
+
+            goose = (
+              offsets[attkr][65]
+              + (color_of(attkd) * (numValidTargets[attkr] / 2) + FullThreats::map[type_of(attkr) - 1][type_of(attkd) - 1])
+                  * offsets[attkr][64]
+              + offsets[attkr][from] + popcount((square_bb(to) - 1) & attacks));
+        }
+
+        index_lut[data] = goose;
+    }
+}
 
 void init_threat_offsets() {
     int       cumulativeOffset     = 0;
@@ -64,6 +110,8 @@ void init_threat_offsets() {
 
         cumulativeOffset += numValidTargets[pieceIdx] * cumulativePieceOffset;
     }
+
+    init();
 }
 
 // Index of a feature for a given king position and another piece on some square
@@ -78,6 +126,9 @@ IndexType FullThreats::make_index(Piece attkr, Square from, Square to, Piece att
         attkr = ~attkr;
         attkd = ~attkd;
     }
+
+    int idx = attkr << 16 | from << 10 | attkd << 6 | to << 0;
+    return index_lut[idx];
 
     // Some threats imply the existence of the corresponding ones in the opposite
     // direction. We filter them here to ensure only one such threat is active.
