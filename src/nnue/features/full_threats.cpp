@@ -188,8 +188,13 @@ void FullThreats::append_changed_indices(Square           ksq,
                                          IndexList&       added,
                                          FusedUpdateData* fusedData,
                                          bool             first) {
-    for (const auto [attacker, attacked, from, to, add] : diff.list)
+    for (const auto dirty : diff.list)
     {
+        auto attacker = dirty.pc();
+        auto attacked = dirty.threatened_pc();
+        auto from = dirty.pc_sq();
+        auto to = dirty.threatened_sq();
+        auto add = dirty.add();
         if (fusedData) {
             if (from == fusedData->dp2removed) {
                if (add) {
