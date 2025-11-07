@@ -338,8 +338,14 @@ struct AccumulatorUpdateContext {
         const auto fromPsqtAcc = from.template acc<Dimensions>().psqtAccumulation[Perspective];
         const auto toPsqtAcc   = to.template acc<Dimensions>().psqtAccumulation[Perspective];
 
+        if (removed.size() == 0 && added.size() == 0) {
+            std::copy_n(fromAcc, Dimensions, toAcc);
+            std::copy_n(toPsqtAcc, PSQTBuckets, toPsqtAcc);
+            return;
+        }
+
 #ifdef VECTOR
-        using Tiling = SIMDTiling<Dimensions, Dimensions, PSQTBuckets>;
+        using Tiling = SIMDTiling<Dimensions, Dimensions, PSQTBuckets, /*NeedsTemp=*/true>;
         vec_t      acc[Tiling::NumRegs];
         psqt_vec_t psqt[Tiling::NumPsqtRegs];
 

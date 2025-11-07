@@ -123,7 +123,7 @@ using vec_uint_t = __m256i;
     #define vec128_storeu(a, b) _mm_storeu_si128(a, b)
     #define vec128_add(a, b) _mm_add_epi16(a, b)
 
-    #define NumRegistersSIMD 16
+    #define NumRegistersSIMD 12
     #define MaxChunkSize 32
 
 #elif USE_SSE2
@@ -354,7 +354,7 @@ dotprod_m128_add_dpbusd_epi32(int32x4_t& acc, int8x16_t a, int8x16_t b) {
 
 
 // Compute optimal SIMD register count for feature transformer accumulation.
-template<IndexType TransformedFeatureWidth, IndexType HalfDimensions, IndexType PSQTBuckets>
+template<IndexType TransformedFeatureWidth, IndexType HalfDimensions, IndexType PSQTBuckets, bool NeedsTemp = false>
 class SIMDTiling {
 #ifdef VECTOR
         // We use __m* types as template arguments, which causes GCC to emit warnings
@@ -395,7 +395,7 @@ class SIMDTiling {
 
    public:
     static constexpr int NumRegs =
-      BestRegisterCount<vec_t, WeightType, TransformedFeatureWidth, NumRegistersSIMD>();
+      BestRegisterCount<vec_t, WeightType, TransformedFeatureWidth, NeedsTemp ? NumRegistersSIMD * 3/4 : NumRegistersSIMD>();
     static constexpr int NumPsqtRegs =
       BestRegisterCount<psqt_vec_t, PSQTWeightType, PSQTBuckets, NumRegistersSIMD>();
 
