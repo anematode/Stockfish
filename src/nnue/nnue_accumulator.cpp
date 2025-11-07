@@ -340,7 +340,7 @@ struct AccumulatorUpdateContext {
 
         if (removed.size() == 0 && added.size() == 0) {
             std::copy_n(fromAcc, Dimensions, toAcc);
-            std::copy_n(toPsqtAcc, PSQTBuckets, toPsqtAcc);
+            std::copy_n(fromPsqtAcc, PSQTBuckets, toPsqtAcc);
             return;
         }
 
