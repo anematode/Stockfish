@@ -143,6 +143,11 @@ struct AccumulatorState {
         accumulatorBig.computed.fill(false);
         accumulatorSmall.computed.fill(false);
     }
+
+    void reset() noexcept {
+        accumulatorBig.computed.fill(false);
+        accumulatorSmall.computed.fill(false);
+    }
 };
 
 class AccumulatorStack {
@@ -153,7 +158,7 @@ class AccumulatorStack {
     [[nodiscard]] const AccumulatorState<T>& latest() const noexcept;
 
     void reset() noexcept;
-    void push(const DirtyBoardData& dirtyBoardData) noexcept;
+    std::pair<DirtyPiece*, DirtyThreats*> push() noexcept;
     void pop() noexcept;
 
     template<IndexType Dimensions>
