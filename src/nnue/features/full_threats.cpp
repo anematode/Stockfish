@@ -127,8 +127,10 @@ IndexType FullThreats::make_index(Piece attkr, Square from, Square to, Piece att
         attkd = ~attkd;
     }
 
+#ifdef USE_AVX2
     int idx = attkr << 16 | from << 10 | attkd << 6 | to << 0;
     return index_lut[idx];
+#endif
 
     // Some threats imply the existence of the corresponding ones in the opposite
     // direction. We filter them here to ensure only one such threat is active.
