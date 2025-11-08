@@ -46,6 +46,7 @@ namespace Stockfish::Eval::NNUE::SIMD {
 #define VECTOR
 
 #ifdef USE_AVX512
+	#error "Test not intended for this architecture"
 using vec_t      = __m512i;
 using vec_i8_t   = __m256i;
 using vec128_t   = __m128i;
