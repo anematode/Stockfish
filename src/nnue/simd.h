@@ -201,6 +201,10 @@ static constexpr std::uint32_t Mask[4] = {1, 2, 4, 8};
 
 #endif
 
+#ifndef USE_AVX2
+#error "Test not intended for this architecture"
+#endif
+
 struct Vec16Wrapper {
 #ifdef VECTOR
     using type = vec_t;
