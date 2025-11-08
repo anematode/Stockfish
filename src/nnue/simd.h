@@ -123,7 +123,7 @@ using vec_uint_t = __m256i;
     #define vec128_storeu(a, b) _mm_storeu_si128(a, b)
     #define vec128_add(a, b) _mm_add_epi16(a, b)
 
-    #define NumRegistersSIMD 16
+    #define NumRegistersSIMD 12
     #define MaxChunkSize 32
 
 #elif USE_SSE2
