@@ -206,7 +206,7 @@ void FullThreats::append_changed_indices(Square           ksq,
                 if (add) {
                     if (first) {
                         fusedData->dp2removedTargetBoard |= square_bb(from);
-                    continue;
+                        continue;
                     }
                 } else if (fusedData->dp2removedTargetBoard & square_bb(from)) {
                     continue;
@@ -216,13 +216,9 @@ void FullThreats::append_changed_indices(Square           ksq,
 
         IndexType index = make_index<Perspective>(attacker, from, to, attacked, ksq);
 
-        if (index == Dimensions)
-            continue;
-
-        if (add)
-            added.push_back(index);
-        else
-            removed.push_back(index);
+        if (index != Dimensions) {
+            (add ? added : removed).push_back(index);
+        }
     }
 }
 
