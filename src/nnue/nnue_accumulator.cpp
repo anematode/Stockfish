@@ -339,7 +339,7 @@ struct AccumulatorUpdateContext {
         const auto toPsqtAcc   = to.template acc<Dimensions>().psqtAccumulation[Perspective];
 
 #ifdef VECTOR
-        using Tiling = SIMDTiling<Dimensions, Dimensions, PSQTBuckets>;
+        using Tiling = SIMDTiling<Dimensions, Dimensions, PSQTBuckets, true>;
         vec_t      acc[Tiling::NumRegs];
         psqt_vec_t psqt[Tiling::NumPsqtRegs];
 
