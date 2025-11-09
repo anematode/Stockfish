@@ -26,7 +26,8 @@
 namespace Stockfish::Eval::NNUE::Features {
 
 // Lookup array for indexing threats
-IndexType offsets[PIECE_NB][SQUARE_NB + 2];
+IndexType offsets[PIECE_NB][SQUARE_NB];
+IndexType helper_offsets[PIECE_NB][2];
 
 enum ExcludePair : int8_t {
     // Attacked/attacker pair is never excluded
@@ -63,10 +64,10 @@ static void init() {
             bool enemy = (attkr ^ attkd) == 8;
             auto map = FullThreats::map[type_of(Piece(attkr)) - 1][type_of(Piece(attkd)) - 1];
             bool semi_excluded = type_of(Piece(attkr)) == type_of(Piece(attkd)) && (enemy || type_of(Piece(attkr)) != PAWN);
-            IndexType feature = offsets[attkr][65]
+            IndexType feature = helper_offsets[attkr][1]
                 + (color_of(Piece(attkd)) * (numValidTargets[attkr] / 2) +
                     map)
-                * offsets[attkr][64];
+                * helper_offsets[attkr][0];
             index_lut1[attkr][attkd] = PiecePairData(map < 0, semi_excluded, feature);
         }
     }
@@ -112,8 +113,8 @@ void init_threat_offsets() {
             }
         }
 
-        offsets[pieceIdx][64] = cumulativePieceOffset;
-        offsets[pieceIdx][65] = cumulativeOffset;
+        helper_offsets[pieceIdx][0] = cumulativePieceOffset;
+        helper_offsets[pieceIdx][1] = cumulativeOffset;
 
         cumulativeOffset += numValidTargets[pieceIdx] * cumulativePieceOffset;
     }
@@ -123,7 +124,7 @@ void init_threat_offsets() {
 
 // Index of a feature for a given king position and another piece on some square
 template<Color Perspective>
-__attribute__((noinline)) IndexType FullThreats::make_index(Piece attkr, Square from, Square to, Piece attkd, Square ksq) {
+IndexType FullThreats::make_index(Piece attkr, Square from, Square to, Piece attkd, Square ksq) {
     from       = (Square) (int(from) ^ OrientTBL[Perspective][ksq]);
     to         = (Square) (int(to) ^ OrientTBL[Perspective][ksq]);
 
@@ -137,7 +138,7 @@ __attribute__((noinline)) IndexType FullThreats::make_index(Piece attkr, Square 
 
     // Some threats imply the existence of the corresponding ones in the opposite
     // direction. We filter them here to ensure only one such threat is active.
-    // On x86, this compiles on GCC and clang to a nice sequence:
+    // On x86, this compiles on recent GCC and clang to a nice sequence:
     //   cmp from, to             ;; 8 bit compare
     //   adc pair_info, 0         ;; 8 bit add
     //   js  .return_Dimensions   ;; branch if negative
@@ -158,6 +159,7 @@ __attribute__((noinline)) IndexType FullThreats::make_index(Piece attkr, Square 
 
     IndexType index = piece_pair_data.feature_index_base() + offsets[attkr][from] + index_lut2[attkr][from][to];
     sf_assume(index != Dimensions);
+    sf_assume(index < Dimensions);
     return index;
 }
 
