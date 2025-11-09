@@ -28,16 +28,25 @@ namespace Stockfish::Eval::NNUE::Features {
 // Lookup array for indexing threats
 IndexType offsets[PIECE_NB][SQUARE_NB + 2];
 
+enum ExcludePair : int8_t {
+    // Attacked/attacker pair is never excluded
+    NeverExclude  = 0x00,
+    // Attacked/attacker pair is excluded if from < to (i.e., it'll only be included once)
+    SometimesExclude   = 0x7f,
+    // Attacked/attacker pair is always excluded
+    AlwaysExclude = ~SometimesExclude
+};
+
 struct PiecePairData {
     uint32_t data;
     PiecePairData() {}
     PiecePairData(bool excluded_pair, bool semi_excluded_pair, IndexType feature_index_base) {
         assert(shamt <= 63);
-        data = (excluded_pair << 1 | (semi_excluded_pair && !excluded_pair)) | feature_index_base << 8;
+        ExcludePair info = excluded_pair ? AlwaysExclude : semi_excluded_pair ? SometimesExclude : NeverExclude;
+        data = info | feature_index_base << 8;
     }
-    // lsb: sometimes excluded, 2nd lsb: always excluded
-    uint8_t excluded_pair_info() const {
-        return (uint8_t)data;
+    ExcludePair pair_info() const {
+        return static_cast<ExcludePair>(data);
     }
     IndexType feature_index_base() const {
         return data >> 8;
@@ -114,11 +123,11 @@ void init_threat_offsets() {
 
 // Index of a feature for a given king position and another piece on some square
 template<Color Perspective>
-IndexType FullThreats::make_index(Piece attkr, Square from, Square to, Piece attkd, Square ksq) {
+__attribute__((noinline)) IndexType FullThreats::make_index(Piece attkr, Square from, Square to, Piece attkd, Square ksq) {
     from       = (Square) (int(from) ^ OrientTBL[Perspective][ksq]);
     to         = (Square) (int(to) ^ OrientTBL[Perspective][ksq]);
 
-    if (Perspective == BLACK)
+    if constexpr (Perspective == BLACK)
     {
         attkr = ~attkr;
         attkd = ~attkd;
@@ -128,7 +137,21 @@ IndexType FullThreats::make_index(Piece attkr, Square from, Square to, Piece att
 
     // Some threats imply the existence of the corresponding ones in the opposite
     // direction. We filter them here to ensure only one such threat is active.
-    if ((piece_pair_data.excluded_pair_info() + (int(from) < int(to))) & 2)
+    // On x86, this compiles on GCC and clang to a nice sequence:
+    //   cmp from, to             ;; 8 bit compare
+    //   adc pair_info, 0         ;; 8 bit add
+    //   js  .return_Dimensions   ;; branch if negative
+    // On other arches, we sign extend to a full 32-bit register because there's usually only add-with-carry on
+    // 32-bit registers, and the rest is identical.
+    using CompareType =
+#if defined(__x86_64__) || defined(__i386__)
+        int8_t;
+#else
+            int;
+#endif
+    using Unsigned = std::make_unsigned_t<CompareType>;
+    int lt = static_cast<Unsigned>(from) < static_cast<Unsigned>(to);
+    if (static_cast<CompareType>(piece_pair_data.pair_info() + lt) < 0)
     {
         return Dimensions;
     }
