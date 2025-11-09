@@ -124,43 +124,32 @@ void init_threat_offsets() {
 
 // Index of a feature for a given king position and another piece on some square
 template<Color Perspective>
-IndexType FullThreats::make_index(Piece attkr, Square from, Square to, Piece attkd, Square ksq) {
+    IndexType FullThreats::make_index(Piece attkr, Square from, Square to, Piece attkd, Square ksq) {
+    bool enemy = (attkr ^ attkd) == 8;
     from       = (Square) (int(from) ^ OrientTBL[Perspective][ksq]);
     to         = (Square) (int(to) ^ OrientTBL[Perspective][ksq]);
 
-    if constexpr (Perspective == BLACK)
+    if (Perspective == BLACK)
     {
         attkr = ~attkr;
         attkd = ~attkd;
     }
 
-    auto piece_pair_data = index_lut1[attkr][attkd];
-
     // Some threats imply the existence of the corresponding ones in the opposite
     // direction. We filter them here to ensure only one such threat is active.
-    // On x86, this compiles on recent GCC and clang to a nice sequence:
-    //   cmp from, to             ;; 8 bit compare
-    //   adc pair_info, 0         ;; 8 bit add
-    //   js  .return_Dimensions   ;; branch if negative
-    // On other arches, we sign extend to a full 32-bit register because there's usually only add-with-carry on
-    // 32-bit registers, and the rest is identical.
-    using CompareType =
-#if defined(__x86_64__) || defined(__i386__)
-        int8_t;
-#else
-            int;
-#endif
-    using Unsigned = std::make_unsigned_t<CompareType>;
-    int lt = static_cast<Unsigned>(from) < static_cast<Unsigned>(to);
-    if (static_cast<CompareType>(piece_pair_data.pair_info() + lt) < 0)
+    if ((map[type_of(attkr) - 1][type_of(attkd) - 1] < 0)
+        || (type_of(attkr) == type_of(attkd) && (enemy || type_of(attkr) != PAWN) && from < to))
     {
         return Dimensions;
     }
 
-    IndexType index = piece_pair_data.feature_index_base() + offsets[attkr][from] + index_lut2[attkr][from][to];
-    sf_assume(index != Dimensions);
-    sf_assume(index < Dimensions);
-    return index;
+    Bitboard attacks = attacks_bb(attkr, from);
+
+    return IndexType(
+      offsets[attkr][65]
+      + (color_of(attkd) * (numValidTargets[attkr] / 2) + map[type_of(attkr) - 1][type_of(attkd) - 1])
+          * offsets[attkr][64]
+      + offsets[attkr][from] + popcount((square_bb(to) - 1) & attacks));
 }
 
 // Get a list of indices for active features in ascending order
