@@ -538,9 +538,9 @@ void Search::Worker::do_move(
     {
         ss->currentMove = move;
         ss->continuationHistory =
-          &continuationHistory[ss->inCheck][capture][dirtyPiece->pc][move.to_sq()];
+          &continuationHistory[ss->inCheck][capture][dirtyPiece.pc][move.to_sq()];
         ss->continuationCorrectionHistory =
-          &continuationCorrectionHistory[dirtyPiece->pc][move.to_sq()];
+          &continuationCorrectionHistory[dirtyPiece.pc][move.to_sq()];
     }
 }
 

@@ -158,7 +158,7 @@ class AccumulatorStack {
     [[nodiscard]] const AccumulatorState<T>& latest() const noexcept;
 
     void reset() noexcept;
-    std::pair<DirtyPiece*, DirtyThreats*> push() noexcept;
+    std::pair<DirtyPiece&, DirtyThreats&> push() noexcept;
     void pop() noexcept;
 
     template<IndexType Dimensions>

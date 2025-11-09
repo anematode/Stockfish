@@ -689,7 +689,7 @@ bool Position::gives_check(Move m) const {
 void Position::do_move(Move                      m,
                                  StateInfo&                newSt,
                                  bool                      givesCheck,
-                                 DirtyPiece* dp_out, DirtyThreats* dthreats_out,
+                                 DirtyPiece& dp, DirtyThreats& dts,
                                  const TranspositionTable* tt = nullptr) {
 
     assert(m.is_ok());
@@ -719,15 +719,10 @@ void Position::do_move(Move                      m,
 
     bool checkEP = false;
 
-    DirtyPiece dummy1;
-    DirtyThreats dummy2;
-
-    DirtyPiece &dp = dp_out ? *dp_out : dummy1;
     dp.pc     = pc;
     dp.from   = from;
     dp.to     = to;
     dp.add_sq = SQ_NONE;
-    DirtyThreats &dts = dthreats_out ? *dthreats_out : dummy2;
     dts.us      = us;
     dts.prevKsq = square<KING>(us);
     dts.threatenedSqs = dts.threateningSqs = 0;

@@ -121,11 +121,11 @@ void AccumulatorStack::reset() noexcept {
     size = 1;
 }
 
-std::pair<DirtyPiece*, DirtyThreats*> AccumulatorStack::push() noexcept {
+std::pair<DirtyPiece&, DirtyThreats&> AccumulatorStack::push() noexcept {
     assert(size < MaxSize);
-    std::pair<DirtyPiece*, DirtyThreats*> ibis = {
-        &psq_accumulators[size].diff,
-        &threat_accumulators[size].diff,
+    std::pair<DirtyPiece&, DirtyThreats&> ibis = {
+        psq_accumulators[size].diff,
+        threat_accumulators[size].diff,
     };
     psq_accumulators[size].reset();
     threat_accumulators[size].reset();
