@@ -140,6 +140,7 @@ class ValueList {
     }
     const T* begin() const { return values_; }
     const T* end() const { return values_ + size_; }
+    T& operator[](int index) { return values_[index]; }
     const T& operator[](int index) const { return values_[index]; }
 
    private:

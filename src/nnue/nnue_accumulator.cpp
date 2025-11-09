@@ -296,6 +296,22 @@ void fused_row_reduce(const ElementType* in, ElementType* out, const Ts* const..
           vecIn[i], reinterpret_cast<const typename VectorWrapper::type*>(rows)[i]...);
 }
 
+template<typename VectorWrapper,
+         IndexType Width,
+         UpdateOperation... ops,
+         typename ElementType,
+         typename... Ts>
+void fused_row_reduce_i8(const ElementType* in, ElementType* out, const Ts* const... rows) {
+    constexpr IndexType size = Width * sizeof(ElementType) / sizeof(typename VectorWrapper::type);
+
+    auto* vecIn  = reinterpret_cast<const typename VectorWrapper::type*>(in);
+    auto* vecOut = reinterpret_cast<typename VectorWrapper::type*>(out);
+
+    for (IndexType i = 0; i < size; ++i)
+        vecOut[i] = fused<VectorWrapper, ops...>(
+          vecIn[i], vec_convert_8_16(reinterpret_cast<const vec_i8_t*>(rows)[i])...);
+}
+
 template<typename FeatureSet, Color Perspective, IndexType Dimensions>
 struct AccumulatorUpdateContext {
     const FeatureTransformer<Dimensions>& featureTransformer;
@@ -331,7 +347,8 @@ struct AccumulatorUpdateContext {
           to_psqt_weight_vector(indices)...);
     }
 
-    void apply(typename FeatureSet::IndexList added, typename FeatureSet::IndexList removed) {
+    template <bool EqualSize>
+    void apply_features(typename FeatureSet::IndexList added, typename FeatureSet::IndexList removed) {
         const auto fromAcc = from.template acc<Dimensions>().accumulation[Perspective];
         const auto toAcc   = to.template acc<Dimensions>().accumulation[Perspective];
 
@@ -343,55 +360,15 @@ struct AccumulatorUpdateContext {
         vec_t      acc[Tiling::NumRegs];
         psqt_vec_t psqt[Tiling::NumPsqtRegs];
 
-        for (IndexType j = 0; j < Dimensions / Tiling::TileHeight; ++j)
-        {
-            auto* fromTile = reinterpret_cast<const vec_t*>(&fromAcc[j * Tiling::TileHeight]);
-            auto* toTile   = reinterpret_cast<vec_t*>(&toAcc[j * Tiling::TileHeight]);
-
-            for (IndexType k = 0; k < Tiling::NumRegs; ++k)
-                acc[k] = fromTile[k];
-
-            for (IndexType i = 0; i < removed.size(); ++i)
-            {
-                IndexType       index  = removed[i];
-                const IndexType offset = Dimensions * index + j * Tiling::TileHeight;
-                auto*           column =
-                  reinterpret_cast<const vec_i8_t*>(&featureTransformer.threatWeights[offset]);
-
-#ifdef USE_NEON
-                for (IndexType k = 0; k < Tiling::NumRegs; k += 2) {
-                    acc[k] = vec_sub_16(acc[k], vmovl_s8(vget_low_s8(column[k / 2])));
-                    acc[k + 1] = vec_sub_16(acc[k + 1], vmovl_high_s8(column[k / 2]));
-                }
-#else
-                for (IndexType k = 0; k < Tiling::NumRegs; ++k)
-                    acc[k] = vec_sub_16(acc[k], vec_convert_8_16(column[k]));
-#endif
+        auto prefetch_weights = [&] (int index) {
+            const char* addr = reinterpret_cast<const char*>(&featureTransformer.threatWeights[index * Dimensions]);
+            for (IndexType i = 0; i < sizeof(acc); i += CacheLineSize) {
+                prefetch(addr + i);
             }
+        };
 
-            for (IndexType i = 0; i < added.size(); ++i)
-            {
-                IndexType       index  = added[i];
-                const IndexType offset = Dimensions * index + j * Tiling::TileHeight;
-                auto*           column =
-                  reinterpret_cast<const vec_i8_t*>(&featureTransformer.threatWeights[offset]);
-
-#ifdef USE_NEON
-                for (IndexType k = 0; k < Tiling::NumRegs; k += 2) {
-                    acc[k] = vec_add_16(acc[k], vmovl_s8(vget_low_s8(column[k / 2])));
-                    acc[k + 1] = vec_add_16(acc[k + 1], vmovl_high_s8(column[k / 2]));
-                }
-#else
-                for (IndexType k = 0; k < Tiling::NumRegs; ++k)
-                    acc[k] = vec_add_16(acc[k], vec_convert_8_16(column[k]));
-#endif
-            }
-
-            for (IndexType k = 0; k < Tiling::NumRegs; k++)
-                vec_store(&toTile[k], acc[k]);
-        }
-
-        for (IndexType j = 0; j < PSQTBuckets / Tiling::PsqtTileHeight; ++j)
+        auto last_j = PSQTBuckets / Tiling::PsqtTileHeight;
+        for (IndexType j = 0; j < last_j; ++j)
         {
             auto* fromTilePsqt =
               reinterpret_cast<const psqt_vec_t*>(&fromPsqtAcc[j * Tiling::PsqtTileHeight]);
@@ -408,6 +385,8 @@ struct AccumulatorUpdateContext {
                 auto*           columnPsqt = reinterpret_cast<const psqt_vec_t*>(
                   &featureTransformer.threatPsqtWeights[offset]);
 
+                prefetch_weights(index);
+
                 for (std::size_t k = 0; k < Tiling::NumPsqtRegs; ++k)
                     psqt[k] = vec_sub_psqt_32(psqt[k], columnPsqt[k]);
             }
@@ -417,7 +396,9 @@ struct AccumulatorUpdateContext {
                 IndexType       index      = added[i];
                 const IndexType offset     = PSQTBuckets * index + j * Tiling::PsqtTileHeight;
                 auto*           columnPsqt = reinterpret_cast<const psqt_vec_t*>(
-                  &featureTransformer.threatPsqtWeights[offset]);
+                    &featureTransformer.threatPsqtWeights[offset]);
+
+                prefetch_weights(index);
 
                 for (std::size_t k = 0; k < Tiling::NumPsqtRegs; ++k)
                     psqt[k] = vec_add_psqt_32(psqt[k], columnPsqt[k]);
@@ -425,6 +406,56 @@ struct AccumulatorUpdateContext {
 
             for (IndexType k = 0; k < Tiling::NumPsqtRegs; ++k)
                 vec_store_psqt(&toTilePsqt[k], psqt[k]);
+        }
+
+        for (IndexType j = 0; j < Dimensions / Tiling::TileHeight; ++j)
+        {
+            auto* fromTile = reinterpret_cast<const vec_t*>(&fromAcc[j * Tiling::TileHeight]);
+            auto* toTile   = reinterpret_cast<vec_t*>(&toAcc[j * Tiling::TileHeight]);
+
+            for (IndexType k = 0; k < Tiling::NumRegs; ++k)
+                acc[k] = fromTile[k];
+
+            if constexpr (!EqualSize) {
+                for (IndexType i = 0; i < removed.size(); ++i)
+                {
+                    IndexType       index  = removed[i];  // index is premultiplied by Dimensions
+                    const IndexType offset = Dimensions * index + j * Tiling::TileHeight;
+                    auto*           column =
+                      reinterpret_cast<const vec_i8_t*>(&featureTransformer.threatWeights[offset]);
+
+#ifdef USE_NEON
+                    for (IndexType k = 0; k < Tiling::NumRegs; k += 2) {
+                        acc[k] = vec_sub_16(acc[k], vmovl_s8(vget_low_s8(column[k / 2])));
+                        acc[k + 1] = vec_sub_16(acc[k + 1], vmovl_high_s8(column[k / 2]));
+                    }
+#else
+                    for (IndexType k = 0; k < Tiling::NumRegs; ++k)
+                        acc[k] = vec_sub_16(acc[k], vec_convert_8_16(column[k]));
+#endif
+                }
+
+                for (IndexType i = 0; i < added.size(); ++i)
+                {
+                    IndexType       index  = added[i];
+                    const IndexType offset = Dimensions * index + j * Tiling::TileHeight;
+                    auto*           column =
+                      reinterpret_cast<const vec_i8_t*>(&featureTransformer.threatWeights[offset]);
+
+#ifdef USE_NEON
+                    for (IndexType k = 0; k < Tiling::NumRegs; k += 2) {
+                        acc[k] = vec_add_16(acc[k], vmovl_s8(vget_low_s8(column[k / 2])));
+                        acc[k + 1] = vec_add_16(acc[k + 1], vmovl_high_s8(column[k / 2]));
+                    }
+#else
+                    for (IndexType k = 0; k < Tiling::NumRegs; ++k)
+                        acc[k] = vec_add_16(acc[k], vec_convert_8_16(column[k]));
+#endif
+                }
+            }
+
+            for (IndexType k = 0; k < Tiling::NumRegs; k++)
+                vec_store(&toTile[k], acc[k]);
         }
 
 #else
@@ -454,6 +485,14 @@ struct AccumulatorUpdateContext {
         }
 
 #endif
+    }
+
+    void apply_features_wrap(typename FeatureSet::IndexList added, typename FeatureSet::IndexList removed) {
+        if (added.size() == removed.size()) {
+            apply_features<true>(added, removed);
+        } else {
+            apply_features<false>(added, removed);
+        }
     }
 };
 
@@ -533,7 +572,7 @@ bool double_inc_update(const FeatureTransformer<TransformedFeatureDimensions>& f
     auto updateContext =
       make_accumulator_update_context<Perspective>(featureTransformer, computed, target_state);
 
-    updateContext.apply(added, removed);
+   updateContext.apply_features_wrap(added, removed);
 
     target_state.acc<TransformedFeatureDimensions>().computed[Perspective] = true;
 
@@ -570,8 +609,9 @@ void update_accumulator_incremental(
     auto updateContext =
       make_accumulator_update_context<Perspective>(featureTransformer, computed, target_state);
 
-    if constexpr (std::is_same_v<FeatureSet, ThreatFeatureSet>)
-        updateContext.apply(added, removed);
+    if constexpr (std::is_same_v<FeatureSet, ThreatFeatureSet>) {
+        updateContext.apply_features_wrap(added, removed);
+    }
     else
     {
         assert(added.size() == 1 || added.size() == 2);
