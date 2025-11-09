@@ -128,6 +128,7 @@ using vec_uint_t = __m256i;
 
 #elif USE_SSE2
 using vec_t      = __m128i;
+using vec_i8_t   = std::uint64_t;  // for the correct size -- will be loaded into an xmm reg
 using vec128_t   = __m128i;
 using psqt_vec_t = __m128i;
 using vec_uint_t = __m128i;
@@ -153,13 +154,34 @@ using vec_uint_t = __m128i;
             _mm_movemask_ps(_mm_castsi128_ps(_mm_cmpgt_epi32(a, _mm_setzero_si128())))
     #endif
 
+#ifdef USE_SSE41
+#define vec_convert_8_16(a) _mm_cvtepi8_epi16(_mm_cvtsi64_si128(static_cast<int64_t>(a)))
+#elif defined(USE_SSSE3)
+inline __m128i vec_convert_8_16(uint64_t x) {
+    __m128i v8 = _mm_cvtsi64_si128(static_cast<int64_t>(x));
+    // Puts each 8-bit weight into the high part of a 16-bit lane
+    const __m128i shuffle = _mm_set_epi8(7, -1, 6, -1, 5, -1, 4, -1, 3, -1, 2, -1, 1, -1, 0, -1);
+    __m128i shuffled = _mm_shuffle_epi8(v8, shuffle);
+    return _mm_srai_epi16(shuffled, 8);
+}
+#else
+// Credit: Yoshie2000
+inline __m128i vec_convert_8_16(uint64_t x) {
+    __m128i v8 = _mm_cvtsi64_si128(static_cast<int64_t>(x));
+    v8 = _mm_slli_si128(v8, 8);
+    v8 = _mm_srli_si128(v8, 8);
+    __m128i sign = _mm_cmpgt_epi8(_mm_setzero_si128(), v8);
+    return _mm_unpacklo_epi8(v8, sign);
+}
+#endif
+
     #define vec128_zero _mm_setzero_si128()
     #define vec128_set_16(a) _mm_set1_epi16(a)
     #define vec128_load(a) _mm_load_si128(a)
     #define vec128_storeu(a, b) _mm_storeu_si128(a, b)
     #define vec128_add(a, b) _mm_add_epi16(a, b)
 
-    #define NumRegistersSIMD (Is64Bit ? 16 : 8)
+    #define NumRegistersSIMD (Is64Bit ? 12 : 6)
     #define MaxChunkSize 16
 
 #elif USE_NEON
