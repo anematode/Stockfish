@@ -124,7 +124,7 @@ void init_threat_offsets() {
 
 // Index of a feature for a given king position and another piece on some square
 template<Color Perspective>
-IndexType FullThreats::make_index(Piece attkr, Square from, Square to, Piece attkd, Square ksq) {
+inline __attribute__((always_inline)) IndexType FullThreats::make_index(Piece attkr, Square from, Square to, Piece attkd, Square ksq) {
     from       = (Square) (int(from) ^ OrientTBL[Perspective][ksq]);
     to         = (Square) (int(to) ^ OrientTBL[Perspective][ksq]);
 
@@ -142,14 +142,7 @@ IndexType FullThreats::make_index(Piece attkr, Square from, Square to, Piece att
     //   cmp from, to             ;; 8 bit compare
     //   adc pair_info, 0         ;; 8 bit add
     //   js  .return_Dimensions   ;; branch if negative
-    // On other arches, we sign extend to a full 32-bit register because there's usually only add-with-carry on
-    // 32-bit registers, and the rest is identical.
-    using CompareType =
-#if defined(__x86_64__) || defined(__i386__)
-        int8_t;
-#else
-            int;
-#endif
+    using CompareType = int8_t;
     using Unsigned = std::make_unsigned_t<CompareType>;
     int lt = static_cast<Unsigned>(from) < static_cast<Unsigned>(to);
     if (static_cast<CompareType>(piece_pair_data.pair_info() + lt) < 0)
