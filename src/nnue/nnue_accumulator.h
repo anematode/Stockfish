@@ -143,6 +143,12 @@ struct AccumulatorState {
         accumulatorBig.computed.fill(false);
         accumulatorSmall.computed.fill(false);
     }
+
+    typename FeatureSet::DiffType& reset() noexcept {
+        accumulatorBig.computed.fill(false);
+        accumulatorSmall.computed.fill(false);
+        return diff;
+    }
 };
 
 class AccumulatorStack {
@@ -154,6 +160,7 @@ class AccumulatorStack {
 
     void reset() noexcept;
     void push(const DirtyBoardData& dirtyBoardData) noexcept;
+    std::pair<DirtyPiece&, DirtyThreats&> push() noexcept;
     void pop() noexcept;
 
     template<IndexType Dimensions>

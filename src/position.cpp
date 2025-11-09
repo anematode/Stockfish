@@ -687,10 +687,7 @@ bool Position::gives_check(Move m) const {
 // moves should be filtered out before this function is called.
 // If a pointer to the TT table is passed, the entry for the new position
 // will be prefetched
-DirtyBoardData Position::do_move(Move                      m,
-                                 StateInfo&                newSt,
-                                 bool                      givesCheck,
-                                 const TranspositionTable* tt = nullptr) {
+void Position::do_move(Move m, StateInfo& newSt, bool givesCheck, DirtyPiece &dp, DirtyThreats &dts, const TranspositionTable* tt = nullptr) {
 
     assert(m.is_ok());
     assert(&newSt != st);
@@ -719,12 +716,10 @@ DirtyBoardData Position::do_move(Move                      m,
 
     bool checkEP = false;
 
-    DirtyPiece dp;
     dp.pc     = pc;
     dp.from   = from;
     dp.to     = to;
     dp.add_sq = SQ_NONE;
-    DirtyThreats dts;
     dts.us      = us;
     dts.prevKsq = square<KING>(us);
     dts.threatenedSqs = dts.threateningSqs = 0;
@@ -968,8 +963,6 @@ DirtyBoardData Position::do_move(Move                      m,
     assert(!(bool(captured) || m.type_of() == CASTLING) ^ (dp.remove_sq != SQ_NONE));
     assert(dp.from != SQ_NONE);
     assert(!(dp.add_sq != SQ_NONE) ^ (m.type_of() == PROMOTION || m.type_of() == CASTLING));
-
-    return {dp, dts};
 }
 
 

@@ -138,7 +138,7 @@ class Position {
 
     // Doing and undoing moves
     void           do_move(Move m, StateInfo& newSt, const TranspositionTable* tt);
-    DirtyBoardData do_move(Move m, StateInfo& newSt, bool givesCheck, const TranspositionTable* tt);
+    void           do_move(Move m, StateInfo& newSt, bool givesCheck, DirtyPiece &dp, DirtyThreats &dts, const TranspositionTable* tt);
     void           undo_move(Move m);
     void           do_null_move(StateInfo& newSt, const TranspositionTable& tt);
     void           undo_null_move();
@@ -208,6 +208,9 @@ class Position {
     int        gamePly;
     Color      sideToMove;
     bool       chess960;
+
+    DirtyPiece scratch_dp;
+    DirtyThreats scratch_dts;
 
     // TODO: Remove this
     friend Eval::NNUE::Features::FullThreats;
@@ -396,7 +399,8 @@ inline void Position::swap_piece(Square s, Piece pc, DirtyThreats* const dts) {
 }
 
 inline void Position::do_move(Move m, StateInfo& newSt, const TranspositionTable* tt = nullptr) {
-    do_move(m, newSt, gives_check(m), tt);
+    new (&scratch_dts) DirtyThreats;
+    do_move(m, newSt, gives_check(m), scratch_dp, scratch_dts, tt);
 }
 
 inline StateInfo* Position::state() const { return st; }
