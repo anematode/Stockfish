@@ -428,6 +428,14 @@ void move_to_front(std::vector<T>& vec, Predicate pred) {
     #define sf_assume(cond)
 #endif
 
+#if defined(__GNUC__) || defined(__clang__)
+#define sf_force_inline inline __attribute__((always_inline))
+#elif defined(_MSC_VER)
+#define sf_force_inline inline __forceinline
+#else
+#define sf_force_inline
+#endif
+
 }  // namespace Stockfish
 
 template<std::size_t N>

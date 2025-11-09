@@ -42,7 +42,6 @@ struct PiecePairData {
     uint32_t data;
     PiecePairData() {}
     PiecePairData(bool excluded_pair, bool semi_excluded_pair, IndexType feature_index_base) {
-        assert(shamt <= 63);
         ExcludePair info = excluded_pair ? AlwaysExclude : semi_excluded_pair ? SometimesExclude : NeverExclude;
         data = info | feature_index_base << 8;
     }
@@ -61,9 +60,13 @@ uint8_t index_lut2[PIECE_NB][SQUARE_NB][SQUARE_NB]; // [attkr][from][to]
 static void init() {
     for (int attkr = 0; attkr < PIECE_NB; attkr++) {
         for (int attkd = 0; attkd < PIECE_NB; ++attkd) {
+            auto attkr_type = type_of(Piece(attkr));
+            auto attkd_type = type_of(Piece(attkd));
+            if (attkr_type % 7 ==0 || attkd_type % 7 == 0)
+                continue;
             bool enemy = (attkr ^ attkd) == 8;
-            auto map = FullThreats::map[type_of(Piece(attkr)) - 1][type_of(Piece(attkd)) - 1];
-            bool semi_excluded = type_of(Piece(attkr)) == type_of(Piece(attkd)) && (enemy || type_of(Piece(attkr)) != PAWN);
+             auto map = FullThreats::map[attkr_type - 1][attkd_type - 1];
+            bool semi_excluded = attkr_type == attkd_type && (enemy || attkr_type != PAWN);
             IndexType feature = helper_offsets[attkr][1]
                 + (color_of(Piece(attkd)) * (numValidTargets[attkr] / 2) +
                     map)
@@ -124,7 +127,7 @@ void init_threat_offsets() {
 
 // Index of a feature for a given king position and another piece on some square
 template<Color Perspective>
-inline __attribute__((always_inline)) IndexType FullThreats::make_index(Piece attkr, Square from, Square to, Piece attkd, Square ksq) {
+sf_force_inline IndexType FullThreats::make_index(Piece attkr, Square from, Square to, Piece attkd, Square ksq) {
     from       = (Square) (int(from) ^ OrientTBL[Perspective][ksq]);
     to         = (Square) (int(to) ^ OrientTBL[Perspective][ksq]);
 
