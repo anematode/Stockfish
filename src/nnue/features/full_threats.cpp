@@ -125,16 +125,24 @@ void init_threat_offsets() {
     init_index_luts();
 }
 
-// Index of a feature for a given king position and another piece on some square
+// Index of a feature for a given king position and another piece on some square.
 template<Color Perspective>
-IndexType FullThreats::make_index(Piece attkr, Square from, Square to, Piece attkd, Square ksq) {
-    from = (Square) (int(from) ^ OrientTBL[Perspective][ksq]);
-    to   = (Square) (int(to) ^ OrientTBL[Perspective][ksq]);
+IndexType FullThreats::make_index(size_t attkr, size_t from, size_t to, size_t attkd, size_t ksq) {
+    // We use size_t arguments because some calling conventions leave the upper bits undefined,
+    // and to avoid sign extension from Square/Piece which derive from int8_t
+    assert(from == Square(from));
+    assert(to == Square(to));
+    assert(ksq == Square(ksq));
+    assert(attkr == Piece(attkr));
+    assert(attkd == Piece(attkd));
 
-    if (Perspective == BLACK)
+    from = static_cast<uint32_t>(from) ^ OrientTBL[Perspective][ksq];
+    to   = static_cast<uint32_t>(to) ^ OrientTBL[Perspective][ksq];
+
+    if constexpr (Perspective == BLACK)
     {
-        attkr = ~attkr;
-        attkd = ~attkd;
+        attkr = static_cast<uint32_t>(attkr) ^ 8;
+        attkd = static_cast<uint32_t>(attkd) ^ 8;
     }
 
     auto piece_pair_data = index_lut1[attkr][attkd];
@@ -237,9 +245,9 @@ void FullThreats::append_active_indices(const Position& pos, IndexList& active) 
 template void FullThreats::append_active_indices<WHITE>(const Position& pos, IndexList& active);
 template void FullThreats::append_active_indices<BLACK>(const Position& pos, IndexList& active);
 template IndexType
-FullThreats::make_index<WHITE>(Piece attkr, Square from, Square to, Piece attkd, Square ksq);
+FullThreats::make_index<WHITE>(size_t attkr, size_t from, size_t to, size_t attkd, size_t ksq);
 template IndexType
-FullThreats::make_index<BLACK>(Piece attkr, Square from, Square to, Piece attkd, Square ksq);
+FullThreats::make_index<BLACK>(size_t attkr, size_t from, size_t to, size_t attkd, size_t ksq);
 
 // Get a list of indices for recently changed features
 template<Color Perspective>
