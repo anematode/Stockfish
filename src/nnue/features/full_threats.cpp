@@ -26,7 +26,8 @@
 namespace Stockfish::Eval::NNUE::Features {
 
 // Lookup array for indexing threats
-IndexType offsets[PIECE_NB][SQUARE_NB + 2];
+IndexType offsets[PIECE_NB][SQUARE_NB];
+IndexType helper_offsets[PIECE_NB][2];  // used only during index and LUT generation
 
 // Information on a particular pair of pieces and whether they should be excluded
 struct PiecePairData {
@@ -48,7 +49,7 @@ constexpr std::array<Piece, 12> AllPieces = {
 };
 
 // The final index is calculated from summing data found in these two LUTs, as well
-// as offsets[attkr][65]
+// as helper_offsets[attkr][1]
 PiecePairData index_lut1[PIECE_NB][PIECE_NB];              // [attkr][attkd]
 uint8_t       index_lut2[PIECE_NB][SQUARE_NB][SQUARE_NB];  // [attkr][from][to]
 
@@ -64,8 +65,8 @@ static void init_index_luts() {
             int       map           = FullThreats::map[attkr_type - 1][attkd_type - 1];
             bool      semi_excluded = attkr_type == attkd_type && (enemy || attkr_type != PAWN);
             IndexType feature =
-              offsets[attkr][65]
-              + (color_of(attkd) * (numValidTargets[attkr] / 2) + map) * offsets[attkr][64];
+              helper_offsets[attkr][1]
+              + (color_of(attkd) * (numValidTargets[attkr] / 2) + map) * helper_offsets[attkr][0];
 
             bool excluded            = map < 0;
             index_lut1[attkr][attkd] = PiecePairData(excluded, semi_excluded, feature);
@@ -116,8 +117,8 @@ void init_threat_offsets() {
             }
         }
 
-        offsets[pieceIdx][64] = cumulativePieceOffset;
-        offsets[pieceIdx][65] = cumulativeOffset;
+        helper_offsets[pieceIdx][0] = cumulativePieceOffset;
+        helper_offsets[pieceIdx][1] = cumulativeOffset;
 
         cumulativeOffset += numValidTargets[pieceIdx] * cumulativePieceOffset;
     }
