@@ -121,7 +121,7 @@ class FullThreats {
     FullThreats() { init_threat_offsets(); };
 
     template<Color Perspective>
-    static IndexType make_index(Piece attkr, Square from, Square to, Piece attkd, Square ksq);
+    static IndexType make_index(size_t attkr, size_t from, size_t to, size_t attkd, size_t ksq);
 
     // Get a list of indices for active features
     template<Color Perspective>

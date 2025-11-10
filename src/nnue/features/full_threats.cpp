@@ -114,21 +114,22 @@ void init_threat_offsets() {
 
 // Index of a feature for a given king position and another piece on some square
 template<Color Perspective>
-IndexType FullThreats::make_index(Piece attkr, Square from, Square to, Piece attkd, Square ksq) {
-    from       = (Square) (int(from) ^ OrientTBL[Perspective][ksq]);
-    to         = (Square) (int(to) ^ OrientTBL[Perspective][ksq]);
+IndexType FullThreats::make_index(size_t attkr, size_t from, size_t to, size_t attkd, size_t ksq) {
+    from = IndexType(from) ^ OrientTBL[Perspective][ksq];
+    to = IndexType(to) ^  OrientTBL[Perspective][ksq];
 
-    if (Perspective == BLACK)
+    if constexpr (Perspective == BLACK)
     {
-        attkr = ~attkr;
-        attkd = ~attkd;
+        attkr = unsigned(attkr) ^ 8;
+        attkd = unsigned(attkd) ^ 8;
     }
 
     auto piece_pair_data = index_lut1[attkr][attkd];
 
     // Some threats imply the existence of the corresponding ones in the opposite
     // direction. We filter them here to ensure only one such threat is active.
-    if ((piece_pair_data.excluded_pair_info() + (int(from) < int(to))) & 2)
+    bool lt = (uint8_t)from < (uint8_t)to;
+    if (uint8_t(piece_pair_data.excluded_pair_info() + lt) & 2)
     {
         return Dimensions;
     }
@@ -218,9 +219,9 @@ void FullThreats::append_active_indices(const Position& pos, IndexList& active) 
 template void FullThreats::append_active_indices<WHITE>(const Position& pos, IndexList& active);
 template void FullThreats::append_active_indices<BLACK>(const Position& pos, IndexList& active);
 template IndexType
-FullThreats::make_index<WHITE>(Piece attkr, Square from, Square to, Piece attkd, Square ksq);
+FullThreats::make_index<WHITE>(size_t attkr, size_t from, size_t to, size_t attkd, size_t ksq);
 template IndexType
-FullThreats::make_index<BLACK>(Piece attkr, Square from, Square to, Piece attkd, Square ksq);
+FullThreats::make_index<BLACK>(size_t attkr, size_t from, size_t to, size_t attkd, size_t ksq);
 
 // Get a list of indices for recently changed features
 template<Color Perspective>
