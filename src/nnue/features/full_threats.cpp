@@ -32,7 +32,6 @@ struct PiecePairData {
     uint32_t data;
     PiecePairData() {}
     PiecePairData(bool excluded_pair, bool semi_excluded_pair, IndexType feature_index_base) {
-        assert(shamt <= 63);
         data = (excluded_pair << 1 | (semi_excluded_pair && !excluded_pair)) | feature_index_base << 8;
     }
     // lsb: sometimes excluded, 2nd lsb: always excluded
@@ -114,21 +113,27 @@ void init_threat_offsets() {
 
 // Index of a feature for a given king position and another piece on some square
 template<Color Perspective>
-IndexType FullThreats::make_index(Piece attkr, Square from, Square to, Piece attkd, Square ksq) {
-    from       = (Square) (int(from) ^ OrientTBL[Perspective][ksq]);
-    to         = (Square) (int(to) ^ OrientTBL[Perspective][ksq]);
+IndexType FullThreats::make_index(int attkr, int from, int to, int attkd, int ksq) {
+    assert(attkr == Piece(attkr));
+    assert(from == Square(from));
+    assert(to == Square(to));
+    assert(attkd == Piece(attkd));
+    assert(ksq == Square(ksq));
+    from       ^= OrientTBL[Perspective][ksq];
+    to         ^= OrientTBL[Perspective][ksq];
 
     if (Perspective == BLACK)
     {
-        attkr = ~attkr;
-        attkd = ~attkd;
+        attkr = attkr ^ 8;
+        attkd = attkd ^ 8;
     }
 
     auto piece_pair_data = index_lut1[attkr][attkd];
 
     // Some threats imply the existence of the corresponding ones in the opposite
     // direction. We filter them here to ensure only one such threat is active.
-    if ((piece_pair_data.excluded_pair_info() + (int(from) < int(to))) & 2)
+    bool lt = (uint8_t)from < (uint8_t)to;
+    if ((piece_pair_data.excluded_pair_info() + lt) & 2)
     {
         return Dimensions;
     }
@@ -218,9 +223,9 @@ void FullThreats::append_active_indices(const Position& pos, IndexList& active) 
 template void FullThreats::append_active_indices<WHITE>(const Position& pos, IndexList& active);
 template void FullThreats::append_active_indices<BLACK>(const Position& pos, IndexList& active);
 template IndexType
-FullThreats::make_index<WHITE>(Piece attkr, Square from, Square to, Piece attkd, Square ksq);
+FullThreats::make_index<WHITE>(int attkr, int from, int to, int attkd, int ksq);
 template IndexType
-FullThreats::make_index<BLACK>(Piece attkr, Square from, Square to, Piece attkd, Square ksq);
+FullThreats::make_index<BLACK>(int attkr, int from, int to, int attkd, int ksq);
 
 // Get a list of indices for recently changed features
 template<Color Perspective>
