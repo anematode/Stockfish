@@ -660,6 +660,7 @@ void update_accumulator_refresh_cache(const FeatureTransformer<Dimensions>& feat
 #ifdef USE_AVX512
         Dimensions == 1024 && PSQTBuckets == 8;
 #else
+#error "Test not intended for this architecture"
             false;
 #endif
 
