@@ -656,22 +656,114 @@ void update_accumulator_refresh_cache(const FeatureTransformer<Dimensions>& feat
     Bitboard       removed_bb = changed_bb & entry.pieceBB;
     Bitboard       added_bb   = changed_bb & pos.pieces();
 
+    constexpr bool OnePass =
+#ifdef USE_AVX512
+        Dimensions == 1024 && PSQTBuckets == 8;
+#else
+            false;
+#endif
+
+    vec_t oneAcc[32];
+    if constexpr (OnePass) {
+        auto* entryTile = reinterpret_cast<vec_t*>(&entry.accumulation[0]);
+
+#pragma GCC unroll 32
+        for (IndexType k = 0; k < 32; ++k)
+            oneAcc[k] = entryTile[k];
+
+        asm (
+            "movq (%0), %%mm0\n"
+            "movq 8(%0), %%mm1\n"
+            "movq 16(%0), %%mm2\n"
+            "movq 24(%0), %%mm3\n"
+        :: "r"(&entry.psqtAccumulation[0])
+        );
+    }
+
     while (removed_bb)
     {
         Square sq = pop_lsb(removed_bb);
-        removed.push_back(PSQFeatureSet::make_index<Perspective>(sq, entry.pieces[sq], ksq));
+        auto index = PSQFeatureSet::make_index<Perspective>(sq, entry.pieces[sq], ksq);
+        if constexpr (!OnePass) {
+            removed.push_back(index);
+        } else {
+            const IndexType offset = Dimensions * index;
+            auto* column = reinterpret_cast<const vec_t*>(&featureTransformer.weights[offset]);
+            auto* psqtColumn = reinterpret_cast<const __m64*>(&featureTransformer.psqtWeights[PSQTBuckets * index]);
+#pragma GCC unroll 32
+            for (IndexType k = 0; k < 32; ++k)
+                oneAcc[k] = vec_sub_16(oneAcc[k], column[k]);
+
+            asm (
+                "psubd (%0), %%mm0\n"
+                "psubd 8(%0), %%mm1\n"
+                "psubd 16(%0), %%mm2\n"
+                "psubd 24(%0), %%mm3\n"
+            :: "r"(&psqtColumn[0])
+            );
+        }
     }
     while (added_bb)
     {
         Square sq = pop_lsb(added_bb);
-        added.push_back(PSQFeatureSet::make_index<Perspective>(sq, pos.piece_on(sq), ksq));
+        auto index = PSQFeatureSet::make_index<Perspective>(sq, pos.piece_on(sq), ksq);
+        if constexpr (!OnePass) {
+            added.push_back(index);
+        } else {
+            const IndexType offset = Dimensions * index;
+            auto* column = reinterpret_cast<const vec_t*>(&featureTransformer.weights[offset]);
+            auto* psqtColumn = reinterpret_cast<const __m64*>(&featureTransformer.psqtWeights[PSQTBuckets * index]);
+#pragma GCC unroll 32
+            for (IndexType k = 0; k < 32; ++k)
+                oneAcc[k] = vec_add_16(oneAcc[k], column[k]);
+
+            asm (
+                "paddd (%0), %%mm0\n"
+                "paddd 8(%0), %%mm1\n"
+                "paddd 16(%0), %%mm2\n"
+                "paddd 24(%0), %%mm3\n"
+            :: "r"(&psqtColumn[0])
+            );
+        }
+    }
+
+    auto& accumulator                 = accumulatorState.acc<Dimensions>();
+    accumulator.computed[Perspective] = true;
+
+    if constexpr (OnePass) {
+        auto* accTile =
+          reinterpret_cast<vec_t*>(&accumulator.accumulation[Perspective][0]);
+        auto* entryTile = reinterpret_cast<vec_t*>(&entry.accumulation[0]);
+
+#pragma GCC unroll 32
+        for (IndexType k = 0; k < 32; k++) {
+            vec_store(&entryTile[k], oneAcc[k]);
+            vec_store(&accTile[k], oneAcc[k]);
+        }
+
+        auto* accPsqtTile =
+          reinterpret_cast<__m64*>(&accumulator.psqtAccumulation[Perspective][0]);
+        auto* entryPsqtTile = reinterpret_cast<__m64*>(&entry.psqtAccumulation[0]);
+
+        asm (
+            "movq %%mm0, (%0)\n"
+            "movq %%mm1, 8(%0)\n"
+            "movq %%mm2, 16(%0)\n"
+            "movq %%mm3, 24(%0)\n"
+            "movq %%mm0, (%1)\n"
+            "movq %%mm1, 8(%1)\n"
+            "movq %%mm2, 16(%1)\n"
+            "movq %%mm3, 24(%1)\n"
+        :: "r"(accPsqtTile), "r"(entryPsqtTile)
+        );
     }
 
     entry.pieceBB = pos.pieces();
     std::copy_n(pos.piece_array().begin(), SQUARE_NB, entry.pieces);
 
-    auto& accumulator                 = accumulatorState.acc<Dimensions>();
-    accumulator.computed[Perspective] = true;
+    if constexpr (OnePass) {
+        return;
+    }
 
 #ifdef VECTOR
     vec_t      acc[Tiling::NumRegs];
