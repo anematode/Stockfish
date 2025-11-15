@@ -36,7 +36,11 @@ enum GenType {
     LEGAL
 };
 
-struct ExtMove: public Move {
+struct PaddedMove: public Move {
+    uint16_t padding;
+};
+
+struct ExtMove: PaddedMove {
     int value;
 
     void operator=(Move m) { data = m.raw(); }
