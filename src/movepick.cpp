@@ -61,14 +61,18 @@ enum Stages {
 // The order of moves smaller than the limit is left unspecified.
 void partial_insertion_sort(ExtMove* begin, ExtMove* end, int limit) {
 
+    auto get_value = [] (uint64_t val) { return int(val >> 32); };
+
     for (ExtMove *sortedEnd = begin, *p = begin + 1; p < end; ++p)
         if (p->value >= limit)
         {
-            ExtMove tmp = *p, *q;
+            uint64_t data;
+            memcpy(&data, p, sizeof(uint64_t));
+            ExtMove *q;
             *p          = *++sortedEnd;
-            for (q = sortedEnd; q != begin && *(q - 1) < tmp; --q)
+            for (q = sortedEnd; q != begin && (q - 1)->value < get_value(data); --q)
                 *q = *(q - 1);
-            *q = tmp;
+            memcpy(q, &data, sizeof(uint64_t));
         }
 }
 
