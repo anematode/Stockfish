@@ -60,16 +60,30 @@ enum Stages {
 // Sort moves in descending order up to and including a given limit.
 // The order of moves smaller than the limit is left unspecified.
 void partial_insertion_sort(ExtMove* begin, ExtMove* end, int limit) {
+    auto load = [] (const ExtMove* mv) {
+        uint64_t data;
+        memcpy(&data, mv, 8);
+        return data;
+    };
+    auto store = [] (ExtMove* dst, uint64_t data) {
+        memcpy(dst, &data, 8);
+    };
+    auto get_value = [] (uint64_t data) {
+        const int SHIFT = 32;  // TODO handle big endian
+        return int(data >> SHIFT);
+    };
 
-    for (ExtMove *sortedEnd = begin, *p = begin + 1; p < end; ++p)
-        if (p->value >= limit)
+    for (ExtMove *sortedEnd = begin, *p = begin + 1; p < end; ++p) {
+        uint64_t tmp = load(p);
+        if (get_value(tmp) >= limit)
         {
-            ExtMove tmp = *p, *q;
+            ExtMove *q;
             *p          = *++sortedEnd;
-            for (q = sortedEnd; q != begin && *(q - 1) < tmp; --q)
+            for (q = sortedEnd; q != begin && get_value(load(q-1)) < get_value(tmp); --q)
                 *q = *(q - 1);
-            *q = tmp;
+            store(q, tmp);
         }
+    }
 }
 
 }  // namespace
