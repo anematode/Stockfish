@@ -36,17 +36,26 @@ enum GenType {
     LEGAL
 };
 
-struct ExtMove: public Move {
+struct PaddedMove: public Move {
+    uint16_t zero;
+};
+
+struct ExtMove: public PaddedMove {
     int value;
 
-    void operator=(Move m) { data = m.raw(); }
+    void operator=(Move m) { zero = 0; data = m.raw(); }
 
     // Inhibit unwanted implicit conversions to Move
     // with an ambiguity that yields to a compile error.
     operator float() const = delete;
 };
 
-inline bool operator<(const ExtMove& f, const ExtMove& s) { return f.value < s.value; }
+inline bool operator<(const ExtMove& f, const ExtMove& s) {
+	int64_t f_, s_;
+	memcpy(&f_, &f, 8);
+	memcpy(&s_, &s, 8);
+    return f_ < s_;
+}
 
 template<GenType>
 Move* generate(const Position& pos, Move* moveList);
