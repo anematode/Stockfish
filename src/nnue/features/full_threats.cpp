@@ -56,7 +56,7 @@ constexpr std::array<Piece, 12> AllPieces = {
 
 // The final index is calculated from summing data found in these two LUTs, as well
 // as offsets[attacker][from]
-PiecePairData index_lut1[PIECE_NB][PIECE_NB];              // [attacked][attacker]
+PiecePairData index_lut1[PIECE_NB][PIECE_NB];              // [attacker][attacked]
 uint8_t       index_lut2[PIECE_NB][SQUARE_NB][SQUARE_NB];  // [attacker][from][to]
 
 static void init_index_luts() {
@@ -75,7 +75,7 @@ static void init_index_luts() {
                                   * helper_offsets[attacker][0];
 
             bool excluded                  = map < 0;
-            index_lut1[attacked][attacker] = PiecePairData(excluded, semi_excluded, feature);
+            index_lut1[attacker][attacked] = PiecePairData(excluded, semi_excluded, feature);
         }
     }
 
@@ -141,7 +141,7 @@ FullThreats::make_index(Piece attacker, Square from, Square to, Piece attacked, 
         attacked = ~attacked;
     }
 
-    const auto piecePairData = index_lut1[attacked][attacker];
+    const auto piecePairData = index_lut1[attacker][attacked];
 
     const bool less_than = static_cast<uint8_t>(from) < static_cast<uint8_t>(to);
     if ((piecePairData.excluded_pair_info() + less_than) & 2)
