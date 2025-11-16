@@ -94,11 +94,10 @@ bool i64_sort(ExtMove* begin, ExtMove* end) {
 		_mm256_mask_storeu_epi64(begin, mask, data);
 
 		return true;
-	} else if (end - begin <= 8) {
-		return false;
+	} else if (end - begin <= 31) {
 		// 8-wide sorting network, directly on the 64-bit values
 		// [(0,2),(1,3),(4,6),(5,7)];[(0,4),(1,5),(2,6),(3,7)];[(0,1),(2,3),(4,5),(6,7)];[(2,4),(3,5)];[(1,4),(3,6)];[(1,2),(3,4),(5,6)]
-		__mmask8 mask = (1 << (end - begin)) - 1;
+		__mmask8 mask = (1U << (end - begin)) - 1;
 		__m512i data = _mm512_mask_loadu_epi64(_mm512_set1_epi64(INT64_MIN), mask, begin);
 
 		sort_512_256<0,2,1,3>(data);
@@ -106,17 +105,15 @@ bool i64_sort(ExtMove* begin, ExtMove* end) {
 		sort_512_256<0,1,2,3>(data);
 		swap_with(data, _mm512_shuffle_i64x2(data, data, 0b11011000), 0b11110000);
 		swap_with(data, _mm512_permutexvar_epi64(
-			_mm512_set_epi64(0, 4, 2, 6, 1, 5, 3, 7), data), 0b11110000);
+			_mm512_setr_epi64(0, 4, 2, 6, 1, 5, 3, 7), data), 0b11110000);
 		swap_with(data, _mm512_permutexvar_epi64(
-			_mm512_set_epi64(0, 2, 1, 4, 3, 6, 5, 7), data), 0b11010100);
+			_mm512_setr_epi64(0, 2, 1, 4, 3, 6, 5, 7), data), 0b11010100);
 
 		_mm512_mask_storeu_epi64(begin, mask, data);
 
-		return true;
+		return end - begin <= 8;
 	} else {
-		// 16-wide sorting network, 	
 		return false;
-		return end - begin <= 16;
 	}
 }
 
