@@ -56,22 +56,79 @@ enum Stages {
     QCAPTURE
 };
 
-void i64_sort(ExtMove* begin, ExtMove* end) {
-	
+void swap_with(__m512i& data, __m512i shuffled, __mmask8 Mask) {
+	__m512i max = _mm512_max_epi64(shuffled, data);	
+	__m512i min = _mm512_min_epi64(shuffled, data);	
+	data = _mm512_mask_mov_epi64(max, Mask, min);
+}
+
+template <int I0, int I1, int I2, int I3>
+void sort_256(__m256i& data) {
+	__m256i shuffled = _mm256_permutex_epi64(data, I0 << 2 * I1 | I1 << 2 * I0 | I2 << 2 * I3 | I3 << 2 * I2);
+	constexpr __mmask8 Mask = 1 << I1 | 1 << I3;
+	__m256i max = _mm256_max_epi64(shuffled, data);	
+	__m256i min = _mm256_min_epi64(shuffled, data);	
+	data = _mm256_mask_mov_epi64(max, Mask, min);
+}
+
+template <int I0, int I1, int I2, int I3>
+void sort_512_256(__m512i& data) {
+	__m512i shuffled = _mm512_permutex_epi64(data, I0 << 2 * I1 | I1 << 2 * I0 | I2 << 2 * I3 | I3 << 2 * I2);
+	swap_with(data, shuffled, 0x11 << I1 | 0x11 << I3);
+}
+
+bool i64_sort(ExtMove* begin, ExtMove* end) {
+	// Thanks to https://bertdobbelaere.github.io/sorting_networks.html
+	if (end - begin <= 1) {
+		return true;
+	} else if (end - begin <= 4) {
+		// 4-wide sorting network
+		// [(0,2),(1,3)]; [(0,1),(2,3)];[(1,2)]
+		__mmask8 mask = (1 << (end - begin)) - 1;
+		__m256i data = _mm256_mask_loadu_epi64(_mm256_set1_epi64x(INT64_MIN), mask, begin);
+
+		sort_256<0,2,1,3>(data);
+		sort_256<0,1,2,3>(data);
+		sort_256<1,2,0,3>(data);
+		
+		_mm256_mask_storeu_epi64(begin, mask, data);
+
+		return true;
+	} else if (end - begin <= 8) {
+		return false;
+		// 8-wide sorting network, directly on the 64-bit values
+		// [(0,2),(1,3),(4,6),(5,7)];[(0,4),(1,5),(2,6),(3,7)];[(0,1),(2,3),(4,5),(6,7)];[(2,4),(3,5)];[(1,4),(3,6)];[(1,2),(3,4),(5,6)]
+		__mmask8 mask = (1 << (end - begin)) - 1;
+		__m512i data = _mm512_mask_loadu_epi64(_mm512_set1_epi64(INT64_MIN), mask, begin);
+
+		sort_512_256<0,2,1,3>(data);
+		swap_with(data, _mm512_shuffle_i64x2(data, data, 0b01001110), 0b11110000);
+		sort_512_256<0,1,2,3>(data);
+		swap_with(data, _mm512_shuffle_i64x2(data, data, 0b11011000), 0b11110000);
+		swap_with(data, _mm512_permutexvar_epi64(
+			_mm512_set_epi64(0, 4, 2, 6, 1, 5, 3, 7), data), 0b11110000);
+		swap_with(data, _mm512_permutexvar_epi64(
+			_mm512_set_epi64(0, 2, 1, 4, 3, 6, 5, 7), data), 0b11010100);
+
+		_mm512_mask_storeu_epi64(begin, mask, data);
+
+		return true;
+	} else {
+		// 16-wide sorting network, 	
+		return false;
+		return end - begin <= 16;
+	}
 }
 
 // Sort moves in descending order up to and including a given limit.
 // The order of moves smaller than the limit is left unspecified.
-void insertion_sort(ExtMove* begin, ExtMove* end) {
-	if (end - begin >= 8) {
-		i64_sort(begin, end);
-		//return;
-	}
+void insertion_sort(ExtMove* begin, ExtMove* end, bool quiets = false) {
+	if (i64_sort(begin,end)) return;
 
     for (ExtMove *sortedEnd = begin, *p = begin + 1; p < end; ++p) {
 		ExtMove tmp = *p, *q;
 		*p          = *++sortedEnd;
-		for (q = sortedEnd; q != begin && *(q - 1) < tmp; --q)
+ 		for (q = sortedEnd; q != begin && *(q - 1) < tmp; --q)
 			*q = *(q - 1);
 		*q = tmp;
 	}
@@ -271,7 +328,7 @@ top:
             endCur = endGenerated = cur + ml.size();	
 			auto partitioned_end = score<QUIETS>(ml, -3560 * depth);
 
-			insertion_sort(cur, partitioned_end);
+			insertion_sort(cur, partitioned_end, true);
         }
 
         ++stage;
