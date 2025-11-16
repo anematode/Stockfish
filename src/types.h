@@ -293,6 +293,11 @@ struct DirtyPiece {
 
 // Keep track of what threats change on the board (used by NNUE)
 struct DirtyThreat {
+    static constexpr int PC_OFFSET = 16;
+    static constexpr int THREATENED_PC_OFFSET = 16;
+    static constexpr int THREATENED_SQ_OFFSET = 16;
+    static constexpr int PC_SQ_OFFSET = 16;
+
     DirtyThreat() { /* don't initialize data */ }
     DirtyThreat(Piece pc, Piece threatened_pc, Square pc_sq, Square threatened_sq, bool add) {
         data = (add << 28) | (pc << 20) | (threatened_pc << 16) | (threatened_sq << 8) | (pc_sq);
@@ -307,6 +312,7 @@ struct DirtyThreat {
         sf_assume(b == 0 || b == 1);
         return b;
     }
+    uint32_t raw() const { return data; }
 
    private:
     uint32_t data;

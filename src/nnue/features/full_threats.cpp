@@ -32,7 +32,8 @@
 namespace Stockfish::Eval::NNUE::Features {
 
 // Lookup array for indexing threats
-IndexType offsets[PIECE_NB][SQUARE_NB + 2];
+IndexType offsets[PIECE_NB][SQUARE_NB];
+IndexType helper_offsets[PIECE_NB][2];
 
 // Information on a particular pair of pieces and whether they should be excluded
 struct PiecePairData {
@@ -55,7 +56,7 @@ constexpr std::array<Piece, 12> AllPieces = {
 
 // The final index is calculated from summing data found in these two LUTs, as well
 // as offsets[attacker][from]
-PiecePairData index_lut1[PIECE_NB][PIECE_NB];              // [attacker][attacked]
+PiecePairData index_lut1[PIECE_NB][PIECE_NB];              // [attacked][attacker]
 uint8_t       index_lut2[PIECE_NB][SQUARE_NB][SQUARE_NB];  // [attacker][from][to]
 
 static void init_index_luts() {
@@ -69,12 +70,12 @@ static void init_index_luts() {
 
             int  map           = FullThreats::map[attackerType - 1][attackedType - 1];
             bool semi_excluded = attackerType == attackedType && (enemy || attackerType != PAWN);
-            IndexType feature  = offsets[attacker][65]
+            IndexType feature  = helper_offsets[attacker][1]
                               + (color_of(attacked) * (numValidTargets[attacker] / 2) + map)
-                                  * offsets[attacker][64];
+                                  * helper_offsets[attacker][0];
 
             bool excluded                  = map < 0;
-            index_lut1[attacker][attacked] = PiecePairData(excluded, semi_excluded, feature);
+            index_lut1[attacked][attacker] = PiecePairData(excluded, semi_excluded, feature);
         }
     }
 
@@ -116,8 +117,8 @@ void init_threat_offsets() {
             }
         }
 
-        offsets[pieceIdx][64] = cumulativePieceOffset;
-        offsets[pieceIdx][65] = cumulativeOffset;
+        helper_offsets[pieceIdx][0] = cumulativePieceOffset;
+        helper_offsets[pieceIdx][1] = cumulativeOffset;
 
         cumulativeOffset += numValidTargets[pieceIdx] * cumulativePieceOffset;
     }
@@ -140,7 +141,7 @@ FullThreats::make_index(Piece attacker, Square from, Square to, Piece attacked, 
         attacked = ~attacked;
     }
 
-    const auto piecePairData = index_lut1[attacker][attacked];
+    const auto piecePairData = index_lut1[attacked][attacker];
 
     const bool less_than = static_cast<unsigned>(from) < static_cast<unsigned>(to);
     if ((piecePairData.excluded_pair_info() + less_than) & 2)
@@ -151,6 +152,14 @@ FullThreats::make_index(Piece attacker, Square from, Square to, Piece attacked, 
 
     sf_assume(index != FullThreats::Dimensions);
     return index;
+}
+
+template<Color Perspective>
+IndexType
+inline __attribute__((always_inline))
+make_dirty_index(DirtyThreat dt, Square ksq) {
+    uint32_t raw = dt.raw();
+    return FullThreats::make_index<Perspective>(dt.pc(), dt.pc_sq(), dt.threatened_sq(), dt.threatened_pc(), ksq);
 }
 
 // Get a list of indices for active features in ascending order
@@ -281,8 +290,7 @@ void FullThreats::append_changed_indices(Square           ksq,
             }
         }
 
-        const IndexType index = make_index<Perspective>(
-          attacker, from, to, attacked, ksq);
+        const IndexType index = make_dirty_index<Perspective>(dirty, ksq);
 
         if (index < Dimensions)
             (add ? added : removed).push_back(index);
