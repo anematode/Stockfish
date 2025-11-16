@@ -143,22 +143,21 @@ FullThreats::make_index(Piece attacker, Square from, Square to, Piece attacked, 
 
     const auto piecePairData = index_lut1[attacked][attacker];
 
-    const bool less_than = static_cast<unsigned>(from) < static_cast<unsigned>(to);
+    const bool less_than = static_cast<uint8_t>(from) < static_cast<uint8_t>(to);
     if ((piecePairData.excluded_pair_info() + less_than) & 2)
         return FullThreats::Dimensions;
 
     const IndexType index = piecePairData.feature_index_base() + offsets[attacker][from]
         + index_lut2[attacker][from][to];
 
-    sf_assume(index != FullThreats::Dimensions);
+    sf_assume(index < FullThreats::Dimensions);
     return index;
 }
 
 template<Color Perspective>
 IndexType
 inline __attribute__((always_inline))
-make_dirty_index(DirtyThreat dt, Square ksq) {
-    uint32_t raw = dt.raw();
+make_dirty_index(DirtyThreat dt, Square ksq) {  // specialisation
     return FullThreats::make_index<Perspective>(dt.pc(), dt.pc_sq(), dt.threatened_sq(), dt.threatened_pc(), ksq);
 }
 
