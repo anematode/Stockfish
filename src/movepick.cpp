@@ -56,6 +56,10 @@ enum Stages {
     QCAPTURE
 };
 
+#ifndef USE_AVX512
+#error "Test not intended for this architecture"
+#endif
+
 void swap_with(__m512i& data, __m512i shuffled, __mmask8 Mask) {
 	__m512i max = _mm512_max_epi64(shuffled, data);	
 	__m512i min = _mm512_min_epi64(shuffled, data);	
