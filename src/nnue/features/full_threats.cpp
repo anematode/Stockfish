@@ -32,7 +32,8 @@
 namespace Stockfish::Eval::NNUE::Features {
 
 // Lookup array for indexing threats
-IndexType offsets[PIECE_NB][SQUARE_NB + 2];
+IndexType offsets[PIECE_NB][SQUARE_NB];
+IndexType helper_offsets[PIECE_NB][2];
 
 // Information on a particular pair of pieces and whether they should be excluded
 struct PiecePairData {
@@ -69,9 +70,9 @@ static void init_index_luts() {
 
             int  map           = FullThreats::map[attackerType - 1][attackedType - 1];
             bool semi_excluded = attackerType == attackedType && (enemy || attackerType != PAWN);
-            IndexType feature  = offsets[attacker][65]
+            IndexType feature  = helper_offsets[attacker][1]
                               + (color_of(attacked) * (numValidTargets[attacker] / 2) + map)
-                                  * offsets[attacker][64];
+                                  * helper_offsets[attacker][0];
 
             bool excluded                  = map < 0;
             index_lut1[attacker][attacked] = PiecePairData(excluded, semi_excluded, feature);
@@ -116,8 +117,8 @@ void init_threat_offsets() {
             }
         }
 
-        offsets[pieceIdx][64] = cumulativePieceOffset;
-        offsets[pieceIdx][65] = cumulativeOffset;
+        helper_offsets[pieceIdx][0] = cumulativePieceOffset;
+        helper_offsets[pieceIdx][1] = cumulativeOffset;
 
         cumulativeOffset += numValidTargets[pieceIdx] * cumulativePieceOffset;
     }
@@ -139,19 +140,18 @@ FullThreats::make_index(Color  perspective,
     to   = Square(int8_t(to) ^ orientation);
 
     int8_t swap = 8 * perspective;
-    attacker = Piece(attacker ^ swap);
-    attacked = Piece(attacked ^ swap);
+    unsigned attacker_oriented = attacker ^ swap;
+    unsigned attacked_oriented = attacked ^ swap;
 
-    const auto piecePairData = index_lut1[attacker][attacked];
+    const auto piecePairData = index_lut1[attacker_oriented][attacked_oriented];
 
-    const bool less_than = static_cast<unsigned>(from) < static_cast<unsigned>(to);
+    const bool less_than = static_cast<uint8_t>(from) < static_cast<uint8_t>(to);
     if ((piecePairData.excluded_pair_info() + less_than) & 2)
         return FullThreats::Dimensions;
 
-    const IndexType index = piecePairData.feature_index_base() + offsets[attacker][from]
-        + index_lut2[attacker][from][to];
-
-    sf_assume(index != FullThreats::Dimensions);
+    const IndexType index = piecePairData.feature_index_base() + offsets[attacker_oriented][from]
+        + index_lut2[attacker_oriented][from][to];
+	sf_assume(index < Dimensions);
     return index;
 }
 

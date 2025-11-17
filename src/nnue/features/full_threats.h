@@ -32,7 +32,7 @@ namespace Stockfish::Eval::NNUE::Features {
 
 static constexpr int numValidTargets[PIECE_NB] = {0, 6, 12, 10, 10, 12, 8, 0,
                                                   0, 6, 12, 10, 10, 12, 8, 0};
-extern IndexType     offsets[PIECE_NB][SQUARE_NB + 2];
+extern IndexType     offsets[PIECE_NB][SQUARE_NB];
 void                 init_threat_offsets();
 
 class FullThreats {
