@@ -276,11 +276,12 @@ void FullThreats::append_changed_indices(Color            perspective,
             }
         }
 
+		auto& insert = add ? added : removed;
         const IndexType index = make_index(perspective, 
           attacker, from, to, attacked, ksq);
 
         if (index < Dimensions)
-            (add ? added : removed).push_back(index);
+            insert.push_back(index);
     }
 }
 
