@@ -118,22 +118,23 @@ struct Sorter {
 void partial_insertion_sort(ExtMove* begin, ExtMove* end, int limit) {
     ExtMove *sortedEnd = begin, *p = begin + 1;
 #ifdef USE_AVX512
-	// The vector sorter is inferior for small numbers of elements
-	if (end - begin >= 3) {
-		Sorter sorter(begin);
-		for (; p < end; ++p)
-		{
-			if (p->value >= limit)
-			{
-				if (sortedEnd - begin + 1 >= Sorter::MAX_ELEMENTS)  // sorter full
-					break;
+    // The vector sorter is inferior for small numbers of elements
+    if (end - begin >= 3)
+    {
+        Sorter sorter(begin);
+        for (; p < end; ++p)
+        {
+            if (p->value >= limit)
+            {
+                if (sortedEnd - begin + 1 >= Sorter::MAX_ELEMENTS)  // sorter full
+                    break;
 
-				sorter.insert(p);
-				*p = *++sortedEnd;
-			}
-		}
-		sorter.write_sorted(begin, sortedEnd - begin + 1);
-	}
+                sorter.insert(p);
+                *p = *++sortedEnd;
+            }
+        }
+        sorter.write_sorted(begin, sortedEnd - begin + 1);
+    }
     // Use scalar implementation for any remaining elements
 #endif
     for (; p < end; ++p)
