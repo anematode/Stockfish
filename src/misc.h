@@ -143,8 +143,8 @@ class ValueList {
     const T& operator[](int index) const { return values_[index]; }
 
    private:
-    std::uint32_t size_ = 0;
-    T             values_[MaxSize];
+    std::size_t size_ = 0;
+    T           values_[MaxSize];
 };
 
 
