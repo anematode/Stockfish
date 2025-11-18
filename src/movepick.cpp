@@ -78,14 +78,13 @@ struct Sorter {
 	void insert(const ExtMove* m) {
 		__m512i move, value;
 		splat_extmove(m, move, value);
-		// Mask of values greater than this value, and therefore to the left of the insertion point
-		const __mmask16 to_left = _mm512_cmpge_epi32_mask(sorted_values, value);
-		const __mmask16 insert_at = _kadd_mask16(to_left, 1);
-		assert(!more_than_one(insert_at));
-		// The new value/move by expanding the previous, sorted values into place.
-		const __mmask16 expand = _knot_mask16(insert_at);
-		sorted_values = _mm512_mask_expand_epi32(value, expand, sorted_values);
-		sorted_moves = _mm512_mask_expand_epi32(move, expand, sorted_moves);
+	    // Mask of values less than this value, and therefore to the right of the insertion point
+	    const __mmask16 to_right   = _mm512_cmplt_epi32_mask(sorted_values, value);
+	    // Mask of all lanes except the insertion point
+	    const __mmask16 expand = _kadd_mask16(to_right, __mmask16(-1));
+
+	    sorted_values          = _mm512_mask_expand_epi32(value, expand, sorted_values);
+	    sorted_moves           = _mm512_mask_expand_epi32(move, expand, sorted_moves);
 	}
 	void write_sorted(ExtMove* moves, int count) const {
 		assert(count <= Sorter::MAX_ELEMENTS);
