@@ -59,17 +59,26 @@ enum Stages {
 
 // Sort moves in descending order up to and including a given limit.
 // The order of moves smaller than the limit is left unspecified.
-void partial_insertion_sort(ExtMove* begin, ExtMove* end, int limit) {
+void insertion_sort(ExtMove* begin, ExtMove* end) {
+    for (ExtMove *sortedEnd = begin, *p = begin + 1; p < end; ++p) {
+        ExtMove tmp = *p, *q;
+        *p          = *++sortedEnd;
+        for (q = sortedEnd; q != begin && *(q - 1) < tmp; --q)
+            *q = *(q - 1);
+        *q = tmp;
+    }
+}
 
-    for (ExtMove *sortedEnd = begin, *p = begin + 1; p < end; ++p)
-        if (p->value >= limit)
-        {
-            ExtMove tmp = *p, *q;
-            *p          = *++sortedEnd;
-            for (q = sortedEnd; q != begin && *(q - 1) < tmp; --q)
-                *q = *(q - 1);
-            *q = tmp;
-        }
+void partial_insertion_sort(ExtMove* begin, ExtMove* end, const MovePicker::IndexList& list) {
+    ExtMove *sortedEnd = begin, *p, *q;
+    for (int i : list) {
+        p = begin + i;
+        ExtMove tmp = *p;
+        *p          = *++sortedEnd;
+        for (q = sortedEnd; q != begin && *(q - 1) < tmp; --q)
+            *q = *(q - 1);
+        *q = tmp;
+    }
 }
 
 }  // namespace
@@ -122,7 +131,7 @@ MovePicker::MovePicker(const Position& p, Move ttm, int th, const CapturePieceTo
 // Captures are ordered by Most Valuable Victim (MVV), preferring captures
 // with a good history. Quiets moves are ordered using the history tables.
 template<GenType Type>
-ExtMove* MovePicker::score(MoveList<Type>& ml) {
+ExtMove* MovePicker::score(MoveList<Type>& ml, IndexList* above_limit, int limit) {
 
     static_assert(Type == CAPTURES || Type == QUIETS || Type == EVASIONS, "Wrong type");
 
@@ -140,6 +149,7 @@ ExtMove* MovePicker::score(MoveList<Type>& ml) {
     }
 
     ExtMove* it = cur;
+    int index = 0;
     for (auto move : ml)
     {
         ExtMove& m = *it++;
@@ -177,6 +187,12 @@ ExtMove* MovePicker::score(MoveList<Type>& ml) {
 
             if (ply < LOW_PLY_HISTORY_SIZE)
                 m.value += 8 * (*lowPlyHistory)[ply][m.raw()] / (1 + ply);
+
+            if (index != 0) {
+                above_limit->push_if(index, m.value >= limit);
+            }
+
+            index++;
         }
 
         else  // Type == EVASIONS
@@ -229,9 +245,9 @@ top:
         MoveList<CAPTURES> ml(pos);
 
         cur = endBadCaptures = moves;
-        endCur = endCaptures = score<CAPTURES>(ml);
+        endCur = endCaptures = score<CAPTURES>(ml, nullptr);
 
-        partial_insertion_sort(cur, endCur, std::numeric_limits<int>::min());
+        insertion_sort(cur, endCur);
         ++stage;
         goto top;
     }
@@ -252,10 +268,11 @@ top:
         if (!skipQuiets)
         {
             MoveList<QUIETS> ml(pos);
+            IndexList above_limit;
 
-            endCur = endGenerated = score<QUIETS>(ml);
+            endCur = endGenerated = score<QUIETS>(ml, &above_limit, -3560 * depth);
 
-            partial_insertion_sort(cur, endCur, -3560 * depth);
+            partial_insertion_sort(cur, endCur, above_limit);
         }
 
         ++stage;
@@ -293,9 +310,9 @@ top:
         MoveList<EVASIONS> ml(pos);
 
         cur    = moves;
-        endCur = endGenerated = score<EVASIONS>(ml);
+        endCur = endGenerated = score<EVASIONS>(ml, nullptr);
 
-        partial_insertion_sort(cur, endCur, std::numeric_limits<int>::min());
+        insertion_sort(cur, endCur);
         ++stage;
         [[fallthrough]];
     }
