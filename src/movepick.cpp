@@ -57,70 +57,89 @@ enum Stages {
     QCAPTURE
 };
 
-// Load the Move and the ExtMove value into all lanes of 512-bit registers
+#ifdef USE_AVX512
+// Load the Move, and the ExtMove value, into all lanes of 512-bit registers
 void splat_extmove(const ExtMove* m, __m512i& move, __m512i& value) {
-	uint32_t tmp;
-	memcpy(&tmp, m, 4);
-	move = _mm512_set1_epi32(tmp);
-	value = _mm512_set1_epi32(m->value);
+    static_assert(sizeof(ExtMove) == 8);
+
+    uint32_t tmp;
+    memcpy(&tmp, m, 4);
+    move  = _mm512_set1_epi32(tmp);
+    value = _mm512_set1_epi32(m->value);
 }
 
 // Sorts up to 16 moves.
 struct Sorter {
-	static constexpr int MAX_ELEMENTS = 16;
-	__m512i sorted_values, sorted_moves;
+    __m512i              sorted_values, sorted_moves;
+    static constexpr int MAX_ELEMENTS = 16;
 
-	Sorter(const ExtMove* first) {
-		splat_extmove(first, sorted_moves, sorted_values);
-		// Set all but the first move value to INT_MIN
-		sorted_values = _mm512_mask_set1_epi32(sorted_values, ~1, std::numeric_limits<int>::min());
-	}
-	void insert(const ExtMove* m) {
-		__m512i move, value;
-		splat_extmove(m, move, value);
-	    // Mask of values less than this value, and therefore to the right of the insertion point
-	    const __mmask16 to_right   = _mm512_cmplt_epi32_mask(sorted_values, value);
-	    // Mask of all lanes except the insertion point
-	    const __mmask16 expand = _kadd_mask16(to_right, __mmask16(-1));
+    explicit Sorter(const ExtMove* first) {
+        splat_extmove(first, sorted_moves, sorted_values);
+        // Set all but the first move value to INT_MIN, so that they sort less than any other move
+        sorted_values = _mm512_mask_set1_epi32(sorted_values, ~1, std::numeric_limits<int>::min());
+    }
 
-	    sorted_values          = _mm512_mask_expand_epi32(value, expand, sorted_values);
-	    sorted_moves           = _mm512_mask_expand_epi32(move, expand, sorted_moves);
-	}
-	void write_sorted(ExtMove* moves, int count) const {
-		assert(count <= Sorter::MAX_ELEMENTS);
-		// The values and moves are stored in separate registers; we need to interleave them
-		// back into ExtMoves.
-		const __m512i interleave1 = _mm512_setr_epi32(0, 16, 1, 17, 2, 18, 3, 19, 4, 20, 5, 21, 6, 22, 7, 23);
-		const __m512i interleave2 = _mm512_setr_epi32(8, 24, 9, 25, 10, 26, 11, 27, 12, 28, 13, 29, 14, 30, 15, 31);
-		auto write = [&] (ExtMove* dst, int c, const __m512i indices) {
-			if (c > 0) {
-				const __m512i interleaved = _mm512_permutex2var_epi32(sorted_moves, indices, sorted_values);
-				_mm512_mask_storeu_epi64(dst, (1 << c) - 1, interleaved);
-			}
-		};
-		write(moves, count, interleave1);
-		write(moves + 8, count - 8, interleave2);
-	}
+    void insert(const ExtMove* m) {
+        __m512i move, value;
+        splat_extmove(m, move, value);
+        // Mask of values less than this value, and therefore to the right of the insertion point
+        const __mmask16 to_right = _mm512_cmplt_epi32_mask(sorted_values, value);
+        // Mask of all lanes except the insertion point
+        const __mmask16 expand = _kadd_mask16(to_right, __mmask16(-1));
+
+        // Perform the insertion
+        sorted_values = _mm512_mask_expand_epi32(value, expand, sorted_values);
+        sorted_moves  = _mm512_mask_expand_epi32(move, expand, sorted_moves);
+    }
+
+    void write_sorted(ExtMove* moves, std::ptrdiff_t count) const {
+        assert(count <= Sorter::MAX_ELEMENTS);
+        // Because the values and moves are stored in separate registers, we need to permute them
+        // back into ExtMoves
+        const __m512i get0_to_7 =
+          _mm512_setr_epi32(0, 16, 1, 17, 2, 18, 3, 19, 4, 20, 5, 21, 6, 22, 7, 23);
+        const __m512i get8_to_15 =
+          _mm512_setr_epi32(8, 24, 9, 25, 10, 26, 11, 27, 12, 28, 13, 29, 14, 30, 15, 31);
+        auto write = [&](int offset, std::ptrdiff_t store_count, const __m512i indices) {
+            if (store_count <= 0)
+                return;
+            const __m512i interleaved =
+              _mm512_permutex2var_epi32(sorted_moves, indices, sorted_values);
+            _mm512_mask_storeu_epi64(moves + offset, (1 << store_count) - 1, interleaved);
+        };
+        write(0, count, get0_to_7);
+        write(8, count - 8, get8_to_15);
+    }
 };
+#endif
 
 // Sort moves in descending order up to and including a given limit.
 // The order of moves smaller than the limit is left unspecified.
 void partial_insertion_sort(ExtMove* begin, ExtMove* end, int limit) {
-	ExtMove *sortedEnd = begin, *p = begin + 1;
+    ExtMove *sortedEnd = begin, *p = begin + 1;
 #ifdef USE_AVX512
-    Sorter sorter(begin);
-    for (; p < end; ++p) {
-        if (p->value >= limit) {
-			if (sortedEnd - begin + 1 >= Sorter::MAX_ELEMENTS) break;
+	// The vector sorter is inferior for small numbers of elements
+	if (end - begin >= 3) {
+		Sorter sorter(begin);
+		for (; p < end; ++p)
+		{
+			if (p->value >= limit)
+			{
+				if (sortedEnd - begin + 1 >= Sorter::MAX_ELEMENTS)  // sorter full
+					break;
 
-			sorter.insert(p);
-            *p = *++sortedEnd;
-        }
-    }
-    sorter.write_sorted(begin, sortedEnd - begin + 1);
+				sorter.insert(p);
+				*p = *++sortedEnd;
+			}
+		}
+		sorter.write_sorted(begin, sortedEnd - begin + 1);
+	}
+    // Use scalar implementation for any remaining elements
 #endif
-    for (; p < end; ++p) {
-        if (p->value >= limit) {
+    for (; p < end; ++p)
+    {
+        if (p->value >= limit)
+        {
             ExtMove tmp = *p, *q;
             *p          = *++sortedEnd;
             for (q = sortedEnd; q != begin && *(q - 1) < tmp; --q)
