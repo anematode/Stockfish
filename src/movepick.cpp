@@ -53,23 +53,82 @@ enum Stages {
     // generate qsearch moves
     QSEARCH_TT,
     QCAPTURE_INIT,
+
     QCAPTURE
 };
 
+// Load the Move and the ExtMove value into all lanes of 512-bit registers
+void splat_extmove(const ExtMove* m, __m512i& move, __m512i& value) {
+	uint32_t tmp;
+	memcpy(&tmp, m, 4);
+	move = _mm512_set1_epi32(tmp);
+	value = _mm512_set1_epi32(m->value);
+}
+
+// Sorts up to 16 moves.
+struct Sorter {
+	static constexpr int MAX_ELEMENTS = 16;
+	__m512i sorted_values, sorted_moves;
+
+	Sorter(const ExtMove* first) {
+		splat_extmove(first, sorted_moves, sorted_values);
+		// Set all but the first move value to INT_MIN
+		sorted_values = _mm512_mask_set1_epi32(sorted_values, ~1, std::numeric_limits<int>::min());
+	}
+	void insert(const ExtMove* m) {
+		__m512i move, value;
+		splat_extmove(m, move, value);
+		// Mask of values greater than this value, and therefore to the left of the insertion point
+		const __mmask16 to_left = _mm512_cmpge_epi32_mask(sorted_values, value);
+		const __mmask16 insert_at = _kadd_mask16(to_left, 1);
+		assert(!more_than_one(insert_at));
+		// The new value/move by expanding the previous, sorted values into place.
+		const __mmask16 expand = _knot_mask16(insert_at);
+		sorted_values = _mm512_mask_expand_epi32(value, expand, sorted_values);
+		sorted_moves = _mm512_mask_expand_epi32(move, expand, sorted_moves);
+	}
+	void write_sorted(ExtMove* moves, int count) const {
+		assert(count <= Sorter::MAX_ELEMENTS);
+		// The values and moves are stored in separate registers; we need to interleave them
+		// back into ExtMoves.
+		const __m512i interleave1 = _mm512_setr_epi32(0, 16, 1, 17, 2, 18, 3, 19, 4, 20, 5, 21, 6, 22, 7, 23);
+		const __m512i interleave2 = _mm512_setr_epi32(8, 24, 9, 25, 10, 26, 11, 27, 12, 28, 13, 29, 14, 30, 15, 31);
+		auto write = [&] (ExtMove* dst, int c, const __m512i indices) {
+			if (c > 0) {
+				const __m512i interleaved = _mm512_permutex2var_epi32(sorted_moves, indices, sorted_values);
+				_mm512_mask_storeu_epi64(dst, (1 << c) - 1, interleaved);
+			}
+		};
+		write(moves, count, interleave1);
+		write(moves + 8, count - 8, interleave2);
+	}
+};
 
 // Sort moves in descending order up to and including a given limit.
 // The order of moves smaller than the limit is left unspecified.
 void partial_insertion_sort(ExtMove* begin, ExtMove* end, int limit) {
+	ExtMove *sortedEnd = begin, *p = begin + 1;
+#ifdef USE_AVX512
+    Sorter sorter(begin);
+    for (; p < end; ++p) {
+        if (p->value >= limit) {
+			if (sortedEnd - begin + 1 >= Sorter::MAX_ELEMENTS) break;
 
-    for (ExtMove *sortedEnd = begin, *p = begin + 1; p < end; ++p)
-        if (p->value >= limit)
-        {
+			sorter.insert(p);
+            *p = *++sortedEnd;
+        }
+    }
+    sorter.write_sorted(begin, sortedEnd - begin + 1);
+#endif
+    for (; p < end; ++p) {
+        if (p->value >= limit) {
             ExtMove tmp = *p, *q;
             *p          = *++sortedEnd;
             for (q = sortedEnd; q != begin && *(q - 1) < tmp; --q)
                 *q = *(q - 1);
             *q = tmp;
         }
+    }
 }
 
 }  // namespace
