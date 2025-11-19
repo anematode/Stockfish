@@ -32,7 +32,9 @@
 namespace Stockfish::Eval::NNUE::Features {
 
 // Lookup array for indexing threats
-IndexType offsets[PIECE_NB][SQUARE_NB + 2];
+IndexType offsets[PIECE_NB][SQUARE_NB];
+// cumulativePieceOffset, cumulativeOffset
+IndexType helper_offsets[PIECE_NB][2];
 
 // Information on a particular pair of pieces and whether they should be excluded
 struct PiecePairData {
@@ -69,9 +71,9 @@ static void init_index_luts() {
 
             int  map           = FullThreats::map[attackerType - 1][attackedType - 1];
             bool semi_excluded = attackerType == attackedType && (enemy || attackerType != PAWN);
-            IndexType feature  = offsets[attacker][65]
+            IndexType feature  = helper_offsets[attacker][1]
                               + (color_of(attacked) * (numValidTargets[attacker] / 2) + map)
-                                  * offsets[attacker][64];
+                                  * helper_offsets[attacker][0];
 
             bool excluded                  = map < 0;
             index_lut1[attacker][attacked] = PiecePairData(excluded, semi_excluded, feature);
@@ -116,8 +118,8 @@ void init_threat_offsets() {
             }
         }
 
-        offsets[pieceIdx][64] = cumulativePieceOffset;
-        offsets[pieceIdx][65] = cumulativeOffset;
+        helper_offsets[pieceIdx][0] = cumulativePieceOffset;
+        helper_offsets[pieceIdx][1] = cumulativeOffset;
 
         cumulativeOffset += numValidTargets[pieceIdx] * cumulativePieceOffset;
     }
