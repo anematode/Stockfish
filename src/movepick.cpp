@@ -57,8 +57,6 @@ enum Stages {
 };
 
 
-// Sort moves in descending order up to and including a given limit.
-// The order of moves smaller than the limit is left unspecified.
 void insertion_sort(ExtMove* begin, ExtMove* end) {
     for (ExtMove *sortedEnd = begin, *p = begin + 1; p < end; ++p) {
         ExtMove tmp = *p, *q;
@@ -69,6 +67,8 @@ void insertion_sort(ExtMove* begin, ExtMove* end) {
     }
 }
 
+// Sort moves in descending order. Only moves found in the index list are sorted.
+// The order of the other moves is unspecified.
 void partial_insertion_sort(ExtMove* begin, ExtMove* end, const MovePicker::IndexList& list) {
     ExtMove *sortedEnd = begin, *p, *q;
     for (int i : list) {
@@ -130,6 +130,8 @@ MovePicker::MovePicker(const Position& p, Move ttm, int th, const CapturePieceTo
 // Assigns a numerical value to each move in a list, used for sorting.
 // Captures are ordered by Most Valuable Victim (MVV), preferring captures
 // with a good history. Quiets moves are ordered using the history tables.
+// If computing quiets, the indices of moves with a value exceeding `limit`
+// are written to `above_limit`.
 template<GenType Type>
 ExtMove* MovePicker::score(MoveList<Type>& ml, IndexList* above_limit, int limit) {
 
