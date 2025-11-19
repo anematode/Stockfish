@@ -190,8 +190,8 @@ ExtMove* MovePicker::score(MoveList<Type>& ml, IndexList* above_limit, int limit
             if (ply < LOW_PLY_HISTORY_SIZE)
                 m.value += 8 * (*lowPlyHistory)[ply][m.raw()] / (1 + ply);
 
-            if (index != 0) {
-                above_limit->push_if(index, m.value >= limit);
+            if (index != 0 && m.value >= limit) {
+				above_limit->push_back(index);
             }
 
             index++;
