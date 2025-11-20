@@ -72,6 +72,7 @@ void insertion_sort(ExtMove* begin, ExtMove* end) {
 void partial_insertion_sort(ExtMove* begin, ExtMove* end, const MovePicker::IndexList& list) {
     ExtMove *sortedEnd = begin, *p, *q;
     for (int i : list) {
+		if (i == 0) continue;
         p = begin + i;
         ExtMove tmp = *p;
         *p          = *++sortedEnd;
@@ -190,9 +191,7 @@ ExtMove* MovePicker::score(MoveList<Type>& ml, IndexList* above_limit, int limit
             if (ply < LOW_PLY_HISTORY_SIZE)
                 m.value += 8 * (*lowPlyHistory)[ply][m.raw()] / (1 + ply);
 
-            if (index != 0) {
-                above_limit->push_if(index, m.value >= limit);
-            }
+			above_limit->push_if(index, m.value >= limit);
 
             index++;
         }
