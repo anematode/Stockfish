@@ -671,7 +671,6 @@ Bitboard get_changed_pieces(const Piece oldPieces[SQUARE_NB], const Piece newPie
     uint8x8_t t4 = vshrn_n_u16(vreinterpretq_u16_u8(merged), 4);
     return ~vget_lane_u64(vreinterpret_u64_u8(t4), 0);
 #else
-#else
     Bitboard changed = 0;
 
     for (Square sq = SQUARE_ZERO; sq < SQUARE_NB; ++sq)
