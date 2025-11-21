@@ -135,22 +135,22 @@ FullThreats::make_index(Color  perspective,
                         Square to,
                         Piece  attacked,
                         Square ksq) {
-    const int8_t orientation = OrientTBL[ksq] ^ (56 * perspective);
-    from = Square(int8_t(from) ^ orientation);
-    to   = Square(int8_t(to) ^ orientation);
+    const int orientation = OrientTBL[ksq] ^ (56 * perspective);
+	unsigned from_oriented = uint8_t(from) ^ orientation;
+	unsigned to_oriented = uint8_t(to) ^ orientation;
 
-    int8_t swap = 8 * perspective;
+    unsigned swap = 8 * perspective;
     unsigned attacker_oriented = attacker ^ swap;
     unsigned attacked_oriented = attacked ^ swap;
 
     const auto piecePairData = index_lut1[attacker_oriented][attacked_oriented];
 
-    const bool less_than = static_cast<uint8_t>(from) < static_cast<uint8_t>(to);
+    const bool less_than = from_oriented < to_oriented;
     if ((piecePairData.excluded_pair_info() + less_than) & 2)
         return FullThreats::Dimensions;
 
-    const IndexType index = piecePairData.feature_index_base() + offsets[attacker_oriented][from]
-        + index_lut2[attacker_oriented][from][to];
+    const IndexType index = piecePairData.feature_index_base() + offsets[attacker_oriented][from_oriented]
+        + index_lut2[attacker_oriented][from_oriented][to_oriented];
 	sf_assume(index < Dimensions);
     return index;
 }
