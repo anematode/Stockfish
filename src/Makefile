@@ -1060,7 +1060,7 @@ config-sanity: net
 	echo "CXXFLAGS: $(CXXFLAGS)" && \
 	echo "LDFLAGS: $(LDFLAGS)" && \
 	echo "" && \
-	echo "Testing config sanity. If this fails, try 'make help' ..." && \
+	echo "Testing config sanity. This test requires VNNI. If this fails, try 'make help' ..." && \
 	echo "" && \
 	(test "$(debug)" = "yes" || test "$(debug)" = "no") && \
 	(test "$(optimize)" = "yes" || test "$(optimize)" = "no") && \
