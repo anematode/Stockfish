@@ -788,8 +788,6 @@ void Position::do_move(Move                      m,
         dp.remove_sq = capsq;
 
         k ^= Zobrist::psq[captured][capsq];
-        st->materialKey ^=
-          Zobrist::psq[captured][8 + pieceCount[captured] - (m.type_of() != EN_PASSANT)];
 
         // Reset rule 50 counter
         st->rule50 = 0;
@@ -826,6 +824,8 @@ void Position::do_move(Move                      m,
         else
             move_piece(from, to, &dts);
     }
+
+    st->materialKey ^= Zobrist::psq[captured][8 + pieceCount[captured]];
 
     // If the moving piece is a pawn do some special extra work
     if (type_of(pc) == PAWN)
