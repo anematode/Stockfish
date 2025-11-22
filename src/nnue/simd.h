@@ -211,7 +211,7 @@ static constexpr std::uint32_t Mask[4] = {1, 2, 4, 8};
     #define vec128_storeu(a, b) vst1q_u16(reinterpret_cast<std::uint16_t*>(a), b)
     #define vec128_add(a, b) vaddq_u16(a, b)
 
-    #define NumRegistersSIMD 16
+    #define NumRegistersSIMD 8
     #define MaxChunkSize 16
 
     #ifndef __aarch64__
