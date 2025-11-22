@@ -660,14 +660,13 @@ Bitboard get_changed_pieces(const Piece oldPieces[SQUARE_NB], const Piece newPie
 #else
     Bitboard changed = 0;
     constexpr uint64_t ByteMask = 0x8080808080808080ull;
-    constexpr uint64_t HighByte = 0xffull << 56;
-    for (int i = 0; i < SQUARE_NB; i += 8)
+    for (int i = 7; i >= 0; i--)
     {
         uint64_t old8, new8;
-        memcpy(&old8, oldPieces + i, sizeof(old8));
-        memcpy(&new8, newPieces + i, sizeof(new8));
+        memcpy(&old8, oldPieces + 8 * i, sizeof(old8));
+        memcpy(&new8, newPieces + 8 * i, sizeof(new8));
         uint64_t eq = (old8 - new8) & (new8 - old8) & ByteMask;
-        changed = (changed >> 8) + (eq * 0x0002040810204081ULL & HighByte);
+        changed = (changed << 8) + (eq * 0x0002040810204081ULL >> 56);
     }
 
     return ~changed;
