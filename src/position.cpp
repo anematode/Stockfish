@@ -375,7 +375,6 @@ void Position::set_state() const {
         st->key ^= Zobrist::side;
 
     st->key ^= Zobrist::castling[st->castlingRights];
-    st->materialKey = compute_material_key();
 }
 
 Key Position::compute_material_key() const {
@@ -788,8 +787,6 @@ void Position::do_move(Move                      m,
         dp.remove_sq = capsq;
 
         k ^= Zobrist::psq[captured][capsq];
-        st->materialKey ^=
-          Zobrist::psq[captured][8 + pieceCount[captured] - (m.type_of() != EN_PASSANT)];
 
         // Reset rule 50 counter
         st->rule50 = 0;
@@ -851,8 +848,6 @@ void Position::do_move(Move                      m,
             // Update hash keys
             // Zobrist::psq[pc][to] is zero, so we don't need to clear it
             k ^= Zobrist::psq[promotion][to];
-            st->materialKey ^= Zobrist::psq[promotion][8 + pieceCount[promotion] - 1]
-                             ^ Zobrist::psq[pc][8 + pieceCount[pc]];
 
             if (promotionType <= BISHOP)
                 st->minorPieceKey ^= Zobrist::psq[promotion][to];
