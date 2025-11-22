@@ -771,7 +771,7 @@ void Position::do_move(Move                      m,
 
                 // Update board and piece lists in ep case, normal captures are updated later
                 remove_piece(capsq, &dts);
-				st->materialKey ^= Zobrist::psq[captured][8 + pieceCount[captured]];
+                st->materialKey ^= Zobrist::psq[captured][8 + pieceCount[captured]];
             }
 
             st->pawnKey ^= Zobrist::psq[captured][capsq];
@@ -821,7 +821,7 @@ void Position::do_move(Move                      m,
         {
             remove_piece(from, &dts);
             swap_piece(to, pc, &dts);
-			st->materialKey ^= Zobrist::psq[captured][8 + pieceCount[captured]];
+            st->materialKey ^= Zobrist::psq[captured][8 + pieceCount[captured]];
         }
         else
             move_piece(from, to, &dts);
