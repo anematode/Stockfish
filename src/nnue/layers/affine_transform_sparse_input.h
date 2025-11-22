@@ -59,7 +59,7 @@ alignas(CacheLineSize) static constexpr struct OffsetIndices {
             std::uint64_t j = i, k = 0;
             while (j)
             {
-                offset_indices[i][k++] = constexpr_lsb(j);
+                offset_indices[i][k++] = 4 * constexpr_lsb(j);
                 j &= j - 1;
             }
             while (k < 8)
@@ -147,7 +147,7 @@ void find_nnz(const std::int32_t* RESTRICT input,
     const auto     inputVector = reinterpret_cast<const vec_uint_t*>(input);
     IndexType      count       = 0;
     vec128_t       base        = vec128_zero;
-    const vec128_t increment   = vec128_set_16(8);
+    const vec128_t increment   = vec128_set_16(32);
     for (IndexType i = 0; i < NumChunks; ++i)
     {
         // bitmask of nonzero values in this chunk
@@ -320,12 +320,12 @@ class AffineTransformSparseInput {
         {
             const std::ptrdiff_t i0  = *start++;
             const std::ptrdiff_t i1  = *start++;
-            const invec_t        in0 = vec_set_32(input32[i0]);
-            const invec_t        in1 = vec_set_32(input32[i1]);
+            const invec_t        in0 = vec_set_32(*(const uint32_t*)((const char*)input32 + i0));
+            const invec_t        in1 = vec_set_32(*(const uint32_t*)((const char*)input32 + i1));
             const auto           col0 =
-              reinterpret_cast<const invec_t*>(&weights_cp[i0 * OutputDimensions * ChunkSize]);
+              reinterpret_cast<const invec_t*>(&weights_cp[i0 * OutputDimensions * ChunkSize / 4]);
             const auto col1 =
-              reinterpret_cast<const invec_t*>(&weights_cp[i1 * OutputDimensions * ChunkSize]);
+              reinterpret_cast<const invec_t*>(&weights_cp[i1 * OutputDimensions * ChunkSize / 4]);
             for (IndexType k = 0; k < NumAccums; ++k)
             {
                 vec_add_dpbusd_32(acc[k], in0, col0[k]);
@@ -338,9 +338,9 @@ class AffineTransformSparseInput {
         while (start < end)
         {
             const std::ptrdiff_t i  = *start++;
-            const invec_t        in = vec_set_32(input32[i]);
+            const invec_t        in = vec_set_32(*(const uint32_t*)((const char*)input32 + i));
             const auto           col =
-              reinterpret_cast<const invec_t*>(&weights_cp[i * OutputDimensions * ChunkSize]);
+              reinterpret_cast<const invec_t*>(&weights_cp[i * OutputDimensions * ChunkSize / 4]);
             for (IndexType k = 0; k < NumAccums; ++k)
                 vec_add_dpbusd_32(acc[k], in, col[k]);
         }
