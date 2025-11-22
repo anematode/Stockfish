@@ -1060,8 +1060,9 @@ config-sanity: net
 	echo "CXXFLAGS: $(CXXFLAGS)" && \
 	echo "LDFLAGS: $(LDFLAGS)" && \
 	echo "" && \
-	echo "Testing config sanity. If this fails, try 'make help' ..." && \
+	echo "Testing config sanity. This test only intended to run on Apple silicon. If this fails, try 'make help' ..." && \
 	echo "" && \
+	(test "$(KERNEL)" = "Darwin") && \
 	(test "$(debug)" = "yes" || test "$(debug)" = "no") && \
 	(test "$(optimize)" = "yes" || test "$(optimize)" = "no") && \
 	(test "$(SUPPORTED_ARCH)" = "true") && \
