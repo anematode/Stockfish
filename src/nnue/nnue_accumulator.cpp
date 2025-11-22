@@ -584,26 +584,26 @@ void update_accumulator_incremental(
     else
         FeatureSet::append_changed_indices(perspective, ksq, computed.diff, added, removed);
 
-    if (!added.size() && !removed.size())
-    {
-        auto&       targetAcc = target_state.template acc<TransformedFeatureDimensions>();
-        const auto& sourceAcc = computed.template acc<TransformedFeatureDimensions>();
-
-        std::memcpy(targetAcc.accumulation[perspective], sourceAcc.accumulation[perspective],
-                    sizeof(targetAcc.accumulation[perspective]));
-        std::memcpy(targetAcc.psqtAccumulation[perspective],
-                    sourceAcc.psqtAccumulation[perspective],
-                    sizeof(targetAcc.psqtAccumulation[perspective]));
-
-        targetAcc.computed[perspective] = true;
-        return;
-    }
-
     auto updateContext =
       make_accumulator_update_context(perspective, featureTransformer, computed, target_state);
 
-    if constexpr (std::is_same_v<FeatureSet, ThreatFeatureSet>)
+    if constexpr (std::is_same_v<FeatureSet, ThreatFeatureSet>) {
+		if (!added.size() && !removed.size())
+		{
+			auto&       targetAcc = target_state.template acc<TransformedFeatureDimensions>();
+			const auto& sourceAcc = computed.template acc<TransformedFeatureDimensions>();
+
+			std::memcpy(targetAcc.accumulation[perspective], sourceAcc.accumulation[perspective],
+						sizeof(targetAcc.accumulation[perspective]));
+			std::memcpy(targetAcc.psqtAccumulation[perspective],
+						sourceAcc.psqtAccumulation[perspective],
+						sizeof(targetAcc.psqtAccumulation[perspective]));
+
+			targetAcc.computed[perspective] = true;
+			return;
+		}
         updateContext.apply(added, removed);
+	}
     else
     {
         assert(added.size() == 1 || added.size() == 2);
