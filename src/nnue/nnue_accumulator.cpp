@@ -659,11 +659,18 @@ Bitboard get_changed_pieces(const Piece oldPieces[SQUARE_NB], const Piece newPie
     return ~sameBB;
 #else
     Bitboard changed = 0;
+    constexpr uint64_t ByteMask = 0x8080808080808080ull;
+    for (int i = 7; i >= 0; --i)
+    {
+        uint64_t old8, new8;
+        memcpy(&old8, oldPieces + 8 * i, sizeof(old8));
+        memcpy(&new8, newPieces + 8 * i, sizeof(new8));
+        uint64_t eq = (ByteMask + old8 - new8) & (ByteMask + new8 - old8) & ByteMask;
+        uint8_t byte = (eq * 0x0002040810204081ULL) >> 56;
+        changed = (changed << 8) + byte;
+    }
 
-    for (Square sq = SQUARE_ZERO; sq < SQUARE_NB; ++sq)
-        changed |= static_cast<Bitboard>(oldPieces[sq] != newPieces[sq]) << sq;
-
-    return changed;
+    return ~changed;
 #endif
 }
 
@@ -921,3 +928,4 @@ void update_threats_accumulator_full(Color                                 persp
 }
 
 }
+
