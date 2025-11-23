@@ -680,23 +680,28 @@ void update_accumulator_refresh_cache(Color                                 pers
     auto&                    entry = cache[ksq][perspective];
     PSQFeatureSet::IndexList removed, added;
 
-    const Bitboard changedBB = get_changed_pieces(entry.pieces, pos.piece_array().data());
-    Bitboard       removedBB = changedBB & entry.pieceBB;
-    Bitboard       addedBB   = changedBB & pos.pieces();
-
-    while (removedBB)
+	for (Color c : {WHITE, BLACK})
     {
-        Square sq = pop_lsb(removedBB);
-        removed.push_back(PSQFeatureSet::make_index(perspective, sq, entry.pieces[sq], ksq));
-    }
-    while (addedBB)
-    {
-        Square sq = pop_lsb(addedBB);
-        added.push_back(PSQFeatureSet::make_index(perspective, sq, pos.piece_on(sq), ksq));
-    }
+        for (PieceType pt = PAWN; pt <= KING; ++pt)
+        {
+            const Piece    piece    = make_piece(c, pt);
+            const Bitboard oldBB    = entry.byColorBB[c] & entry.byTypeBB[pt];
+            const Bitboard newBB    = pos.pieces(c, pt);
+            Bitboard       toRemove = oldBB & ~newBB;
+            Bitboard       toAdd    = newBB & ~oldBB;
 
-    entry.pieceBB = pos.pieces();
-    std::copy_n(pos.piece_array().begin(), SQUARE_NB, entry.pieces);
+            while (toRemove)
+            {
+                Square sq = pop_lsb(toRemove);
+                removed.push_back(PSQFeatureSet::make_index(perspective, sq, piece, ksq));
+            }
+            while (toAdd)
+            {
+                Square sq = pop_lsb(toAdd);
+                added.push_back(PSQFeatureSet::make_index(perspective, sq, piece, ksq));
+            }
+        }
+    }
 
     auto& accumulator                 = accumulatorState.acc<Dimensions>();
     accumulator.computed[perspective] = true;
@@ -819,6 +824,13 @@ void update_accumulator_refresh_cache(Color                                 pers
     std::memcpy(accumulator.psqtAccumulation[perspective], entry.psqtAccumulation.data(),
                 sizeof(int32_t) * PSQTBuckets);
 #endif
+	
+
+    for (Color c : {WHITE, BLACK})
+        entry.byColorBB[c] = pos.pieces(c);
+
+    for (PieceType pt = PAWN; pt <= KING; ++pt)
+        entry.byTypeBB[pt] = pos.pieces(pt);
 }
 
 template<IndexType Dimensions>
