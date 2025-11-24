@@ -79,13 +79,14 @@ class StatsEntry {
     operator const T&() const { return entry; }
 
     void operator<<(int bonus) {
-        // Make sure that bonus is in range [-D, D]
-		double bonus_dbl = bonus;
-		double entry_dbl = entry;
-		constexpr double D_dbl = D;
-		double clampedBonus = _mm_cvtsd_f64(_mm_range_round_sd(_mm_set_sd(bonus_dbl), _mm_set_sd(double(D)), 0b10, 8));
+		const double inv_D = std::nextafter(1.0 / double(D), 1);
 
-        entry = int(entry + clampedBonus - std::trunc(entry_dbl * std::abs(clampedBonus) / D_dbl));
+        // Make sure that bonus is in range [-D, D]
+		double entry_flt = entry;
+		double bonus_flt = bonus;
+		double clamped = std::min(std::abs(bonus_flt), double(D));
+        double val = entry_flt + std::copysign(clamped, bonus_flt) - std::trunc(entry_flt * inv_D * clamped);
+		entry = val;
 
         assert(std::abs(entry) <= D);
     }
