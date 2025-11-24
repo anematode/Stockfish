@@ -20,6 +20,7 @@
 #define HISTORY_H_INCLUDED
 
 #include <algorithm>
+#include <iostream>
 #include <array>
 #include <cassert>
 #include <cmath>
@@ -79,8 +80,12 @@ class StatsEntry {
 
     void operator<<(int bonus) {
         // Make sure that bonus is in range [-D, D]
-        int clampedBonus = std::clamp(bonus, -D, D);
-        entry += clampedBonus - entry * std::abs(clampedBonus) / D;
+		double bonus_dbl = bonus;
+		double entry_dbl = entry;
+		constexpr double D_dbl = D;
+		double clampedBonus = _mm_cvtsd_f64(_mm_range_round_sd(_mm_set_sd(bonus_dbl), _mm_set_sd(double(D)), 0b10, 8));
+
+        entry = int(entry + clampedBonus - std::trunc(entry_dbl * std::abs(clampedBonus) / D_dbl));
 
         assert(std::abs(entry) <= D);
     }
