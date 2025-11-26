@@ -1043,12 +1043,6 @@ void Position::undo_move(Move m) {
 template<bool PutPiece>
 inline void add_dirty_threat(
   DirtyThreats* const dts, Piece pc, Piece threatened, Square s, Square threatenedSq) {
-    if (PutPiece)
-    {
-        dts->threatenedSqs |= square_bb(threatenedSq);
-        dts->threateningSqs |= square_bb(s);
-    }
-
     dts->list.push_back({pc, threatened, s, threatenedSq, PutPiece});
 }
 
@@ -1096,6 +1090,9 @@ void Position::update_piece_threats(Piece pc, Square s, DirtyThreats* const dts)
                 const Square threatenedSq = lsb(discovered);
                 const Piece  threatenedPc = piece_on(threatenedSq);
                 add_dirty_threat<!PutPiece>(dts, slider, threatenedPc, sliderSq, threatenedSq);
+                if constexpr (!PutPiece) {
+                    dts->threatenedSqs |= discovered;
+                }
             }
         }
 
@@ -1115,6 +1112,11 @@ void Position::update_piece_threats(Piece pc, Square s, DirtyThreats* const dts)
         assert(srcPc != NO_PIECE);
 
         add_dirty_threat<PutPiece>(dts, srcPc, pc, srcSq, s);
+    }
+
+    if (PutPiece) {
+        dts->threateningSqs |= (threatened ? square_bb(s) : 0) | incoming_threats;
+        dts->threatenedSqs |= threatened | sliders;
     }
 }
 
