@@ -1854,7 +1854,9 @@ void update_continuation_histories(Stack* ss, Piece pc, Square to, int bonus) {
     static constexpr std::array<ConthistBonus, 6> conthist_bonuses = {
       {{1, 1133}, {2, 683}, {3, 312}, {4, 582}, {5, 149}, {6, 474}}};
 
+#ifdef __GNUC__
 #pragma GCC unroll 6
+#endif
     for (const auto [i, weight] : conthist_bonuses)
     {
         // Only update the first 2 continuation histories if we are in check
