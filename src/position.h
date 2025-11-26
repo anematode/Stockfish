@@ -371,17 +371,21 @@ inline void Position::move_piece(Square from, Square to, DirtyThreats* const dts
     Piece    pc     = board[from];
     Bitboard fromTo = from | to;
 
-    if (dts)
+    auto updateMembers = [&] () {
+        byTypeBB[ALL_PIECES] ^= fromTo;
+        byTypeBB[type_of(pc)] ^= fromTo;
+        byColorBB[color_of(pc)] ^= fromTo;
+        board[from] = NO_PIECE;
+        board[to]   = pc;
+    };
+
+    if (dts) {
         update_piece_threats<false>(pc, from, dts);
-
-    byTypeBB[ALL_PIECES] ^= fromTo;
-    byTypeBB[type_of(pc)] ^= fromTo;
-    byColorBB[color_of(pc)] ^= fromTo;
-    board[from] = NO_PIECE;
-    board[to]   = pc;
-
-    if (dts)
+        updateMembers();
         update_piece_threats<true>(pc, to, dts);
+    } else {
+        updateMembers();
+    }
 }
 
 inline void Position::swap_piece(Square s, Piece pc, DirtyThreats* const dts) {
