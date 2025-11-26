@@ -1855,9 +1855,8 @@ void update_continuation_histories(Stack* ss, Piece pc, Square to, int bonus) {
       {{1, 1133}, {2, 683}, {3, 312}, {4, 582}, {5, 149}, {6, 474}}};
 
 #pragma GCC unroll 6
-    for (size_t j = 0; j < conthist_bonuses.size(); ++j)
+    for (const auto [i, weight] : conthist_bonuses)
     {
-        const auto [i, weight] = conthist_bonuses[j];
         // Only update the first 2 continuation histories if we are in check
         if (ss->inCheck && i > 2)
             break;
