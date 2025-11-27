@@ -1150,8 +1150,8 @@ void Position::update_piece_threats(Piece pc, Square s, DirtyThreats* const dts,
     }
 
     if constexpr (PutPiece) {
-        dts->threatenedSqs |= threatened | (all_attackers != 0) << s;
-        dts->threateningSqs |= all_attackers | (threatened != 0) << s;
+        dts->threatenedSqs |= threatened | Bitboard(all_attackers != 0) << s;
+        dts->threateningSqs |= all_attackers | Bitboard(threatened != 0) << s;
     }
 }
 
