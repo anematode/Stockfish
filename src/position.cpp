@@ -1056,43 +1056,61 @@ inline void add_dirty_threat(
 // Given a DirtyThreat template and bit offsets to insert the piece type and square, write the threats
 // present at the given bitboard.
 template<int SqShift, int PcShift>
-void write_multiple_dirties(Position& p, Bitboard mask, DirtyThreat dt_template, DirtyThreats* dts) {
-	static_assert(sizeof(DirtyThreat) == 4);
+void write_multiple_dirties(Position&     p,
+                            Bitboard      mask,
+                            DirtyThreat   dt_template,
+                            DirtyThreats* dts) {
+    static_assert(sizeof(DirtyThreat) == 4);
 
-	const __m512i pieces_v = _mm512_loadu_si512(p.piece_array().data());
-	const __m512i AllSquares = _mm512_set_epi8(63, 62, 61, 60, 59, 58, 57, 56, 55, 54, 53, 52, 51, 50, 49, 48, 47, 46, 45, 44, 43, 42, 41, 40, 39, 38, 37, 36, 35, 34, 33, 32, 31, 30, 29, 28, 27, 26, 25, 24, 23, 22, 21, 20, 19, 18, 17, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0);
+    const __m512i pieces_v   = _mm512_loadu_si512(p.piece_array().data());
+    const __m512i AllSquares = _mm512_set_epi8(
+      63, 62, 61, 60, 59, 58, 57, 56, 55, 54, 53, 52, 51, 50, 49, 48, 47, 46, 45, 44, 43, 42, 41,
+      40, 39, 38, 37, 36, 35, 34, 33, 32, 31, 30, 29, 28, 27, 26, 25, 24, 23, 22, 21, 20, 19, 18,
+      17, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0);
 
-	const int dt_count = popcount(mask);
-	assert(dt_count <= 16);
+    const int dt_count = popcount(mask);
+    assert(dt_count <= 16);
 
-	const __m512i template_v = _mm512_set1_epi32(dt_template.raw());
-	auto *write = dts->list.make_space(dt_count);
-	
-	// Extract the list of squares and upconvert to 32 bits. We'll never have more than 16 entries so
+    const __m512i template_v = _mm512_set1_epi32(dt_template.raw());
+    auto*         write      = dts->list.make_space(dt_count);
+
+    // Extract the list of squares and upconvert to 32 bits. We'll never have more than 16 entries so
     // this is sufficient.
-	__m512i relevant_sqs = _mm512_maskz_compress_epi8(mask, AllSquares);
-	relevant_sqs = _mm512_cvtepi8_epi32(_mm512_castsi512_si128(relevant_sqs));
+    __m512i relevant_sqs = _mm512_maskz_compress_epi8(mask, AllSquares);
+    relevant_sqs         = _mm512_cvtepi8_epi32(_mm512_castsi512_si128(relevant_sqs));
 
-	const __m512i relevant_pieces = _mm512_maskz_permutexvar_epi8(0x1111111111111111ULL, relevant_sqs, pieces_v);
-	if (dt_count <= 8) {  // in the common case, we can use 256-bit vectors
-		const __m256i relevant_sqs_narrowed = _mm512_castsi512_si256(relevant_sqs);
-		const __m256i shifted_sqs = SqShift ? _mm256_slli_epi32(relevant_sqs_narrowed, SqShift) : relevant_sqs_narrowed;
-		const __m256i shifted_pcs = _mm256_slli_epi32(_mm512_castsi512_si256(relevant_pieces), PcShift);
+    const __m512i relevant_pieces =
+      _mm512_maskz_permutexvar_epi8(0x1111111111111111ULL, relevant_sqs, pieces_v);
+    if (dt_count <= 8)
+    {  // in the common case, we can use 256-bit vectors
+        const __m256i relevant_sqs_narrowed = _mm512_castsi512_si256(relevant_sqs);
+        const __m256i shifted_sqs =
+          SqShift ? _mm256_slli_epi32(relevant_sqs_narrowed, SqShift) : relevant_sqs_narrowed;
+        const __m256i shifted_pcs =
+          _mm256_slli_epi32(_mm512_castsi512_si256(relevant_pieces), PcShift);
 
-		const __m256i dirties = _mm256_ternarylogic_epi32(_mm512_castsi512_si256(template_v), shifted_sqs, shifted_pcs, 254 /* 3-way OR */);
-		_mm256_storeu_si256(reinterpret_cast<__m256i*>(write), dirties);
-	} else {
-		const __m512i shifted_sqs = SqShift ? _mm512_slli_epi32(relevant_sqs, SqShift) : relevant_sqs;
-		const __m512i shifted_pcs = _mm512_slli_epi32(relevant_pieces, PcShift);
+        const __m256i dirties = _mm256_ternarylogic_epi32(
+          _mm512_castsi512_si256(template_v), shifted_sqs, shifted_pcs, 254 /* 3-way OR */);
+        _mm256_storeu_si256(reinterpret_cast<__m256i*>(write), dirties);
+    }
+    else
+    {
+        const __m512i shifted_sqs =
+          SqShift ? _mm512_slli_epi32(relevant_sqs, SqShift) : relevant_sqs;
+        const __m512i shifted_pcs = _mm512_slli_epi32(relevant_pieces, PcShift);
 
-		const __m512i dirties = _mm512_ternarylogic_epi32(template_v, shifted_sqs, shifted_pcs, 254);
-		_mm512_storeu_si512(reinterpret_cast<__m512i*>(write), dirties);
-	}
+        const __m512i dirties =
+          _mm512_ternarylogic_epi32(template_v, shifted_sqs, shifted_pcs, 254);
+        _mm512_storeu_si512(reinterpret_cast<__m512i*>(write), dirties);
+    }
 }
 #endif
 
 template<bool PutPiece, bool ComputeRay>
-void Position::update_piece_threats(Piece pc, Square s, DirtyThreats* const dts, Bitboard noRaysContaining) {
+void Position::update_piece_threats(Piece               pc,
+                                    Square              s,
+                                    DirtyThreats* const dts,
+                                    Bitboard            noRaysContaining) {
     const Bitboard occupied     = pieces();
     const Bitboard rookQueens   = pieces(ROOK, QUEEN);
     const Bitboard bishopQueens = pieces(BISHOP, QUEEN);
@@ -1138,26 +1156,31 @@ void Position::update_piece_threats(Piece pc, Square s, DirtyThreats* const dts,
       | (attacks_bb<PAWN>(s, BLACK) & whitePawns) | (PseudoAttacks[KING][s] & kings);
 
 #ifdef USE_AVX512ICL
-	if (threatened) {
-		if constexpr (PutPiece) {
-			dts->threatenedSqs |= threatened;
-			dts->threateningSqs |= square_bb(s);
-		}
+    if (threatened)
+    {
+        if constexpr (PutPiece)
+        {
+            dts->threatenedSqs |= threatened;
+            dts->threateningSqs |= square_bb(s);
+        }
 
-		DirtyThreat dt_template { pc, NO_PIECE, s, Square(0), PutPiece };
-		write_multiple_dirties<DirtyThreat::ThreatenedSqOffset, DirtyThreat::ThreatenedPcOffset>(*this, threatened, dt_template, dts);
-	}
+        DirtyThreat dt_template{pc, NO_PIECE, s, Square(0), PutPiece};
+        write_multiple_dirties<DirtyThreat::ThreatenedSqOffset, DirtyThreat::ThreatenedPcOffset>(
+          *this, threatened, dt_template, dts);
+    }
 
-	Bitboard all_attackers = sliders | incoming_threats;
-	if (all_attackers == 0) {
-		return;   // Square s is threatened iff all_attackers != 0
-	}
+    Bitboard all_attackers = sliders | incoming_threats;
+    if (all_attackers == 0)
+    {
+        return;  // Square s is threatened iff all_attackers != 0
+    }
 
-	dts->threatenedSqs |= square_bb(s);
-	dts->threateningSqs |= all_attackers;
+    dts->threatenedSqs |= square_bb(s);
+    dts->threateningSqs |= all_attackers;
 
-	DirtyThreat dt_template { NO_PIECE, pc, Square(0), s, PutPiece };
-	write_multiple_dirties<DirtyThreat::PcSqOffset, DirtyThreat::PcOffset>(*this, all_attackers, dt_template, dts);
+    DirtyThreat dt_template{NO_PIECE, pc, Square(0), s, PutPiece};
+    write_multiple_dirties<DirtyThreat::PcSqOffset, DirtyThreat::PcOffset>(*this, all_attackers,
+                                                                           dt_template, dts);
 #else
     while (threatened)
     {
@@ -1188,15 +1211,17 @@ void Position::update_piece_threats(Piece pc, Square s, DirtyThreats* const dts,
             }
 
 #ifndef USE_AVX512ICL  // for ICL, direct threats were processed earlier (all_attackers)
-			add_dirty_threat<PutPiece>(dts, slider, pc, sliderSq, s);
+            add_dirty_threat<PutPiece>(dts, slider, pc, sliderSq, s);
 #endif
         }
-    } else {
-		incoming_threats |= sliders;
-	}
+    }
+    else
+    {
+        incoming_threats |= sliders;
+    }
 
 #ifndef USE_AVX512ICL
-	while (incoming_threats)
+    while (incoming_threats)
     {
         Square srcSq = pop_lsb(incoming_threats);
         Piece  srcPc = piece_on(srcSq);

@@ -142,11 +142,11 @@ class ValueList {
     const T* end() const { return values_ + size_; }
     const T& operator[](int index) const { return values_[index]; }
 
-	T* make_space(size_t v) {
-		T* result = &values_[size_];
-		size_ += v;
-		return result;
-	}
+    T* make_space(size_t v) {
+        T* result = &values_[size_];
+        size_ += v;
+        return result;
+    }
 
    private:
     T           values_[MaxSize];
