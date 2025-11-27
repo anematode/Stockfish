@@ -452,13 +452,11 @@ class Move {
 
     constexpr PieceType promotion_type() const { return PieceType(((data >> 12) & 3) + KNIGHT); }
 
-    bool is_ok() const { 
-		uint32_t tmp = data;
-		asm("" : "+r"(tmp));
-		return !(tmp & 0x7fff);
+    constexpr bool is_ok() const { 
+		return static_cast<int16_t>(data) & 0x10fff;
 	}
 
-    static constexpr Move null() { return Move(32768); }
+    static constexpr Move null() { return Move(PROMOTION); }
     static constexpr Move none() { return Move(0); }
 
     constexpr bool operator==(const Move& m) const { return data == m.data; }
