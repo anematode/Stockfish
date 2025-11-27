@@ -1082,7 +1082,8 @@ void write_multiple_dirties(Position&     p,
     const __m512i relevant_pieces =
       _mm512_maskz_permutexvar_epi8(0x1111111111111111ULL, relevant_sqs, pieces_v);
     if (dt_count <= 8)
-    {  // in the common case, we can use 256-bit vectors
+    {
+        // in the common case, we can use 256-bit vectors
         const __m256i relevant_sqs_narrowed = _mm512_castsi512_si256(relevant_sqs);
         const __m256i shifted_sqs =
           SqShift ? _mm256_slli_epi32(relevant_sqs_narrowed, SqShift) : relevant_sqs_narrowed;
@@ -1170,10 +1171,8 @@ void Position::update_piece_threats(Piece               pc,
     }
 
     Bitboard all_attackers = sliders | incoming_threats;
-    if (all_attackers == 0)
-    {
-        return;  // Square s is threatened iff all_attackers != 0
-    }
+    if (!all_attackers)
+        return;  // Square s is threatened iff there's at least one attacker
 
     dts->threatenedSqs |= square_bb(s);
     dts->threateningSqs |= all_attackers;
