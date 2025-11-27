@@ -1117,8 +1117,23 @@ void Position::update_piece_threats(Piece pc, Square s, DirtyThreats* const dts,
       | (attacks_bb<PAWN>(s, BLACK) & whitePawns) | (PseudoAttacks[KING][s] & kings);
 	Bitboard all_attackers = sliders | incoming_threats;
 
-	dts->threatenedSqs |= Bitboard(all_attackers != 0) << s;
+	if (all_attackers == 0) {
+		return;
+	}
+
+	dts->threatenedSqs |= square_bb(s);
 	dts->threateningSqs |= all_attackers;
+
+    while (all_attackers)
+    {
+        Square srcSq = pop_lsb(all_attackers);
+        Piece  srcPc = piece_on(srcSq);
+
+        assert(srcSq != s);
+        assert(srcPc != NO_PIECE);
+
+        add_dirty_threat<PutPiece, false>(dts, srcPc, pc, srcSq, s);
+    }
 
     if constexpr (ComputeRay)
     {
@@ -1137,24 +1152,7 @@ void Position::update_piece_threats(Piece pc, Square s, DirtyThreats* const dts,
                 const Piece  threatenedPc = piece_on(threatenedSq);
                 add_dirty_threat<!PutPiece>(dts, slider, threatenedPc, sliderSq, threatenedSq);
             }
-
-            add_dirty_threat<PutPiece, false>(dts, slider, pc, sliderSq, s);
         }
-    }
-    else
-    {
-        incoming_threats = all_attackers;
-    }
-
-    while (incoming_threats)
-    {
-        Square srcSq = pop_lsb(incoming_threats);
-        Piece  srcPc = piece_on(srcSq);
-
-        assert(srcSq != s);
-        assert(srcPc != NO_PIECE);
-
-        add_dirty_threat<PutPiece, false>(dts, srcPc, pc, srcSq, s);
     }
 }
 
