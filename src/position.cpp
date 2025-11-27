@@ -1043,12 +1043,6 @@ void Position::undo_move(Move m) {
 template<bool PutPiece>
 inline void add_dirty_threat(
   DirtyThreats* const dts, Piece pc, Piece threatened, Square s, Square threatenedSq) {
-    if (PutPiece)
-    {
-        dts->threatenedSqs |= square_bb(threatenedSq);
-        dts->threateningSqs |= square_bb(s);
-    }
-
     dts->list.push_back({pc, threatened, s, threatenedSq, PutPiece});
 }
 
@@ -1110,6 +1104,8 @@ void Position::update_piece_threats(Piece pc, Square s, DirtyThreats* const dts,
       (PseudoAttacks[KNIGHT][s] & knights) | (attacks_bb<PAWN>(s, WHITE) & blackPawns)
       | (attacks_bb<PAWN>(s, BLACK) & whitePawns) | (PseudoAttacks[KING][s] & kings);
 
+    Bitboard all_attackers = sliders | incoming_threats;
+
     if constexpr (ComputeRay)
     {
         while (sliders)
@@ -1126,6 +1122,12 @@ void Position::update_piece_threats(Piece pc, Square s, DirtyThreats* const dts,
                 const Square threatenedSq = lsb(discovered);
                 const Piece  threatenedPc = piece_on(threatenedSq);
                 add_dirty_threat<!PutPiece>(dts, slider, threatenedPc, sliderSq, threatenedSq);
+
+                if constexpr (!PutPiece) {
+                    // process
+                    dts->threatenedSqs |= threatenedSq;
+                    dts->threateningSqs |= sliderSq;
+                }
             }
 
             add_dirty_threat<PutPiece>(dts, slider, pc, sliderSq, s);
@@ -1133,7 +1135,7 @@ void Position::update_piece_threats(Piece pc, Square s, DirtyThreats* const dts,
     }
     else
     {
-        incoming_threats |= sliders;
+        incoming_threats = all_attackers;
     }
 
     while (incoming_threats)
@@ -1145,6 +1147,11 @@ void Position::update_piece_threats(Piece pc, Square s, DirtyThreats* const dts,
         assert(srcPc != NO_PIECE);
 
         add_dirty_threat<PutPiece>(dts, srcPc, pc, srcSq, s);
+    }
+
+    if constexpr (PutPiece) {
+        dts->threatenedSqs |= threatened | (all_attackers != 0) << s;
+        dts->threateningSqs |= all_attackers | (threatened != 0) << s;
     }
 }
 
