@@ -1053,7 +1053,7 @@ inline void add_dirty_threat(
 }
 
 template<bool PutPiece, bool ComputeRay>
-void Position::update_piece_threats(Piece pc, Square s, DirtyThreats* const dts) {
+void Position::update_piece_threats(Piece pc, Square s, DirtyThreats* const dts, Bitboard noRaysContaining) {
     const Bitboard occupied     = pieces();
     const Bitboard rookQueens   = pieces(ROOK, QUEEN);
     const Bitboard bishopQueens = pieces(BISHOP, QUEEN);
@@ -1106,6 +1106,9 @@ void Position::update_piece_threats(Piece pc, Square s, DirtyThreats* const dts)
     }
 
     Bitboard sliders = (rookQueens & rAttacks) | (bishopQueens & bAttacks);
+    Bitboard incoming_threats =
+      (PseudoAttacks[KNIGHT][s] & knights) | (attacks_bb<PAWN>(s, WHITE) & blackPawns)
+      | (attacks_bb<PAWN>(s, BLACK) & whitePawns) | (PseudoAttacks[KING][s] & kings);
 
     if constexpr (ComputeRay)
     {
@@ -1118,7 +1121,7 @@ void Position::update_piece_threats(Piece pc, Square s, DirtyThreats* const dts)
             const Bitboard discovered = ray & qAttacks & occupied;
 
             assert(!more_than_one(discovered));
-            if (discovered)
+            if (discovered && (RayPassBB[sliderSq][s] & noRaysContaining) != noRaysContaining)
             {
                 const Square threatenedSq = lsb(discovered);
                 const Piece  threatenedPc = piece_on(threatenedSq);
@@ -1130,17 +1133,8 @@ void Position::update_piece_threats(Piece pc, Square s, DirtyThreats* const dts)
     }
     else
     {
-        while (sliders)
-        {
-            Square sliderSq = pop_lsb(sliders);
-            Piece  slider   = piece_on(sliderSq);
-            add_dirty_threat<PutPiece>(dts, slider, pc, sliderSq, s);
-        }
+        incoming_threats |= sliders;
     }
-
-    Bitboard incoming_threats =
-      (PseudoAttacks[KNIGHT][s] & knights) | (attacks_bb<PAWN>(s, WHITE) & blackPawns)
-      | (attacks_bb<PAWN>(s, BLACK) & whitePawns) | (PseudoAttacks[KING][s] & kings);
 
     while (incoming_threats)
     {
