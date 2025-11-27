@@ -307,12 +307,13 @@ struct DirtyThreat {
         sf_assume(b == 0 || b == 1);
         return b;
     }
+	uint32_t raw() const { return data; }
 
    private:
     uint32_t data;
 };
 
-using DirtyThreatList = ValueList<DirtyThreat, 80>;
+using DirtyThreatList = ValueList<DirtyThreat, 96>;
 
 // A piece can be involved in at most 8 outgoing attacks and 16 incoming attacks.
 // Moving a piece also can reveal at most 8 discovered attacks.

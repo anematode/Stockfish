@@ -1040,10 +1040,10 @@ void Position::undo_move(Move m) {
     assert(pos_is_ok());
 }
 
-template<bool PutPiece, bool UpdateBBs = true>
+template<bool PutPiece>
 inline void add_dirty_threat(
   DirtyThreats* const dts, Piece pc, Piece threatened, Square s, Square threatenedSq) {
-    if (PutPiece && UpdateBBs)
+    if (PutPiece)
     {
         dts->threatenedSqs |= square_bb(threatenedSq);
         dts->threateningSqs |= square_bb(s);
@@ -1094,21 +1094,41 @@ void Position::update_piece_threats(Piece pc, Square s, DirtyThreats* const dts,
 
     threatened &= occupied;
 
+	__m512i pieces_v = _mm512_loadu_si512((const __m512i*)board.data());
+	__m512i indices = _mm512_set_epi8(63, 62, 61, 60, 59, 58, 57, 56, 55, 54, 53, 52, 51, 50, 49, 48, 47, 46, 45, 44, 43, 42, 41, 40, 39, 38, 37, 36, 35, 34, 33, 32, 31, 30, 29, 28, 27, 26, 25, 24, 23, 22, 21, 20, 19, 18, 17, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0);
+
+	auto write_multiple_dirties = [&] (Bitboard mask, DirtyThreat dt_template, int sq_shift, int pc_shift) sf_always_inline {
+		assert(popcount(mask) <= 16);
+		__m512i template_v = _mm512_set1_epi32(dt_template.raw());
+
+		auto *write = dts->list.make_space(popcount(mask));
+		__m512i relevant_sqs = _mm512_maskz_compress_epi8(mask, indices);
+		relevant_sqs = _mm512_cvtepi8_epi32(_mm512_castsi512_si128(relevant_sqs));
+		__m512i relevant_pieces = _mm512_maskz_permutexvar_epi8(0x1111111111111111ULL, relevant_sqs, pieces_v);
+		if (popcount(mask) <= 8) {  // in the common case, we can use 256-bit vectors
+			__m256i relevant_sqs_narrow = _mm512_castsi512_si256(relevant_sqs);
+			__m256i shifted_sqs = sq_shift ? _mm256_slli_epi32(relevant_sqs_narrow, sq_shift) : relevant_sqs_narrow;
+			__m256i shifted_pcs = _mm256_slli_epi32(_mm512_castsi512_si256(relevant_pieces), pc_shift);
+
+			__m256i dirties = _mm256_ternarylogic_epi32(_mm512_castsi512_si256(template_v), shifted_sqs, shifted_pcs, 254 /* OR */);
+			_mm256_storeu_si256((__m256i*) write, dirties);
+		} else {
+			__m512i shifted_sqs = sq_shift ? _mm512_slli_epi32(relevant_sqs, sq_shift) : relevant_sqs;
+			__m512i shifted_pcs = _mm512_slli_epi32(relevant_pieces, pc_shift);
+
+			__m512i dirties = _mm512_ternarylogic_epi32(template_v, shifted_sqs, shifted_pcs, 254 /* OR */);
+			_mm512_storeu_si512((__m512i*) write, dirties);
+		}
+	};
+
 	if (threatened) {
 		if constexpr (PutPiece) {
 			dts->threatenedSqs |= threatened;
 			dts->threateningSqs |= square_bb(s);
 		}
-		while (threatened)
-		{
-			Square threatenedSq = pop_lsb(threatened);
-			Piece  threatenedPc = piece_on(threatenedSq);
 
-			assert(threatenedSq != s);
-			assert(threatenedPc);
-
-			add_dirty_threat<PutPiece, false>(dts, pc, threatenedPc, s, threatenedSq);
-		}
+		DirtyThreat dt_template { pc, NO_PIECE, s, Square(0), PutPiece };
+		write_multiple_dirties(threatened, dt_template, 8, 16);
 	}
 
     Bitboard sliders = (rookQueens & rAttacks) | (bishopQueens & bAttacks);
@@ -1124,16 +1144,8 @@ void Position::update_piece_threats(Piece pc, Square s, DirtyThreats* const dts,
 	dts->threatenedSqs |= square_bb(s);
 	dts->threateningSqs |= all_attackers;
 
-    while (all_attackers)
-    {
-        Square srcSq = pop_lsb(all_attackers);
-        Piece  srcPc = piece_on(srcSq);
-
-        assert(srcSq != s);
-        assert(srcPc != NO_PIECE);
-
-        add_dirty_threat<PutPiece, false>(dts, srcPc, pc, srcSq, s);
-    }
+	DirtyThreat dt_template { NO_PIECE, pc, Square(0), s, PutPiece };
+	write_multiple_dirties(all_attackers, dt_template, 0, 20);
 
     if constexpr (ComputeRay)
     {
