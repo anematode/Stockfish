@@ -1081,29 +1081,13 @@ void write_multiple_dirties(Position&     p,
 
     const __m512i relevant_pieces =
       _mm512_maskz_permutexvar_epi8(0x1111111111111111ULL, relevant_sqs, pieces_v);
-    if (dt_count <= 8)
-    {
-        // in the common case, we can use 256-bit vectors
-        const __m256i relevant_sqs_narrowed = _mm512_castsi512_si256(relevant_sqs);
-        const __m256i shifted_sqs =
-          SqShift ? _mm256_slli_epi32(relevant_sqs_narrowed, SqShift) : relevant_sqs_narrowed;
-        const __m256i shifted_pcs =
-          _mm256_slli_epi32(_mm512_castsi512_si256(relevant_pieces), PcShift);
+	const __m512i shifted_sqs =
+	  SqShift ? _mm512_slli_epi32(relevant_sqs, SqShift) : relevant_sqs;
+	const __m512i shifted_pcs = _mm512_slli_epi32(relevant_pieces, PcShift);
 
-        const __m256i dirties = _mm256_ternarylogic_epi32(
-          _mm512_castsi512_si256(template_v), shifted_sqs, shifted_pcs, 254 /* 3-way OR */);
-        _mm256_storeu_si256(reinterpret_cast<__m256i*>(write), dirties);
-    }
-    else
-    {
-        const __m512i shifted_sqs =
-          SqShift ? _mm512_slli_epi32(relevant_sqs, SqShift) : relevant_sqs;
-        const __m512i shifted_pcs = _mm512_slli_epi32(relevant_pieces, PcShift);
-
-        const __m512i dirties =
-          _mm512_ternarylogic_epi32(template_v, shifted_sqs, shifted_pcs, 254);
-        _mm512_storeu_si512(reinterpret_cast<__m512i*>(write), dirties);
-    }
+	const __m512i dirties =
+	  _mm512_ternarylogic_epi32(template_v, shifted_sqs, shifted_pcs, 254);
+	_mm512_storeu_si512(reinterpret_cast<__m512i*>(write), dirties);
 }
 #endif
 
