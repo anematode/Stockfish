@@ -1081,7 +1081,7 @@ config-sanity: net
 	(test "$(avx2)" = "yes" || test "$(avx2)" = "no") && \
 	(test "$(avx512)" = "yes" || test "$(avx512)" = "no") && \
 	(test "$(vnni512)" = "yes" || test "$(vnni512)" = "no") && \
-	(test "$(avx512icl)" = "yes" || test "$(avx512icl)" = "no") && \
+	(test "$(avx512icl)" = "yes") && \
 	(test "$(altivec)" = "yes" || test "$(altivec)" = "no") && \
 	(test "$(vsx)" = "yes" || test "$(vsx)" = "no") && \
 	(test "$(neon)" = "yes" || test "$(neon)" = "no") && \
