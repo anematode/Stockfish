@@ -1023,7 +1023,14 @@ format:
 
 all: $(EXE) .depend
 
-config-sanity: net
+CPU_VENDOR_ID := $(shell grep "vendor_id" /proc/cpuinfo | head -n 1 | awk '{print $$3}')
+ifeq ($(CPU_VENDOR_ID),GenuineIntel)
+	IS_INTEL := yes
+else
+	IS_INTEL := no
+endif
+
+config-sanity: net	
 	@echo ""
 	@echo "Config:" && \
 	echo "debug: '$(debug)'" && \
@@ -1060,8 +1067,9 @@ config-sanity: net
 	echo "CXXFLAGS: $(CXXFLAGS)" && \
 	echo "LDFLAGS: $(LDFLAGS)" && \
 	echo "" && \
-	echo "Testing config sanity. If this fails, try 'make help' ..." && \
+	echo "Testing config sanity. This test only intended to run on Intel processors. If this fails, try 'make help' ..." && \
 	echo "" && \
+	(test "$(IS_INTEL)" = "yes") && \
 	(test "$(debug)" = "yes" || test "$(debug)" = "no") && \
 	(test "$(optimize)" = "yes" || test "$(optimize)" = "no") && \
 	(test "$(SUPPORTED_ARCH)" = "true") && \
