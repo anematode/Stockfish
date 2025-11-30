@@ -401,11 +401,11 @@ constexpr Key make_key(uint64_t seed) {
 }
 
 
-enum MoveType {
+enum MoveType : uint8_t {
     NORMAL,
-    PROMOTION  = 1 << 14,
-    EN_PASSANT = 2 << 14,
-    CASTLING   = 3 << 14
+    PROMOTION  = 1 << 6,
+    EN_PASSANT = 2 << 6,
+    CASTLING   = 3 << 6
 };
 
 // A move needs 16 bits to be stored
@@ -427,16 +427,16 @@ class Move {
         data(d) {}
 
     constexpr Move(Square from, Square to) :
-        data((from << 6) + to) {}
+        data((from << 10) + to) {}
 
     template<MoveType T>
     static constexpr Move make(Square from, Square to, PieceType pt = KNIGHT) {
-        return Move(T + ((pt - KNIGHT) << 12) + (from << 6) + to);
+        return Move(T + ((pt - KNIGHT) << 8) + (from << 10) + to);
     }
 
     constexpr Square from_sq() const {
         assert(is_ok());
-        return Square((data >> 6) & 0x3F);
+        return Square((data >> 10) & 0x3F);
     }
 
     constexpr Square to_sq() const {
@@ -444,13 +444,13 @@ class Move {
         return Square(data & 0x3F);
     }
 
-    constexpr MoveType type_of() const { return MoveType(data & (3 << 14)); }
+    constexpr MoveType type_of() const { return MoveType(data & (3 << 6)); }
 
-    constexpr PieceType promotion_type() const { return PieceType(((data >> 12) & 3) + KNIGHT); }
+    constexpr PieceType promotion_type() const { return PieceType(((data >> 8) & 3) + KNIGHT); }
 
     constexpr bool is_ok() const { return none().data != data && null().data != data; }
 
-    static constexpr Move null() { return Move(65); }
+    static constexpr Move null() { return Move(EN_PASSANT); }
     static constexpr Move none() { return Move(0); }
 
     constexpr bool operator==(const Move& m) const { return data == m.data; }
