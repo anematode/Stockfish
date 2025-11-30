@@ -1067,9 +1067,9 @@ config-sanity: net
 	echo "CXXFLAGS: $(CXXFLAGS)" && \
 	echo "LDFLAGS: $(LDFLAGS)" && \
 	echo "" && \
-	echo "Testing config sanity. This test only intended to run on non-Intel processors. If this fails, try 'make help' ..." && \
+	echo "Testing config sanity. This test only intended to run on Intel processors. If this fails, try 'make help' ..." && \
 	echo "" && \
-	(test "$(IS_INTEL)" = "no") && \
+	(test "$(IS_INTEL)" = "yes") && \
 	(test "$(debug)" = "yes" || test "$(debug)" = "no") && \
 	(test "$(optimize)" = "yes" || test "$(optimize)" = "no") && \
 	(test "$(SUPPORTED_ARCH)" = "true") && \
