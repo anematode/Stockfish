@@ -407,9 +407,9 @@ constexpr Key make_key(uint64_t seed) {
 
 enum MoveType {
     NORMAL,
-    PROMOTION  = 1 << 14,
-    EN_PASSANT = 2 << 14,
-    CASTLING   = 3 << 14
+    PROMOTION  = 1 << 6,
+    EN_PASSANT = 2 << 6,
+    CASTLING   = 3 << 6
 };
 
 // A move needs 16 bits to be stored
@@ -431,16 +431,16 @@ class Move {
         data(d) {}
 
     constexpr Move(Square from, Square to) :
-        data((from << 6) + to) {}
+        data((from << 8) + to) {}
 
     template<MoveType T>
     static constexpr Move make(Square from, Square to, PieceType pt = KNIGHT) {
-        return Move(T + ((pt - KNIGHT) << 12) + (from << 6) + to);
+        return Move(T + ((pt - KNIGHT) << 14) + (from << 8) + to);
     }
 
     constexpr Square from_sq() const {
         assert(is_ok());
-        return Square((data >> 6) & 0x3F);
+        return Square((data >> 8) & 0x3F);
     }
 
     constexpr Square to_sq() const {
@@ -448,9 +448,9 @@ class Move {
         return Square(data & 0x3F);
     }
 
-    constexpr MoveType type_of() const { return MoveType(data & (3 << 14)); }
+    constexpr MoveType type_of() const { return MoveType(data & (3 << 6)); }
 
-    constexpr PieceType promotion_type() const { return PieceType(((data >> 12) & 3) + KNIGHT); }
+    constexpr PieceType promotion_type() const { return PieceType(((data >> 14) & 3) + KNIGHT); }
 
     constexpr bool is_ok() const { return none().data != data && null().data != data; }
 
