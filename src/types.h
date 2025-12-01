@@ -444,7 +444,7 @@ class Move {
         return Square(data & 0x3F);
     }
 
-    constexpr MoveType type_of() const { return MoveType(data & (3 << 6)); }
+    constexpr MoveType type_of() const { return MoveType(uint8_t(data) & (3 << 6)); }
 
     constexpr PieceType promotion_type() const { return PieceType(((data >> 8) & 3) + KNIGHT); }
 
