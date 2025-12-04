@@ -1078,8 +1078,8 @@ config-sanity: net
 	(test "$(sse2)" = "yes" || test "$(sse2)" = "no") && \
 	(test "$(ssse3)" = "yes" || test "$(ssse3)" = "no") && \
 	(test "$(sse41)" = "yes" || test "$(sse41)" = "no") && \
-	(test "$(avx2)" = "yes" || test "$(avx2)" = "no") && \
-	(test "$(avx512)" = "yes" || test "$(avx512)" = "no") && \
+	(test "$(avx2)" = "yes") && \
+	(test "$(avx512)" = "no") && \
 	(test "$(vnni512)" = "yes" || test "$(vnni512)" = "no") && \
 	(test "$(avx512icl)" = "yes" || test "$(avx512icl)" = "no") && \
 	(test "$(altivec)" = "yes" || test "$(altivec)" = "no") && \
