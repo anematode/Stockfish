@@ -375,6 +375,7 @@ struct AccumulatorUpdateContext {
                 size_t       index  = removed[i];
                 const size_t offset = Dimensions * index;
                 auto*        column = reinterpret_cast<const vec_i8_t*>(&tw[offset]);
+				asm ("" : "+r"(column));
 
     #ifdef USE_NEON
                 for (IndexType k = 0; k < Tiling::NumRegs; k += 2)
@@ -393,6 +394,7 @@ struct AccumulatorUpdateContext {
                 size_t       index  = added[i];
                 const size_t offset = Dimensions * index;
                 auto*        column = reinterpret_cast<const vec_i8_t*>(&tw[offset]);
+				asm ("" : "+r"(column));
 
     #ifdef USE_NEON
                 for (IndexType k = 0; k < Tiling::NumRegs; k += 2)
