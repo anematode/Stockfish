@@ -376,6 +376,8 @@ struct AccumulatorUpdateContext {
                 const size_t offset = Dimensions * index;
                 auto*        column = reinterpret_cast<const vec_i8_t*>(&threatWeights[offset]);
 
+				asm ("" : "+r"(column));
+
     #ifdef USE_NEON
                 for (IndexType k = 0; k < Tiling::NumRegs; k += 2)
                 {
@@ -393,6 +395,8 @@ struct AccumulatorUpdateContext {
                 size_t       index  = added[i];
                 const size_t offset = Dimensions * index;
                 auto*        column = reinterpret_cast<const vec_i8_t*>(&threatWeights[offset]);
+
+				asm ("" : "+r"(column));
 
     #ifdef USE_NEON
                 for (IndexType k = 0; k < Tiling::NumRegs; k += 2)
@@ -714,6 +718,8 @@ void update_accumulator_refresh_cache(Color                                 pers
             const size_t offsetA = Dimensions * indexA;
             auto*        columnA = reinterpret_cast<const vec_t*>(&weights[offsetA]);
 
+			asm ("" : "+r"(columnR), "+r"(columnA));
+
             for (IndexType k = 0; k < Tiling::NumRegs; ++k)
                 acc[k] = fused<Vec16Wrapper, Add, Sub>(acc[k], columnA[k], columnR[k]);
         }
@@ -722,6 +728,7 @@ void update_accumulator_refresh_cache(Color                                 pers
             size_t       index  = removed[i];
             const size_t offset = Dimensions * index;
             auto*        column = reinterpret_cast<const vec_t*>(&weights[offset]);
+			asm ("" : "+r"(column));
 
             for (IndexType k = 0; k < Tiling::NumRegs; ++k)
                 acc[k] = vec_sub_16(acc[k], column[k]);
@@ -731,6 +738,8 @@ void update_accumulator_refresh_cache(Color                                 pers
             size_t       index  = added[i];
             const size_t offset = Dimensions * index;
             auto*        column = reinterpret_cast<const vec_t*>(&weights[offset]);
+
+			asm ("" : "+r"(column));
 
             for (IndexType k = 0; k < Tiling::NumRegs; ++k)
                 acc[k] = vec_add_16(acc[k], column[k]);
@@ -843,6 +852,8 @@ void update_threats_accumulator_full(Color                                 persp
             size_t       index  = active[i];
             const size_t offset = Dimensions * index;
             auto*        column = reinterpret_cast<const vec_i8_t*>(&threatWeights[offset]);
+
+			asm ("" : "+r"(column));
 
     #ifdef USE_NEON
             for (IndexType k = 0; k < Tiling::NumRegs; k += 2)

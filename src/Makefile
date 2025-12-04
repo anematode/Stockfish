@@ -1060,7 +1060,7 @@ config-sanity: net
 	echo "CXXFLAGS: $(CXXFLAGS)" && \
 	echo "LDFLAGS: $(LDFLAGS)" && \
 	echo "" && \
-	echo "Testing config sanity. If this fails, try 'make help' ..." && \
+	echo "Testing config sanity. This test only intended to run on AVX2-default processors. If this fails, try 'make help' ..." && \
 	echo "" && \
 	(test "$(debug)" = "yes" || test "$(debug)" = "no") && \
 	(test "$(optimize)" = "yes" || test "$(optimize)" = "no") && \
@@ -1078,8 +1078,8 @@ config-sanity: net
 	(test "$(sse2)" = "yes" || test "$(sse2)" = "no") && \
 	(test "$(ssse3)" = "yes" || test "$(ssse3)" = "no") && \
 	(test "$(sse41)" = "yes" || test "$(sse41)" = "no") && \
-	(test "$(avx2)" = "yes" || test "$(avx2)" = "no") && \
-	(test "$(avx512)" = "yes" || test "$(avx512)" = "no") && \
+	(test "$(avx2)" = "yes") && \
+	(test "$(avx512)" = "no") && \
 	(test "$(vnni512)" = "yes" || test "$(vnni512)" = "no") && \
 	(test "$(avx512icl)" = "yes" || test "$(avx512icl)" = "no") && \
 	(test "$(altivec)" = "yes" || test "$(altivec)" = "no") && \
