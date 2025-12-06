@@ -81,7 +81,7 @@ alignas(CacheLineSize) static constexpr struct OffsetIndices {
 // Find indices of nonzero numbers in an int32_t array
 template<const IndexType InputDimensions>
 void find_nnz(const std::int32_t* RESTRICT input,
-              std::uint16_t* RESTRICT      out,
+              std::uint32_t* RESTRICT      out,
               IndexType&                   count_out) {
 
     #if defined(USE_AVX512ICL)
@@ -138,12 +138,12 @@ void find_nnz(const std::int32_t* RESTRICT input,
     svuint32_t indices = svld1_u32(svptrue_b32(), Base);
     svuint32_t increment = svdup_u32(unsigned(svcntw()));
 
-    std::uint16_t *write = out;
+    std::uint32_t *write = out;
     for (size_t i = 0; i < InputDimensions; i += svcntw())
     {
         svbool_t nonzero = svcmpne_n_s32(svptrue_b32(), svld1_s32(svptrue_b32(), input + i), 0);
-        svuint16_t compressed = svqxtnb_u32(svcompact_u32(nonzero, indices));
-        svst1_u16(svptrue_b16(), write, compressed);
+        svuint32_t compressed = svcompact_u32(nonzero, indices);
+        svst1_u32(svptrue_b32(), write, compressed);
         indices = svadd_u32_x(svptrue_b32(), indices, increment);
         write += svcntp_b32(svptrue_b32(), nonzero);
     }
@@ -308,7 +308,7 @@ class AffineTransformSparseInput {
     #else
           NumAccums;
     #endif
-        std::uint16_t nnz[NumChunks];
+        std::uint32_t nnz[NumChunks];
         IndexType     count;
 
         const auto input32 = reinterpret_cast<const std::int32_t*>(input);
