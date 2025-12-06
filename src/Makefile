@@ -793,7 +793,7 @@ ifeq ($(neon),yes)
 endif
 
 ifeq ($(dotprod),yes)
-	CXXFLAGS += -march=armv8.2-a+dotprod+sve -DUSE_NEON_DOTPROD
+	CXXFLAGS += -march=armv8.2-a+dotprod+sve+sve2 -DUSE_NEON_DOTPROD
 endif
 
 ifeq ($(lasx),yes)
