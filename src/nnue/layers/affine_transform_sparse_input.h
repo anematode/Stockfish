@@ -147,6 +147,8 @@ void find_nnz(const std::int32_t* RESTRICT input,
         indices = svadd_s32_x(svptrue_b32(), indices, increment);
         write += svcntp_b32(svptrue_b32(), nonzero);
     }
+
+    count_out = write - out;
     #else
 
     using namespace SIMD;
