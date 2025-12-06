@@ -134,20 +134,19 @@ void find_nnz(const std::int32_t* RESTRICT input,
     }
     count_out = count;
     #elif defined(USE_NEON)
-    static constexpr int32_t Base[] = { 0, 1, 2, 3, 4, 5, 6, 7 };
-    svint32_t indices = svld1_s32(svptrue_b32(), Base);
-    svint32_t increment = svdup_s32(int(svcntw()));
+    static constexpr uint32_t Base[] = { 0, 1, 2, 3, 4, 5, 6, 7 };
+    svuint32_t indices = svld1_u32(svptrue_b32(), Base);
+    svuint32_t increment = svdup_u32(unsigned(svcntw()));
 
     std::uint16_t *write = out;
     for (size_t i = 0; i < InputDimensions; i += svcntw())
     {
         svbool_t nonzero = svcmpne_n_s32(svptrue_b32(), svld1_s32(svptrue_b32(), input + i), 0);
-        svuint16_t compressed = svqxtunb(svcompact_s32(nonzero, indices));
+        svuint16_t compressed = svqxtnb_u32(svcompact_u32(nonzero, indices));
         svst1_u16(svptrue_b16(), write, compressed);
-        indices = svadd_s32_x(svptrue_b32(), indices, increment);
+        indices = svadd_u32_x(svptrue_b32(), indices, increment);
         write += svcntp_b32(svptrue_b32(), nonzero);
     }
-
     count_out = write - out;
     #else
 
