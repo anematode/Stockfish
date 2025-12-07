@@ -132,6 +132,28 @@ void find_nnz(const std::int32_t* RESTRICT input,
         base = _mm512_add_epi32(base, increment);
     }
     count_out = count;
+    #elif defined(USE_NEON)
+
+    using namespace SIMD;
+
+    IndexType      count       = 0;
+    vec128_t       base        = vec128_zero;
+    const vec128_t increment   = vec128_set_16(8);
+
+    const uint16x8_t Mask { 1, 16, 2, 32, 4, 64, 8, 128 };
+    for (IndexType i = 0; i < InputDimensions; i += 8)
+    {
+        int32x4_t v1 = vld1q_s32(&input[i]), v2 = vld1q_s32(&input[i + 4]);
+        uint16x8_t a = vreinterpretq_u16_u32(vsriq_n_u32(vtstq_s32(v2, v2), vtstq_s32(v1, v1), 16));
+        ptrdiff_t lookup = vaddvq_u16(vandq_u16(Mask, a));
+        const vec128_t offsets =
+          vec128_load(reinterpret_cast<const vec128_t*>(&Lookup.offset_indices[lookup]));
+        vec128_storeu(reinterpret_cast<vec128_t*>(out + count), vec128_add(base, offsets));
+        count += popcount(lookup);
+        base = vec128_add(base, increment);
+    }
+
+    count_out = count;
 
     #else
 
