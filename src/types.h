@@ -440,7 +440,9 @@ class Move {
 
     template<MoveType T>
     static constexpr Move make(Square from, Square to, PieceType pt = KNIGHT) {
-        return Move(((T << 14) | ((pt - KNIGHT) << 12)) + (from << 6) + to);
+        const uint32_t r = (T << 14) + ((pt - KNIGHT) << 12) + (from << 6) + to;
+        sf_assume(r < UINT16_MAX);
+        return Move(r);
     }
 
     constexpr Square from_sq() const {
