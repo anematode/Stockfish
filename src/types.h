@@ -410,7 +410,7 @@ constexpr Key make_key(uint64_t seed) {
 }
 
 
-enum MoveType : uint32_t {
+enum MoveType : uint8_t {
     NORMAL,
     PROMOTION  = 1,
     EN_PASSANT = 2,
@@ -440,7 +440,7 @@ class Move {
 
     template<MoveType T>
     static constexpr Move make(Square from, Square to, PieceType pt = KNIGHT) {
-        return Move((T << 14) + ((pt - KNIGHT) << 12) + (from << 6) + to);
+        return Move(((T << 14) | ((pt - KNIGHT) << 12)) + (from << 6) + to);
     }
 
     constexpr Square from_sq() const {
