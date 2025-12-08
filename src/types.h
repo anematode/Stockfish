@@ -413,8 +413,8 @@ constexpr Key make_key(uint64_t seed) {
 enum MoveType : uint8_t {
     NORMAL,
     PROMOTION  = 1,
-    CASTLING   = 2,
-    EN_PASSANT = 3
+    EN_PASSANT = 2,
+    CASTLING   = 3
 };
 
 // A move needs 16 bits to be stored
@@ -454,7 +454,7 @@ class Move {
     }
 
     constexpr MoveType type_of() const { return MoveType(data >> 14); }
-    constexpr bool     is_ep() const { return data >= (EN_PASSANT << 14); }
+    constexpr bool     is_ep() const { return (data & 3 << 14) == EN_PASSANT << 14; }
 
     constexpr PieceType promotion_type() const { return PieceType(((data >> 12) & 3) + KNIGHT); }
 
