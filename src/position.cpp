@@ -338,6 +338,7 @@ void Position::set_state() const {
 
     st->key               = 0;
     st->minorPieceKey     = 0;
+    st->newlyThreatened        = 0;
     st->nonPawnKey[WHITE] = st->nonPawnKey[BLACK] = 0;
     st->pawnKey                                   = Zobrist::noPawns;
     st->nonPawnMaterial[WHITE] = st->nonPawnMaterial[BLACK] = VALUE_ZERO;
@@ -733,7 +734,7 @@ void Position::do_move(Move                      m,
     dp.add_sq         = SQ_NONE;
     dts.us            = us;
     dts.prevKsq       = square<KING>(us);
-    dts.threatenedSqs = dts.threateningSqs = 0;
+    dts.threatenedSqs = dts.threateningSqs = st->newlyThreatened = 0;
 
     assert(color_of(pc) == us);
     assert(captured == NO_PIECE || color_of(captured) == (m.type_of() != CASTLING ? them : us));
@@ -1135,6 +1136,9 @@ void Position::update_piece_threats(Piece               pc,
         threatened = PseudoAttacks[type_of(pc)][s];
     }
 
+    if (PutPiece && color_of(pc) == sideToMove)
+        st->newlyThreatened |= threatened;
+
     threatened &= occupied;
     Bitboard sliders = (rookQueens & rAttacks) | (bishopQueens & bAttacks);
     Bitboard incoming_threats =
@@ -1189,6 +1193,9 @@ void Position::update_piece_threats(Piece               pc,
             Piece  slider   = piece_on(sliderSq);
 
             const Bitboard ray        = RayPassBB[sliderSq][s] & ~BetweenBB[sliderSq][s];
+            if (!PutPiece && color_of(slider) == sideToMove)
+                st->newlyThreatened |= (ray & qAttacks);
+
             const Bitboard discovered = ray & qAttacks & occupied;
 
             assert(!more_than_one(discovered));
@@ -1281,6 +1288,7 @@ void Position::do_null_move(StateInfo& newSt, const TranspositionTable& tt) {
     prefetch(tt.first_entry(key()));
 
     st->pliesFromNull = 0;
+    st->newlyThreatened = 0;
 
     sideToMove = ~sideToMove;
 
