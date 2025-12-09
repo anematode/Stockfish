@@ -458,6 +458,7 @@ class Move {
     constexpr MoveType type_of() const { return MoveType(data >> 14); }
 
     constexpr PieceType promotion_type() const { return PieceType(((data >> 12) & 3) + KNIGHT); }
+	constexpr bool is_underpromotion() const { return data >> 12 != ((PROMOTION << 2) | (QUEEN - KNIGHT)); }
 
     constexpr bool is_ok() const { return none().data != data && null().data != data; }
 
