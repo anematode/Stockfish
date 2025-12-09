@@ -173,7 +173,7 @@ ExtMove* MovePicker::score(MoveList<Type>& ml) {
 
             // penalty for moving to a square threatened by a lesser piece
             // or bonus for escaping an attack by a lesser piece.
-            int v = threatByLesser[pt] & to ? -16 - 10 * bool(newThreats & to) : 20 * bool(threatByLesser[pt] & from);
+            int v = threatByLesser[pt] & to ? -20 + 8 * bool(newThreats & to) : 20 * bool(threatByLesser[pt] & from);
             m.value += PieceValue[pt] * v;
 
 
