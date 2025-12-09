@@ -46,22 +46,31 @@ struct Cluster;
 
 // A copy of the data already in the entry (possibly collided). `probe` may be racy, resulting in inconsistent data.
 struct TTData {
-    Move  move;
-    Value value, eval;
-    Depth depth;
-    Bound bound;
-    bool  is_pv;
+    uint8_t  depth8;
+    uint8_t  genBound8;
+    Move     move;
+    int16_t  value;
+    int16_t  eval;
 
-    TTData() = delete;
+    Depth depth() const {
+        return depth8 + DEPTH_ENTRY_OFFSET;
+    }
+    Bound bound() const {
+        return Bound(genBound8 & 0x3);
+    }
+    bool  is_pv() const {
+        return genBound8 & 0x4;
+    }
+
+    TTData() = default;
 
     // clang-format off
     TTData(Move m, Value v, Value ev, Depth d, Bound b, bool pv) :
+        depth8(d - DEPTH_ENTRY_OFFSET),
+        genBound8(b | pv << 2),
         move(m),
         value(v),
-        eval(ev),
-        depth(d),
-        bound(b),
-        is_pv(pv) {};
+        eval(ev) {}
     // clang-format on
 };
 

@@ -50,9 +50,9 @@ struct TTEntry {
 
     // Convert internal bitfields to external types
     TTData read() const {
-        return TTData{Move(move16),           Value(value16),
-                      Value(eval16),          Depth(depth8 + DEPTH_ENTRY_OFFSET),
-                      Bound(genBound8 & 0x3), bool(genBound8 & 0x4)};
+        TTData data;
+        memcpy(&data, reinterpret_cast<const char*>(this) + offsetof(TTEntry, depth8), sizeof(TTData));
+        return data;
     }
 
     bool is_occupied() const;
