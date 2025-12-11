@@ -46,13 +46,13 @@ namespace Stockfish {
 // These fields are in the same order as accessed by TT::probe(), since memory is fastest sequentially.
 // Equally, the store order in save() matches this order.
 
-struct TTEntry {
+struct Key16 { uint16_t key16; };
+
+struct TTEntry : Key16, TTData {
 
     // Convert internal bitfields to external types
     TTData read() const {
-        TTData data;
-        memcpy(&data, reinterpret_cast<const char*>(this) + offsetof(TTEntry, depth8), sizeof(TTData));
-        return data;
+        return *this;
     }
 
     bool is_occupied() const;
@@ -60,15 +60,7 @@ struct TTEntry {
     // The returned age is a multiple of TranspositionTable::GENERATION_DELTA
     uint8_t relative_age(const uint8_t generation8) const;
 
-   private:
     friend class TranspositionTable;
-
-    uint16_t key16;
-    uint8_t  depth8;
-    uint8_t  genBound8;
-    Move     move16;
-    int16_t  value16;
-    int16_t  eval16;
 };
 
 // `genBound8` is where most of the details are. We use the following constants to manipulate 5 leading generation bits
@@ -95,7 +87,7 @@ void TTEntry::save(
 
     // Preserve the old ttmove if we don't have a new one
     if (m || uint16_t(k) != key16)
-        move16 = m;
+        move = m;
 
     // Overwrite less valuable entries (cheapest checks first)
     if (b == BOUND_EXACT || uint16_t(k) != key16 || d - DEPTH_ENTRY_OFFSET + 2 * pv > depth8 - 4
@@ -107,8 +99,8 @@ void TTEntry::save(
         key16     = uint16_t(k);
         depth8    = uint8_t(d - DEPTH_ENTRY_OFFSET);
         genBound8 = uint8_t(generation8 | uint8_t(pv) << 2 | b);
-        value16   = int16_t(v);
-        eval16    = int16_t(ev);
+        value   = int16_t(v);
+        eval    = int16_t(ev);
     }
     else if (depth8 + DEPTH_ENTRY_OFFSET >= 5 && Bound(genBound8 & 0x3) != BOUND_EXACT)
         depth8--;

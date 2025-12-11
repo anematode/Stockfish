@@ -46,8 +46,10 @@ struct Cluster;
 
 // A copy of the data already in the entry (possibly collided). `probe` may be racy, resulting in inconsistent data.
 struct TTData {
+protected:
     uint8_t  depth8;
     uint8_t  genBound8;
+public:
     Move     move;
     int16_t  value;
     int16_t  eval;
