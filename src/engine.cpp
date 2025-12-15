@@ -65,7 +65,7 @@ Engine::Engine(std::optional<std::string> path) :
                                          NN::EmbeddedNNUEType::BIG),
         std::make_unique<NN::NetworkSmall>(NN::EvalFile{EvalFileDefaultNameSmall, "None", ""},
                                            NN::EmbeddedNNUEType::SMALL))),
-    sharedHists(1) {
+    sharedHists(UINT16_HISTORY_SIZE) {
 
     pos.set(StartFEN, false, &states->back());
 
@@ -241,6 +241,8 @@ void Engine::set_numa_config_from_option(const std::string& o) {
 
 void Engine::resize_threads() {
     threads.wait_for_search_finished();
+    auto corrHistSize = threads.num_threads() * UINT16_HISTORY_SIZE;
+    sharedHists.resize(corrHistSize);
     threads.set(numaContext.get_numa_config(), {options, threads, tt, sharedHists, networks}, updateContext);
 
     // Reallocate the hash with the new threadpool size

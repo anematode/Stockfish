@@ -102,7 +102,7 @@ struct DynStats {
         resize(initial_size);
     }
     void resize(size_t s) {
-        size = s;
+        size_ = s;
         data = make_unique_large_page<T[]>(s);
     }
     T& operator[](size_t index) {
@@ -115,13 +115,16 @@ struct DynStats {
     }
     template <typename K>
     void fill(K t) {
-        for (size_t i = 0; i < size; ++i) {
+        for (size_t i = 0; i < size_; ++i) {
             data.get()[i].fill(t);
         }
     }
+    size_t size() const {
+        return size_;
+    }
 private:
     LargePagePtr<T[]> data;
-    size_t size;
+    size_t size_;
 };
 
 // ButterflyHistory records how often quiet moves have been successful or unsuccessful

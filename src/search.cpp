@@ -585,6 +585,8 @@ void Search::Worker::clear() {
     sharedHistory.minorPieceCorrectionHistory.fill(0);
     sharedHistory.nonPawnCorrectionHistory.fill(0);
 
+    rootPos.set_corrhist_size(sharedHistory.size());
+
     ttMoveHistory = 0;
 
     for (auto& to : continuationCorrectionHistory)

@@ -182,6 +182,10 @@ class Position {
         return corrHistSize;
     }
 
+    void set_corrhist_size(uint32_t size) {
+        corrHistSize = size;
+    }
+
 private:
     // Initialization helpers (used while setting up a position)
     void set_castling_right(Color c, Square rfrom);

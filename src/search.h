@@ -274,6 +274,10 @@ struct SharedHistories {
         nonPawnCorrectionHistory.resize(corrHistSize);
     }
 
+    size_t size() const {
+        return pawnCorrectionHistory.size();
+    }
+
     CorrectionHistory<Pawn>         pawnCorrectionHistory;
     CorrectionHistory<Minor>        minorPieceCorrectionHistory;
     CorrectionHistory<NonPawn>      nonPawnCorrectionHistory;
