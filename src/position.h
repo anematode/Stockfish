@@ -23,6 +23,7 @@
 #include <cassert>
 #include <deque>
 #include <iosfwd>
+#include <iostream>
 #include <memory>
 #include <new>
 #include <string>
@@ -180,12 +181,14 @@ class Position {
     void remove_piece(Square s, DirtyThreats* const dts = nullptr);
     void swap_piece(Square s, Piece pc, DirtyThreats* const dts = nullptr);
 
-    uint32_t corrhist_size() const {
-        return corrHistSize;
+    uint64_t corrhist_size_m1() const {
+        return corrHistSizeM1;
     }
 
     void set_corrhist_size(uint32_t size) {
-        corrHistSize = size;
+        assert((size & (size - 1)) == 0);
+        std::cout << "Setting corrHistSizeM1 to " << size << std::endl;
+        corrHistSizeM1 = size - 1;
     }
 
 private:
@@ -225,7 +228,7 @@ private:
     int          gamePly;
     Color        sideToMove;
     bool         chess960;
-    uint32_t     corrHistSize;
+    uint64_t     corrHistSizeM1;
 
     DirtyPiece   scratch_dp;
     DirtyThreats scratch_dts;

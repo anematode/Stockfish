@@ -239,9 +239,13 @@ void Engine::set_numa_config_from_option(const std::string& o) {
     threads.ensure_network_replicated();
 }
 
+static size_t next_power_of_two(uint64_t val) {
+    return val > 1 ? 1ULL << (64 - __builtin_clzll(val - 1)) : 1;
+}
+
 void Engine::resize_threads() {
     threads.wait_for_search_finished();
-    auto corrHistSize = threads.num_threads() * UINT16_HISTORY_SIZE;
+    auto corrHistSize = next_power_of_two(threads.num_threads()) * UINT16_HISTORY_SIZE;
     sharedHists.resize(corrHistSize);
     threads.set(numaContext.get_numa_config(), {options, threads, tt, sharedHists, networks}, updateContext);
 

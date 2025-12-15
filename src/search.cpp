@@ -181,6 +181,7 @@ void Search::Worker::ensure_network_replicated() {
 void Search::Worker::start_searching() {
 
     accumulatorStack.reset();
+    rootPos.set_corrhist_size(sharedHistory.size());
 
     // Non-main threads go directly to iterative_deepening()
     if (!is_mainthread())
@@ -192,7 +193,6 @@ void Search::Worker::start_searching() {
     main_manager()->tm.init(limits, rootPos.side_to_move(), rootPos.game_ply(), options,
                             main_manager()->originalTimeAdjust);
     tt.new_search();
-    rootPos.set_corrhist_size(sharedHistory.size());
 
     if (rootMoves.empty())
     {

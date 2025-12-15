@@ -266,7 +266,8 @@ struct SharedHistories {
     SharedHistories(size_t corrHistSize) :
         pawnCorrectionHistory(corrHistSize),
         minorPieceCorrectionHistory(corrHistSize),
-        nonPawnCorrectionHistory(corrHistSize) {}
+        nonPawnCorrectionHistory(corrHistSize) {
+    }
 
     void resize(size_t corrHistSize) {
         pawnCorrectionHistory.resize(corrHistSize);
