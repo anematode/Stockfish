@@ -61,29 +61,28 @@ inline size_t non_pawn_index(const Position& pos) {
 // the entry. The first template parameter T is the base type of the array,
 // and the second template parameter D limits the range of updates in [-D, D]
 // when we update values with the << operator
+    // when we update values with the << operator
 template<typename T, int D>
 class StatsEntry {
 
     static_assert(std::is_arithmetic_v<T>, "Not an arithmetic type");
     static_assert(D <= std::numeric_limits<T>::max(), "D overflows T");
 
-    std::atomic<T> entry;
+    T entry;
 
-   public:
+public:
     StatsEntry& operator=(const T& v) {
-        entry.store(v, std::memory_order_relaxed);
+        entry = v;
         return *this;
     }
-    operator T() const { return entry.load(std::memory_order_relaxed); }
+    operator const T&() const { return entry; }
 
     void operator<<(int bonus) {
         // Make sure that bonus is in range [-D, D]
         int clampedBonus = std::clamp(bonus, -D, D);
-        T value = entry.load(std::memory_order_relaxed);
-        T newValue = value + (clampedBonus - value * std::abs(clampedBonus) / D);
-        entry.store(newValue, std::memory_order_relaxed);
+        entry += clampedBonus - entry * std::abs(clampedBonus) / D;
 
-        assert(std::abs(newValue) <= D);
+        assert(std::abs(entry) <= D);
     }
 };
 

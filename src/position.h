@@ -187,7 +187,6 @@ class Position {
 
     void set_corrhist_size(uint32_t size) {
         assert((size & (size - 1)) == 0);
-        std::cout << "Setting corrHistSizeM1 to " << size << std::endl;
         corrHistSizeM1 = size - 1;
     }
 
