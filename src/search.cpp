@@ -192,6 +192,7 @@ void Search::Worker::start_searching() {
     main_manager()->tm.init(limits, rootPos.side_to_move(), rootPos.game_ply(), options,
                             main_manager()->originalTimeAdjust);
     tt.new_search();
+    rootPos.set_corrhist_size(sharedHistory.size());
 
     if (rootMoves.empty())
     {
@@ -584,8 +585,6 @@ void Search::Worker::clear() {
     sharedHistory.pawnCorrectionHistory.fill(5);
     sharedHistory.minorPieceCorrectionHistory.fill(0);
     sharedHistory.nonPawnCorrectionHistory.fill(0);
-
-    rootPos.set_corrhist_size(sharedHistory.size());
 
     ttMoveHistory = 0;
 
