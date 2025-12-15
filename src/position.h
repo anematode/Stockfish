@@ -178,7 +178,11 @@ class Position {
     void remove_piece(Square s, DirtyThreats* const dts = nullptr);
     void swap_piece(Square s, Piece pc, DirtyThreats* const dts = nullptr);
 
-   private:
+    uint32_t corrhist_size() const {
+        return corrHistSize;
+    }
+
+private:
     // Initialization helpers (used while setting up a position)
     void set_castling_right(Color c, Square rfrom);
     Key  compute_material_key() const;
@@ -215,6 +219,8 @@ class Position {
     int          gamePly;
     Color        sideToMove;
     bool         chess960;
+    uint32_t     corrHistSize;
+
     DirtyPiece   scratch_dp;
     DirtyThreats scratch_dts;
 };

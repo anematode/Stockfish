@@ -263,6 +263,17 @@ class NullSearchManager: public ISearchManager {
 };
 
 struct SharedHistories {
+    SharedHistories(size_t corrHistSize) :
+        pawnCorrectionHistory(corrHistSize),
+        minorPieceCorrectionHistory(corrHistSize),
+        nonPawnCorrectionHistory(corrHistSize) {}
+
+    void resize(size_t corrHistSize) {
+        pawnCorrectionHistory.resize(corrHistSize);
+        minorPieceCorrectionHistory.resize(corrHistSize);
+        nonPawnCorrectionHistory.resize(corrHistSize);
+    }
+
     CorrectionHistory<Pawn>         pawnCorrectionHistory;
     CorrectionHistory<Minor>        minorPieceCorrectionHistory;
     CorrectionHistory<NonPawn>      nonPawnCorrectionHistory;

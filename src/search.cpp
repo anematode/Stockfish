@@ -80,11 +80,11 @@ int correction_value(const Worker& w, const Position& pos, const Stack* const ss
     const Color us    = pos.side_to_move();
     const auto  m     = (ss - 1)->currentMove;
     const auto& shared = w.sharedHistory;
-    const auto  pcv   = shared.pawnCorrectionHistory[pawn_correction_history_index(pos)][us];
-    const auto  micv  = shared.minorPieceCorrectionHistory[minor_piece_index(pos)][us];
-    const auto  wnpcv = shared.nonPawnCorrectionHistory[non_pawn_index<WHITE>(pos)][WHITE][us];
-    const auto  bnpcv = shared.nonPawnCorrectionHistory[non_pawn_index<BLACK>(pos)][BLACK][us];
-    const auto  cntcv =
+    const int  pcv   = shared.pawnCorrectionHistory[pawn_correction_history_index(pos)][us];
+    const int  micv  = shared.minorPieceCorrectionHistory[minor_piece_index(pos)][us];
+    const int  wnpcv = shared.nonPawnCorrectionHistory[non_pawn_index<WHITE>(pos)][WHITE][us];
+    const int  bnpcv = shared.nonPawnCorrectionHistory[non_pawn_index<BLACK>(pos)][BLACK][us];
+    const int  cntcv =
       m.is_ok() ? (*(ss - 2)->continuationCorrectionHistory)[pos.piece_on(m.to_sq())][m.to_sq()]
                     + (*(ss - 4)->continuationCorrectionHistory)[pos.piece_on(m.to_sq())][m.to_sq()]
                  : 8;
