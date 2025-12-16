@@ -32,8 +32,10 @@
 #include <utility>
 
 #include "bitboard.h"
+#include "history.h"
 #include "misc.h"
 #include "movegen.h"
+#include "search.h"
 #include "syzygy/tbprobe.h"
 #include "tt.h"
 #include "uci.h"
