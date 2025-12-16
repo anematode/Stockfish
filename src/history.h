@@ -76,12 +76,12 @@ class StatsEntry {
     static_assert(std::is_arithmetic_v<T>, "Not an arithmetic type");
     static_assert(D <= std::numeric_limits<T>::max(), "D overflows T");
 
-    std::conditional_t<IsAtomic, std::atomic<T>, T> entry;
+    T entry;
 
    public:
     StatsEntry& operator=(const T& v) {
 		if constexpr (IsAtomic) {
-			entry.store(v, std::memory_order_relaxed);
+			__atomic_store_n(&entry, v, __ATOMIC_RELAXED);
 		} else {
 			entry = v;
 		}
@@ -91,7 +91,7 @@ class StatsEntry {
 	using ConversionType = std::conditional_t<IsAtomic, int, const T&>;	
     operator ConversionType() const {
 		if constexpr (IsAtomic)
-			return int(entry.load(std::memory_order_relaxed));
+			return int(__atomic_load_n(&entry, __ATOMIC_RELAXED));
 		else
 			return entry;
 	}
@@ -99,19 +99,9 @@ class StatsEntry {
     void operator<<(int bonus) {
         // Make sure that bonus is in range [-D, D]
         int clampedBonus = std::clamp(bonus, -D, D);
-		int val;
-		if constexpr (IsAtomic) {
-			val = entry.load(std::memory_order_relaxed);
-		} else {
-			val = entry;
-		}
+		int val = *this;
         val += clampedBonus - val * std::abs(clampedBonus) / D;
-		if constexpr (IsAtomic) {
-			entry.store(val, std::memory_order_relaxed);
-		} else {
-			entry = val;
-		}
-
+		*this = val;
 
         assert(std::abs(entry) <= D);
     }
