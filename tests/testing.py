@@ -54,6 +54,7 @@ race:Stockfish::TTEntry::save
 race:Stockfish::TranspositionTable::probe
 race:Stockfish::TranspositionTable::hashfull
 race:Stockfish::StatsEntry
+race:*correction_value*
 """
             )
 
