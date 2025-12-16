@@ -68,7 +68,7 @@ extern Bitboard PseudoAttacks[PIECE_TYPE_NB][SQUARE_NB];
 // Magic holds all magic bitboards relevant data for a single square
 struct Magic {
     Bitboard  mask;
-    Bitboard* attacks;
+    const Bitboard* attacks;
 #ifndef USE_PEXT
     Bitboard magic;
     unsigned shift;

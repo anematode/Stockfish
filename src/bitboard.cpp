@@ -20,9 +20,12 @@
 
 #include <algorithm>
 #include <bitset>
+#include <fstream>
 #include <initializer_list>
+#include <iostream>
 
 #include "misc.h"
+#include "incbin/incbin.h"
 
 namespace Stockfish {
 
@@ -38,10 +41,13 @@ alignas(64) Magic Magics[SQUARE_NB][2];
 
 namespace {
 
-Bitboard RookTable[0x19000];   // To store rook attacks
-Bitboard BishopTable[0x1480];  // To store bishop attacks
+INCBIN(RookTable, "rooktable_pext.dat");
+INCBIN(BishopTable, "bishoptable_pext.dat");
 
-void init_magics(PieceType pt, Bitboard table[], Magic magics[][2]);
+static const uint64_t* RookTable = reinterpret_cast<const uint64_t*>(gRookTableData);
+static const uint64_t* BishopTable = reinterpret_cast<const uint64_t*>(gBishopTableData);
+
+void init_magics(PieceType pt, const Bitboard table[], Magic magics[][2]);
 
 // Returns the bitboard of target square for the given step
 // from the given square. If the step is off the board, returns empty bitboard.
@@ -143,7 +149,7 @@ Bitboard sliding_attack(PieceType pt, Square sq, Bitboard occupied) {
 // bitboards are used to look up attacks of sliding pieces. As a reference see
 // https://www.chessprogramming.org/Magic_Bitboards. In particular, here we use
 // the so called "fancy" approach.
-void init_magics(PieceType pt, Bitboard table[], Magic magics[][2]) {
+void init_magics(PieceType pt, const Bitboard table[], Magic magics[][2]) {
 
 #ifndef USE_PEXT
     // Optimal PRNG seeds to pick the correct magics in the shortest time
@@ -186,8 +192,9 @@ void init_magics(PieceType pt, Bitboard table[], Magic magics[][2]) {
 #endif
             reference[size] = sliding_attack(pt, s, b);
 
-            if (HasPext)
-                m.attacks[pext(b, m.mask)] = reference[size];
+            if (HasPext) {
+                assert(m.attacks[pext(b, m.mask)] == reference[size]);
+            }
 
             size++;
             b = (b - m.mask) & m.mask;
