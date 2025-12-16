@@ -21,11 +21,13 @@
 #include <algorithm>
 #include <cassert>
 #include <deque>
+#include <map>
 #include <memory>
 #include <string>
 #include <unordered_map>
 #include <utility>
 
+#include "bitboard.h"
 #include "memory.h"
 #include "movegen.h"
 #include "search.h"

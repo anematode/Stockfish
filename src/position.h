@@ -21,6 +21,7 @@
 
 #include <array>
 #include <cassert>
+#include <cstdint>
 #include <deque>
 #include <iosfwd>
 #include <memory>
