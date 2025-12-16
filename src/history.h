@@ -70,25 +70,48 @@ inline size_t non_pawn_index(const Position& pos) {
 // the entry. The first template parameter T is the base type of the array,
 // and the second template parameter D limits the range of updates in [-D, D]
 // when we update values with the << operator
-template<typename T, int D>
+template<typename T, int D, bool IsAtomic = false>
 class StatsEntry {
 
     static_assert(std::is_arithmetic_v<T>, "Not an arithmetic type");
     static_assert(D <= std::numeric_limits<T>::max(), "D overflows T");
 
-    T entry;
+    std::conditional_t<IsAtomic, std::atomic<T>, T> entry;
 
    public:
     StatsEntry& operator=(const T& v) {
-        entry = v;
+		if constexpr (IsAtomic) {
+			entry.store(v, std::memory_order_relaxed);
+		} else {
+			entry = v;
+		}
         return *this;
     }
-    operator const T&() const { return entry; }
+
+	using ConversionType = std::conditional_t<IsAtomic, int, const T&>;	
+    operator ConversionType() const {
+		if constexpr (IsAtomic)
+			return int(entry.load(std::memory_order_relaxed));
+		else
+			return entry;
+	}
 
     void operator<<(int bonus) {
         // Make sure that bonus is in range [-D, D]
         int clampedBonus = std::clamp(bonus, -D, D);
-        entry += clampedBonus - entry * std::abs(clampedBonus) / D;
+		int val;
+		if constexpr (IsAtomic) {
+			val = entry.load(std::memory_order_relaxed);
+		} else {
+			val = entry;
+		}
+        val += clampedBonus - val * std::abs(clampedBonus) / D;
+		if constexpr (IsAtomic) {
+			entry.store(val, std::memory_order_relaxed);
+		} else {
+			entry = val;
+		}
+
 
         assert(std::abs(entry) <= D);
     }
@@ -100,7 +123,10 @@ enum StatsType {
 };
 
 template<typename T, int D, std::size_t... Sizes>
-using Stats = MultiArray<StatsEntry<T, D>, Sizes...>;
+using Stats = MultiArray<StatsEntry<T, D, false>, Sizes...>;
+
+template<typename T, int D, std::size_t... Sizes>
+using AtomicStats = MultiArray<StatsEntry<T, D, true>, Sizes...>;
 
 template<typename T, int SizeMultiplier>
 struct DynStats {
@@ -175,7 +201,7 @@ namespace Detail {
 template<CorrHistType>
 struct CorrHistTypedef {
     using type =
-      DynStats<Stats<std::int16_t, CORRECTION_HISTORY_LIMIT, COLOR_NB>, CORRHIST_BASE_SIZE>;
+      DynStats<AtomicStats<std::int16_t, CORRECTION_HISTORY_LIMIT, COLOR_NB>, CORRHIST_BASE_SIZE>;
 };
 
 template<>
@@ -190,7 +216,7 @@ struct CorrHistTypedef<Continuation> {
 
 template<>
 struct CorrHistTypedef<NonPawn> {
-    using type = DynStats<Stats<std::int16_t, CORRECTION_HISTORY_LIMIT, COLOR_NB, COLOR_NB>,
+    using type = DynStats<AtomicStats<std::int16_t, CORRECTION_HISTORY_LIMIT, COLOR_NB, COLOR_NB>,
                           CORRHIST_BASE_SIZE>;
 };
 
