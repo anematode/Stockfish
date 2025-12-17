@@ -38,10 +38,10 @@ alignas(64) Magic Magics[SQUARE_NB][2];
 
 namespace {
 
-Bitboard RookTable[0x19000];   // To store rook attacks
-Bitboard BishopTable[0x1480];  // To store bishop attacks
+uint16_t RookTable[0x19000];   // To store rook attacks
+uint16_t BishopTable[0x1480];  // To store bishop attacks
 
-void init_magics(PieceType pt, Bitboard table[], Magic magics[][2]);
+void init_magics(PieceType pt, uint16_t table[], Magic magics[][2]);
 
 // Returns the bitboard of target square for the given step
 // from the given square. If the step is off the board, returns empty bitboard.
@@ -143,7 +143,7 @@ Bitboard sliding_attack(PieceType pt, Square sq, Bitboard occupied) {
 // bitboards are used to look up attacks of sliding pieces. As a reference see
 // https://www.chessprogramming.org/Magic_Bitboards. In particular, here we use
 // the so called "fancy" approach.
-void init_magics(PieceType pt, Bitboard table[], Magic magics[][2]) {
+void init_magics(PieceType pt, uint16_t table[], Magic magics[][2]) {
 
 #ifndef USE_PEXT
     // Optimal PRNG seeds to pick the correct magics in the shortest time
@@ -168,6 +168,7 @@ void init_magics(PieceType pt, Bitboard table[], Magic magics[][2]) {
         // apply to the 64 or 32 bits word to get the index.
         Magic& m = magics[s][pt - BISHOP];
         m.mask   = sliding_attack(pt, s, 0) & ~edges;
+        m.mask2 = sliding_attack(pt, s, 0);
 #ifndef USE_PEXT
         m.shift = (Is64Bit ? 64 : 32) - popcount(m.mask);
 #endif
@@ -187,7 +188,7 @@ void init_magics(PieceType pt, Bitboard table[], Magic magics[][2]) {
             reference[size] = sliding_attack(pt, s, b);
 
             if (HasPext)
-                m.attacks[pext(b, m.mask)] = reference[size];
+                m.attacks[pext(b, m.mask)] = pext(reference[size], m.mask2);
 
             size++;
             b = (b - m.mask) & m.mask;
