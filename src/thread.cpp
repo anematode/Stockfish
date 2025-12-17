@@ -45,9 +45,11 @@ Thread::Thread(Search::SharedState&                    sharedState,
                std::unique_ptr<Search::ISearchManager> sm,
                size_t                                  n,
                size_t                                  numaN,
+               size_t                                  totalNumaCount,
                OptionalThreadToNumaNodeBinder          binder) :
     idx(n),
     idxInNuma(numaN),
+    totalNuma(totalNumaCount),
     nthreads(sharedState.options["Threads"]),
     stdThread(&Thread::idle_loop, this) {
 
@@ -58,8 +60,8 @@ Thread::Thread(Search::SharedState&                    sharedState,
         // the Worker allocation. Ideally we would also allocate the SearchManager
         // here, but that's minor.
         this->numaAccessToken = binder();
-        this->worker = make_unique_large_page<Search::Worker>(sharedState, std::move(sm), n,
-                                                              idxInNuma, this->numaAccessToken);
+        this->worker          = make_unique_large_page<Search::Worker>(
+          sharedState, std::move(sm), n, idxInNuma, totalNuma, this->numaAccessToken);
     });
 
     wait_for_search_finished();
@@ -214,7 +216,7 @@ void ThreadPool::set(const NumaConfig&                           numaConfig,
             }
         }
 
-        sharedState.numaCounts = counts;
+        auto threadsPerNode = counts;
         counts.clear();
 
         while (threads.size() < requested)
@@ -233,7 +235,8 @@ void ThreadPool::set(const NumaConfig&                           numaConfig,
                                         : OptionalThreadToNumaNodeBinder(numaId);
 
             threads.emplace_back(std::make_unique<Thread>(sharedState, std::move(manager), threadId,
-                                                          counts[numaId]++, binder));
+                                                          counts[numaId]++, threadsPerNode[numaId],
+                                                          binder));
         }
 
         clear();

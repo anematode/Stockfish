@@ -150,7 +150,6 @@ struct SharedState {
     ThreadPool&                                               threads;
     TranspositionTable&                                       tt;
     std::map<NumaIndex, SharedHistories>&                     sharedHistories;
-    std::map<NumaIndex, size_t>                               numaCounts;
     const LazyNumaReplicatedSystemWide<Eval::NNUE::Networks>& networks;
 };
 
@@ -282,8 +281,12 @@ struct SharedHistories {
 // of the search history, and storing data required for the search.
 class Worker {
    public:
-    Worker(
-      SharedState&, std::unique_ptr<ISearchManager>, size_t, size_t, NumaReplicatedAccessToken);
+    Worker(SharedState&,
+           std::unique_ptr<ISearchManager>,
+           size_t,
+           size_t,
+           size_t,
+           NumaReplicatedAccessToken);
 
     // Called at instantiation to initialize reductions tables.
     // Reset histories, usually before a new game.
