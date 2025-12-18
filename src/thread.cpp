@@ -28,6 +28,7 @@
 #include <utility>
 
 #include "bitboard.h"
+#include "history.h"
 #include "memory.h"
 #include "movegen.h"
 #include "search.h"
