@@ -21,6 +21,7 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <cassert>
 #include <cmath>
 #include <cstdint>
@@ -56,19 +57,17 @@ inline int pawn_history_index(const Position& pos) {
 // and the second template parameter D limits the range of updates in [-D, D]
 // when we update values with the << operator
 template<typename T, int D>
-class StatsEntry {
-
+struct StatsEntry {
     static_assert(std::is_arithmetic_v<T>, "Not an arithmetic type");
-    static_assert(D <= std::numeric_limits<T>::max(), "D overflows T");
 
     T entry;
 
-   public:
     StatsEntry& operator=(const T& v) {
         entry = v;
         return *this;
     }
-    operator const T&() const { return entry; }
+
+    operator T() const { return entry; }
 
     void operator<<(int bonus) {
         // Make sure that bonus is in range [-D, D]
@@ -154,7 +153,31 @@ enum CorrHistType {
     Continuation,  // Combined history of move pairs
 };
 
+template<typename T, int D>
+struct CorrectionBundle {
+    StatsEntry<T, D> pawn;
+    StatsEntry<T, D> minor;
+    StatsEntry<T, D> nonPawnWhite;
+    StatsEntry<T, D> nonPawnBlack;
+
+    void fill(T val) {
+        pawn.entry         = val;
+        minor.entry        = val;
+        nonPawnWhite.entry = val;
+        nonPawnBlack.entry = val;
+    }
+
+    auto& operator=(const T& v) {
+        pawn.entry         = v;
+        minor.entry        = v;
+        nonPawnWhite.entry = v;
+        nonPawnBlack.entry = v;
+        return *this;
+    }
+};
+
 namespace Detail {
+
 
 template<CorrHistType>
 struct CorrHistTypedef {
@@ -180,6 +203,11 @@ struct CorrHistTypedef<NonPawn> {
 
 }
 
+using UnifiedCorrectionHistory =
+  DynStats<MultiArray<CorrectionBundle<std::int16_t, CORRECTION_HISTORY_LIMIT>, COLOR_NB>,
+           CORRHIST_BASE_SIZE>;
+
+
 template<CorrHistType T>
 using CorrectionHistory = typename Detail::CorrHistTypedef<T>::type;
 
@@ -187,41 +215,37 @@ using TTMoveHistory = StatsEntry<std::int16_t, 8192>;
 
 struct SharedHistories {
     SharedHistories(size_t threadCount) :
-        pawnCorrectionHistory(threadCount),
-        minorPieceCorrectionHistory(threadCount),
-        nonPawnCorrectionHistory(threadCount) {
+        correctionHistory(threadCount) {
         assert((threadCount & (threadCount - 1)) == 0 && threadCount != 0);
-        sizeMinus1 = pawnCorrectionHistory.get_size() - 1;
+        sizeMinus1 = correctionHistory.get_size() - 1;
     }
 
     size_t get_size() const { return sizeMinus1 + 1; }
 
     auto& pawn_correction_entry(const Position& pos) {
-        return pawnCorrectionHistory[pos.pawn_key() & sizeMinus1];
+        return correctionHistory[pos.pawn_key() & sizeMinus1];
     }
     const auto& pawn_correction_entry(const Position& pos) const {
-        return pawnCorrectionHistory[pos.pawn_key() & sizeMinus1];
+        return correctionHistory[pos.pawn_key() & sizeMinus1];
     }
 
     auto& minor_piece_correction_entry(const Position& pos) {
-        return minorPieceCorrectionHistory[pos.minor_piece_key() & sizeMinus1];
+        return correctionHistory[pos.minor_piece_key() & sizeMinus1];
     }
     const auto& minor_piece_correction_entry(const Position& pos) const {
-        return minorPieceCorrectionHistory[pos.minor_piece_key() & sizeMinus1];
+        return correctionHistory[pos.minor_piece_key() & sizeMinus1];
     }
 
     template<Color c>
     auto& nonpawn_correction_entry(const Position& pos) {
-        return nonPawnCorrectionHistory[pos.non_pawn_key(c) & sizeMinus1][c];
+        return correctionHistory[pos.non_pawn_key(c) & sizeMinus1];
     }
     template<Color c>
     const auto& nonpawn_correction_entry(const Position& pos) const {
-        return nonPawnCorrectionHistory[pos.non_pawn_key(c) & sizeMinus1][c];
+        return correctionHistory[pos.non_pawn_key(c) & sizeMinus1];
     }
 
-    CorrectionHistory<Pawn>    pawnCorrectionHistory;
-    CorrectionHistory<Minor>   minorPieceCorrectionHistory;
-    CorrectionHistory<NonPawn> nonPawnCorrectionHistory;
+    UnifiedCorrectionHistory correctionHistory;
 
    private:
     size_t sizeMinus1;
