@@ -31,7 +31,6 @@ with chess.syzygy.open_tablebase("/home/toystory/Desktop/tb/src") as tablebase:
 						pawn_file = 7 if (1 << wbishop) & chess.BB_LIGHT_SQUARES else 0
 						board.set_piece_at(chess.Square(pawn_file + pawn_rank * 8), chess.Piece(chess.PAWN, chess.WHITE))
 						board.turn = stm == "w"
-						print(board.fen(), "wdl", 0); exit()
 						if not board.is_valid():
 							continue
 						wdl = tablebase.probe_wdl(board)

@@ -50,40 +50,6 @@ int Eval::simple_eval(const Position& pos) {
 
 bool Eval::use_smallnet(const Position& pos) { return std::abs(simple_eval(pos)) > 962; }
 
-constexpr Bitboard CondemnedFile[COLOR_NB] = { FileABB, FileHBB };
-constexpr Bitboard WhiteSquares = 0xaa55aa55aa55aa55ULL;
-
-static bool wrong_rook_pawn(const Position & pos) {
-    return pos.count<ALL_PIECES>() == 4 && pos.pieces(PAWN) & CondemnedFile[(pos.pieces(BISHOP) & WhiteSquares) != 0];
-}
-
-// [white king][black king][white bishop][stm] for the byte. pawn rank is bit within byte to indicate win for white.
-INCBIN(WrongRookPawnBitbase, "wrong_rook_pawn.dat");
-
-static Value evaluate_wrong_rook_pawn(const Position& pos, Color advantage) {
-    Color stm = pos.side_to_move();
-    Square adv_king = pos.square<KING>(advantage);
-    Square black_king = pos.square<KING>(~advantage);
-    Square bishop = lsb(pos.pieces(BISHOP));
-    int pawn_rank = rank_of(lsb(pos.pieces(PAWN)));
-
-    if (advantage == BLACK) {
-        // flip board vertically and STM
-        stm = ~stm;
-        bishop = flip_rank(bishop);
-        pawn_rank = 7 - pawn_rank;
-        adv_king = flip_rank(adv_king);
-        black_king = flip_rank(black_king);
-    }
-
-    assert(pawn_rank >= 1 && pawn_rank <= 6);
-    size_t byte_offset = adv_king * 64 * 64 * 2 + black_king * 64 * 2 + bishop * 2 + (stm != WHITE);
-    bool advantage_wins = gWrongRookPawnBitbaseData[byte_offset] & (1 << pawn_rank);
-
-    Value result = advantage_wins ? (advantage == pos.side_to_move() ? 10000 : -10000) : VALUE_DRAW;
-    return result;
-}
-
 // Evaluate is the evaluator for the outer world. It returns a static evaluation
 // of the position from the point of view of the side to move.
 Value Eval::evaluate(const Eval::NNUE::Networks&    networks,
@@ -95,9 +61,6 @@ Value Eval::evaluate(const Eval::NNUE::Networks&    networks,
     assert(!pos.checkers());
 
     int simple = simple_eval(pos);
-    if (std::abs(simple) == BishopValue + PawnValue && wrong_rook_pawn(pos)) {
-        return evaluate_wrong_rook_pawn(pos, Color(pos.side_to_move() ^ (simple < 0)));
-    }
 
     bool smallNet           = std::abs(simple) > 962;
     auto [psqt, positional] = smallNet ? networks.small.evaluate(pos, accumulators, caches.small)

@@ -49,6 +49,7 @@
 #include "types.h"
 #include "uci.h"
 #include "ucioption.h"
+#include "incbin/incbin.h"
 
 namespace Stockfish {
 
@@ -600,6 +601,39 @@ void Search::Worker::clear() {
 }
 
 
+constexpr Bitboard CondemnedFile[COLOR_NB] = { FileABB, FileHBB };
+constexpr Bitboard WhiteSquares = 0xaa55aa55aa55aa55ULL;
+
+static bool wrong_rook_pawn(const Position & pos) {
+    return pos.count<ALL_PIECES>() == 4 && pos.pieces(PAWN) & CondemnedFile[(pos.pieces(BISHOP) & WhiteSquares) != 0];
+}
+
+// [white king][black king][white bishop][stm] for the byte. pawn rank is bit within byte to indicate win for white.
+INCBIN(WrongRookPawnBitbase, "wrong_rook_pawn.dat");
+
+static Tablebases::WDLScore evaluate_wrong_rook_pawn(const Position& pos, Color advantage) {
+    Color stm = pos.side_to_move();
+    Square adv_king = pos.square<KING>(advantage);
+    Square black_king = pos.square<KING>(~advantage);
+    Square bishop = lsb(pos.pieces(BISHOP));
+    int pawn_rank = rank_of(lsb(pos.pieces(PAWN)));
+
+    if (advantage == BLACK) {
+        // flip board vertically and STM
+        stm = ~stm;
+        bishop = flip_rank(bishop);
+        pawn_rank = 7 - pawn_rank;
+        adv_king = flip_rank(adv_king);
+        black_king = flip_rank(black_king);
+    }
+
+    assert(pawn_rank >= 1 && pawn_rank <= 6);
+    size_t byte_offset = adv_king * 64 * 64 * 2 + black_king * 64 * 2 + bishop * 2 + (stm != WHITE);
+    bool advantage_wins = gWrongRookPawnBitbaseData[byte_offset] & (1 << pawn_rank);
+
+    return advantage_wins ? (advantage == pos.side_to_move() ? Tablebases::WDLWin : Tablebases::WDLLoss) : Tablebases::WDLDraw;
+}
+
 // Main search function for both PV and non-PV nodes
 template<NodeType nodeType>
 Value Search::Worker::search(
@@ -796,26 +830,14 @@ Value Search::Worker::search(
     }
 
     // Step 5. Tablebases probe
-    if (!rootNode && !excludedMove && tbConfig.cardinality)
+    if (!rootNode && !excludedMove)
     {
-        int piecesCount = pos.count<ALL_PIECES>();
-
-        if (piecesCount <= tbConfig.cardinality
-            && (piecesCount < tbConfig.cardinality || depth >= tbConfig.probeDepth)
-            && pos.rule50_count() == 0 && !pos.can_castle(ANY_CASTLING))
+        int simple = Eval::simple_eval(pos);
+        if (std::abs(simple) == BishopValue + PawnValue && wrong_rook_pawn(pos))
         {
-            TB::ProbeState err;
-            TB::WDLScore   wdl = Tablebases::probe_wdl(pos, &err);
-
-            // Force check of time on the next occasion
-            if (is_mainthread())
-                main_manager()->callsCnt = 0;
-
-            if (err != TB::ProbeState::FAIL)
+            TB::WDLScore   wdl = evaluate_wrong_rook_pawn(pos, Color(pos.side_to_move() ^ (simple < 0)));
+            if (1)
             {
-                // Preferable over fetch_add to avoid locking instructions
-                tbHits.store(tbHits.load(std::memory_order_relaxed) + 1, std::memory_order_relaxed);
-
                 int drawScore = tbConfig.useRule50 ? 1 : 0;
 
                 Value tbValue = VALUE_TB - ss->ply;
