@@ -186,16 +186,11 @@ void ThreadPool::set(const NumaConfig&                           numaConfig,
                                 : std::vector<NumaIndex>{};
 
         if (boundThreadToNumaNode.empty())
-        {
-            // Pretend all threads are part of numa node 0
-            counts[0] = requested;
-        }
+            counts[0] = requested;  // Pretend all threads are part of numa node 0
         else
         {
             for (size_t i = 0; i < boundThreadToNumaNode.size(); ++i)
-            {
                 counts[boundThreadToNumaNode[i]]++;
-            }
         }
 
         sharedState.sharedHistories.clear();
@@ -207,13 +202,9 @@ void ThreadPool::set(const NumaConfig&                           numaConfig,
                 sharedState.sharedHistories.try_emplace(numaIndex, next_power_of_two(count));
             };
             if (doBindThreads)
-            {
                 numaConfig.execute_on_numa_node(numaIndex, f);
-            }
             else
-            {
                 f();
-            }
         }
 
         auto threadsPerNode = counts;

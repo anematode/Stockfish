@@ -28,13 +28,11 @@
 #include <limits>
 #include <type_traits>  // IWYU pragma: keep
 
-#include <iostream>
 #include "memory.h"
 #include "misc.h"
 #include "position.h"
 
 namespace Stockfish {
-
 
 constexpr int PAWN_HISTORY_SIZE        = 8192;  // has to be a power of 2
 constexpr int UINT_16_HISTORY_SIZE     = std::numeric_limits<uint16_t>::max() + 1;
@@ -221,7 +219,6 @@ struct SharedHistories {
     const auto& nonpawn_correction_entry(const Position& pos) const {
         return nonPawnCorrectionHistory[pos.non_pawn_key(c) & sizeMinus1][c];
     }
-
 
     CorrectionHistory<Pawn>    pawnCorrectionHistory;
     CorrectionHistory<Minor>   minorPieceCorrectionHistory;
