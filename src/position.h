@@ -70,9 +70,7 @@ struct StateInfo {
 // elements are not invalidated upon list resizing.
 using StateListPtr = std::unique_ptr<std::deque<StateInfo>>;
 
-namespace Search {
 struct SharedHistories;
-}
 
 // Position class stores information regarding the board representation as
 // pieces, side to move, hash keys, castling info, etc. Important methods are
@@ -139,13 +137,13 @@ class Position {
 
     // Doing and undoing moves
     void do_move(Move m, StateInfo& newSt, const TranspositionTable* tt);
-    void do_move(Move                           m,
-                 StateInfo&                     newSt,
-                 bool                           givesCheck,
-                 DirtyPiece&                    dp,
-                 DirtyThreats&                  dts,
-                 const TranspositionTable*      tt,
-                 const Search::SharedHistories* worker);
+    void do_move(Move                      m,
+                 StateInfo&                newSt,
+                 bool                      givesCheck,
+                 DirtyPiece&               dp,
+                 DirtyThreats&             dts,
+                 const TranspositionTable* tt,
+                 const SharedHistories*    worker);
     void undo_move(Move m);
     void do_null_move(StateInfo& newSt, const TranspositionTable& tt);
     void undo_null_move();
@@ -154,13 +152,11 @@ class Position {
     bool see_ge(Move m, int threshold = 0) const;
 
     // Accessing hash keys
-    Key      key() const;
-    Key      material_key() const;
-    Key      pawn_key() const;
-    Key      minor_piece_key() const;
-    Key      non_pawn_key(Color c) const;
-    uint32_t get_corrhist_size_m1() const;
-    void     set_corrhist_size(uint32_t val);
+    Key key() const;
+    Key material_key() const;
+    Key pawn_key() const;
+    Key minor_piece_key() const;
+    Key non_pawn_key(Color c) const;
 
     // Other properties of the position
     Color side_to_move() const;
@@ -222,7 +218,6 @@ class Position {
     int          gamePly;
     Color        sideToMove;
     bool         chess960;
-    uint32_t     corrHistSizeM1;
     DirtyPiece   scratch_dp;
     DirtyThreats scratch_dts;
 };
@@ -325,13 +320,6 @@ inline Key Position::material_key() const { return st->materialKey; }
 inline Key Position::minor_piece_key() const { return st->minorPieceKey; }
 
 inline Key Position::non_pawn_key(Color c) const { return st->nonPawnKey[c]; }
-
-inline uint32_t Position::get_corrhist_size_m1() const { return corrHistSizeM1; }
-
-inline void Position::set_corrhist_size(uint32_t val) {
-    assert((val & (val - 1)) == 0 && val);
-    corrHistSizeM1 = val - 1;
-}
 
 
 inline Value Position::non_pawn_material(Color c) const { return st->nonPawnMaterial[c]; }

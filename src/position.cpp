@@ -695,13 +695,13 @@ bool Position::gives_check(Move m) const {
 // moves should be filtered out before this function is called.
 // If a pointer to the TT table is passed, the entry for the new position
 // will be prefetched
-void Position::do_move(Move                           m,
-                       StateInfo&                     newSt,
-                       bool                           givesCheck,
-                       DirtyPiece&                    dp,
-                       DirtyThreats&                  dts,
-                       const TranspositionTable*      tt      = nullptr,
-                       const Search::SharedHistories* history = nullptr) {
+void Position::do_move(Move                      m,
+                       StateInfo&                newSt,
+                       bool                      givesCheck,
+                       DirtyPiece&               dp,
+                       DirtyThreats&             dts,
+                       const TranspositionTable* tt      = nullptr,
+                       const SharedHistories*    history = nullptr) {
 
     assert(m.is_ok());
     assert(&newSt != st);
@@ -885,10 +885,10 @@ void Position::do_move(Move                           m,
 
     if (history)
     {
-        prefetch(&history->pawnCorrectionHistory[pawn_correction_history_index(*this)][0]);
-        prefetch(&history->minorPieceCorrectionHistory[minor_piece_index(*this)][0]);
-        prefetch(&history->nonPawnCorrectionHistory[non_pawn_index<WHITE>(*this)][0][0]);
-        prefetch(&history->nonPawnCorrectionHistory[non_pawn_index<BLACK>(*this)][0][0]);
+        prefetch(&history->pawn_correction_entry(*this));
+        prefetch(&history->minor_piece_correction_entry(*this));
+        prefetch(&history->nonpawn_correction_entry<WHITE>(*this));
+        prefetch(&history->nonpawn_correction_entry<BLACK>(*this));
     }
 
     // Set capture piece

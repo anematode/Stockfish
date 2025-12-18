@@ -121,9 +121,9 @@ class Engine {
     TranspositionTable                                 tt;
     LazyNumaReplicatedSystemWide<Eval::NNUE::Networks> networks;
 
-    Search::SearchManager::UpdateContext         updateContext;
-    std::function<void(std::string_view)>        onVerifyNetworks;
-    std::map<NumaIndex, Search::SharedHistories> sharedHists;
+    Search::SearchManager::UpdateContext  updateContext;
+    std::function<void(std::string_view)> onVerifyNetworks;
+    std::map<NumaIndex, SharedHistories>  sharedHists;
 };
 
 }  // namespace Stockfish

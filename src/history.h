@@ -52,19 +52,6 @@ inline int pawn_history_index(const Position& pos) {
     return pos.pawn_key() & (PAWN_HISTORY_SIZE - 1);
 }
 
-inline size_t pawn_correction_history_index(const Position& pos) {
-    return pos.pawn_key() & pos.get_corrhist_size_m1();
-}
-
-inline size_t minor_piece_index(const Position& pos) {
-    return pos.minor_piece_key() & pos.get_corrhist_size_m1();
-}
-
-template<Color c>
-inline size_t non_pawn_index(const Position& pos) {
-    return pos.non_pawn_key(c) & pos.get_corrhist_size_m1();
-}
-
 // StatsEntry is the container of various numerical statistics. We use a class
 // instead of a naked value to directly call history update operator<<() on
 // the entry. The first template parameter T is the base type of the array,
@@ -104,7 +91,10 @@ using Stats = MultiArray<StatsEntry<T, D>, Sizes...>;
 
 template<typename T, int SizeMultiplier>
 struct DynStats {
-    explicit DynStats(size_t initial_size) { resize(initial_size); }
+    explicit DynStats(size_t s) {
+        size = s * SizeMultiplier;
+        data = make_unique_large_page<T[]>(size);
+    }
     template<typename U>
     void fill_range(U val, size_t start, size_t end) {
         assert(start < size);
@@ -115,10 +105,7 @@ struct DynStats {
             start++;
         }
     }
-    void resize(size_t new_size) {
-        size = new_size * SizeMultiplier;
-        data = make_unique_large_page<T[]>(size);
-    }
+    void   resize(size_t new_size) {}
     size_t get_size() const { return size; }
     T&     operator[](size_t index) {
         assert(index < size);
@@ -200,6 +187,49 @@ template<CorrHistType T>
 using CorrectionHistory = typename Detail::CorrHistTypedef<T>::type;
 
 using TTMoveHistory = StatsEntry<std::int16_t, 8192>;
+
+struct SharedHistories {
+    SharedHistories(size_t threadCount) :
+        pawnCorrectionHistory(threadCount),
+        minorPieceCorrectionHistory(threadCount),
+        nonPawnCorrectionHistory(threadCount) {
+        assert((threadCount & (threadCount - 1)) == 0 && threadCount != 0);
+        sizeMinus1 = pawnCorrectionHistory.get_size() - 1;
+    }
+
+    size_t get_size() const { return sizeMinus1 + 1; }
+
+    auto& pawn_correction_entry(const Position& pos) {
+        return pawnCorrectionHistory[pos.pawn_key() & sizeMinus1];
+    }
+    const auto& pawn_correction_entry(const Position& pos) const {
+        return pawnCorrectionHistory[pos.pawn_key() & sizeMinus1];
+    }
+
+    auto& minor_piece_correction_entry(const Position& pos) {
+        return minorPieceCorrectionHistory[pos.minor_piece_key() & sizeMinus1];
+    }
+    const auto& minor_piece_correction_entry(const Position& pos) const {
+        return minorPieceCorrectionHistory[pos.minor_piece_key() & sizeMinus1];
+    }
+
+    template<Color c>
+    auto& nonpawn_correction_entry(const Position& pos) {
+        return nonPawnCorrectionHistory[pos.non_pawn_key(c) & sizeMinus1][c];
+    }
+    template<Color c>
+    const auto& nonpawn_correction_entry(const Position& pos) const {
+        return nonPawnCorrectionHistory[pos.non_pawn_key(c) & sizeMinus1][c];
+    }
+
+
+    CorrectionHistory<Pawn>    pawnCorrectionHistory;
+    CorrectionHistory<Minor>   minorPieceCorrectionHistory;
+    CorrectionHistory<NonPawn> nonPawnCorrectionHistory;
+
+   private:
+    size_t sizeMinus1;
+};
 
 }  // namespace Stockfish
 

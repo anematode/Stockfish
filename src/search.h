@@ -130,8 +130,6 @@ struct LimitsType {
     bool                     ponderMode;
 };
 
-struct SharedHistories;
-
 // The UCI stores the uci options, thread pool, and transposition table.
 // This struct is used to easily forward data to the Search::Worker class.
 struct SharedState {
@@ -261,19 +259,6 @@ class SearchManager: public ISearchManager {
 class NullSearchManager: public ISearchManager {
    public:
     void check_time(Search::Worker&) override {}
-};
-
-struct SharedHistories {
-    SharedHistories(size_t threadCount) :
-        pawnCorrectionHistory(threadCount),
-        minorPieceCorrectionHistory(threadCount),
-        nonPawnCorrectionHistory(threadCount) {}
-
-    size_t get_size() const { return pawnCorrectionHistory.get_size(); }
-
-    CorrectionHistory<Pawn>    pawnCorrectionHistory;
-    CorrectionHistory<Minor>   minorPieceCorrectionHistory;
-    CorrectionHistory<NonPawn> nonPawnCorrectionHistory;
 };
 
 // Search::Worker is the class that does the actual search.
