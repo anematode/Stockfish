@@ -103,7 +103,6 @@ struct DynStats {
             start++;
         }
     }
-    void   resize(size_t new_size) {}
     size_t get_size() const { return size; }
     T&     operator[](size_t index) {
         assert(index < size);
