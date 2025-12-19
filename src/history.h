@@ -56,25 +56,39 @@ inline int pawn_history_index(const Position& pos) {
 // the entry. The first template parameter T is the base type of the array,
 // and the second template parameter D limits the range of updates in [-D, D]
 // when we update values with the << operator
-template<typename T, int D>
+template<typename T, int D, bool Atomic = false>
 struct StatsEntry {
     static_assert(std::is_arithmetic_v<T>, "Not an arithmetic type");
 
     T entry;
 
     StatsEntry& operator=(const T& v) {
+#ifdef __GNUC__
+if constexpr (Atomic) {
+	__atomic_store_n(&entry, v, __ATOMIC_RELAXED);
+	return *this;
+}
+#endif
         entry = v;
         return *this;
     }
 
-    operator T() const { return entry; }
+    operator T() const {
+#ifdef __GNUC__
+if constexpr (Atomic) {
+	return __atomic_load_n(&entry, __ATOMIC_RELAXED);
+}
+#endif
+		return entry;
+	}
 
     void operator<<(int bonus) {
         // Make sure that bonus is in range [-D, D]
         int clampedBonus = std::clamp(bonus, -D, D);
-        entry += clampedBonus - entry * std::abs(clampedBonus) / D;
+		T val = *this;
+        *this = val + clampedBonus - val * std::abs(clampedBonus) / D;
 
-        assert(std::abs(entry) <= D);
+        assert(std::abs(T(*this)) <= D);
     }
 };
 
