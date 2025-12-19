@@ -169,10 +169,10 @@ enum CorrHistType {
 
 template<typename T, int D>
 struct CorrectionBundle {
-    StatsEntry<T, D> pawn;
-    StatsEntry<T, D> minor;
-    StatsEntry<T, D> nonPawnWhite;
-    StatsEntry<T, D> nonPawnBlack;
+    StatsEntry<T, D, true> pawn;
+    StatsEntry<T, D, true> minor;
+    StatsEntry<T, D, true> nonPawnWhite;
+    StatsEntry<T, D, true> nonPawnBlack;
 
     void fill(T val) {
         pawn.entry         = val;
