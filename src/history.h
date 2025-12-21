@@ -60,26 +60,22 @@ template<typename T, int D, bool Atomic = false>
 struct StatsEntry {
     static_assert(std::is_arithmetic_v<T>, "Not an arithmetic type");
 
-    T entry;
+    std::conditional_t<Atomic, std::atomic<T>, T> entry;
 
     StatsEntry& operator=(const T& v) {
-#ifdef __GNUC__
-if constexpr (Atomic) {
-	__atomic_store_n(&entry, v, __ATOMIC_RELAXED);
-	return *this;
-}
-#endif
-        entry = v;
+		if constexpr (Atomic) {
+			entry.store(std::memory_order_relaxed);
+		} else {
+			entry = v;
+		}
         return *this;
     }
 
     operator T() const {
-#ifdef __GNUC__
-if constexpr (Atomic) {
-	return __atomic_load_n(&entry, __ATOMIC_RELAXED);
-}
-#endif
-		return entry;
+		if constexpr (Atomic)
+			return entry.load(std::memory_order_relaxed);
+		else
+			return entry;
 	}
 
     void operator<<(int bonus) {
