@@ -64,7 +64,7 @@ struct StatsEntry {
 
     StatsEntry& operator=(const T& v) {
 		if constexpr (Atomic) {
-			entry.store(std::memory_order_relaxed);
+			entry.store(v, std::memory_order_relaxed);
 		} else {
 			entry = v;
 		}
