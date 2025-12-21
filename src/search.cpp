@@ -80,14 +80,14 @@ int correction_value(const Worker& w, const Position& pos, const Stack* const ss
     const Color us     = pos.side_to_move();
     const auto  m      = (ss - 1)->currentMove;
     const auto& shared = w.sharedHistory;
-    const int  pcv    = shared.pawn_correction_entry(pos).at(us).pawn;
-    const int  micv   = shared.minor_piece_correction_entry(pos).at(us).minor;
-    const int  wnpcv  = shared.nonpawn_correction_entry<WHITE>(pos).at(us).nonPawnWhite;
-    const int  bnpcv  = shared.nonpawn_correction_entry<BLACK>(pos).at(us).nonPawnBlack;
-    const int  cntcv =
+    const int   pcv    = shared.pawn_correction_entry(pos).at(us).pawn;
+    const int   micv   = shared.minor_piece_correction_entry(pos).at(us).minor;
+    const int   wnpcv  = shared.nonpawn_correction_entry<WHITE>(pos).at(us).nonPawnWhite;
+    const int   bnpcv  = shared.nonpawn_correction_entry<BLACK>(pos).at(us).nonPawnBlack;
+    const int   cntcv =
       m.is_ok() ? (*(ss - 2)->continuationCorrectionHistory)[pos.piece_on(m.to_sq())][m.to_sq()]
                     + (*(ss - 4)->continuationCorrectionHistory)[pos.piece_on(m.to_sq())][m.to_sq()]
-                 : 8;
+                  : 8;
 
     return 10347 * pcv + 8821 * micv + 11168 * (wnpcv + bnpcv) + 7841 * cntcv;
 }
@@ -589,9 +589,7 @@ void Search::Worker::clear() {
     size_t start = numaThreadIdx * len;
     size_t end   = std::min(start + len, sharedHistory.get_size());
 
-    // sharedHistory.correctionHistory.fill_range(5, start, end);
-    // sharedHistory.correctionHistory.fill_range(0, start, end);
-    sharedHistory.correctionHistory.fill_range(0, start, end);
+    sharedHistory.correctionHistory.clear_range(start, end);
 
     ttMoveHistory = 0;
 

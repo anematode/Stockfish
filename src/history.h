@@ -60,29 +60,29 @@ template<typename T, int D, bool Atomic = false>
 struct StatsEntry {
     static_assert(std::is_arithmetic_v<T>, "Not an arithmetic type");
 
+   private:
     std::conditional_t<Atomic, std::atomic<T>, T> entry;
 
-    StatsEntry& operator=(const T& v) {
-		if constexpr (Atomic) {
-			entry.store(v, std::memory_order_relaxed);
-		} else {
-			entry = v;
-		}
-        return *this;
+   public:
+    void operator=(const T& v) {
+        if constexpr (Atomic)
+            entry.store(v, std::memory_order_relaxed);
+        else
+            entry = v;
     }
 
     operator T() const {
-		if constexpr (Atomic)
-			return entry.load(std::memory_order_relaxed);
-		else
-			return entry;
-	}
+        if constexpr (Atomic)
+            return entry.load(std::memory_order_relaxed);
+        else
+            return entry;
+    }
 
     void operator<<(int bonus) {
         // Make sure that bonus is in range [-D, D]
         int clampedBonus = std::clamp(bonus, -D, D);
-		T val = *this;
-        *this = val + clampedBonus - val * std::abs(clampedBonus) / D;
+        T   val          = *this;
+        *this            = val + clampedBonus - val * std::abs(clampedBonus) / D;
 
         assert(std::abs(T(*this)) <= D);
     }
@@ -102,15 +102,11 @@ struct DynStats {
         size = s * SizeMultiplier;
         data = make_unique_large_page<T[]>(size);
     }
-    template<typename U>
-    void fill_range(U val, size_t start, size_t end) {
+    void clear_range(size_t start, size_t end) {
         assert(start < size);
         assert(end <= size);
-        while (start < end)
-        {
-            data.get()[start].fill(val);
-            start++;
-        }
+        T* fill_start = &(*this)[start];
+        memset(reinterpret_cast<char*>(fill_start), 0, sizeof(T) * (end - start));
     }
     size_t get_size() const { return size; }
     T&     operator[](size_t index) {
