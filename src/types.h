@@ -313,6 +313,11 @@ struct DirtyThreat {
     bool   add() const { return data >> 31; }
     uint32_t raw() const { return data; }
 
+    Key key() const {
+        uint32_t d = _mm_crc32_u32(0x31415926, data & 0x3fffffff);
+        return uint64_t((d ^ (d << 16)) >> 16) << 16 * (d % 4);
+    }
+
    private:
     uint32_t data;
 };

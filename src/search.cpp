@@ -83,12 +83,16 @@ int correction_value(const Worker& w, const Position& pos, const Stack* const ss
     const auto  micv  = w.minorPieceCorrectionHistory[minor_piece_index(pos)][us];
     const auto  wnpcv = w.nonPawnCorrectionHistory[non_pawn_index<WHITE>(pos)][WHITE][us];
     const auto  bnpcv = w.nonPawnCorrectionHistory[non_pawn_index<BLACK>(pos)][BLACK][us];
+	int total = 0;
+	for (int i = 0; i < 4; ++i) {
+		total += w.threatsCorrectionHistory[i][threats_index(pos, i)];
+	}
     const auto  cntcv =
       m.is_ok() ? (*(ss - 2)->continuationCorrectionHistory)[pos.piece_on(m.to_sq())][m.to_sq()]
                     + (*(ss - 4)->continuationCorrectionHistory)[pos.piece_on(m.to_sq())][m.to_sq()]
                  : 8;
 
-    return 10347 * pcv + 8821 * micv + 11168 * (wnpcv + bnpcv) + 7841 * cntcv;
+    return 10347 * pcv + 8821 * micv + 11168 * (wnpcv + bnpcv) + 7841 * cntcv + 2000 * total;
 }
 
 // Add correctionHistory value to raw staticEval and guarantee evaluation
@@ -112,6 +116,10 @@ void update_correction_history(const Position& pos,
       << bonus * nonPawnWeight / 128;
     workerThread.nonPawnCorrectionHistory[non_pawn_index<BLACK>(pos)][BLACK][us]
       << bonus * nonPawnWeight / 128;
+
+	for (int i = 0; i < 4; ++i) {
+		workerThread.threatsCorrectionHistory[i][threats_index(pos, i)] << bonus;
+	}
 
     if (m.is_ok())
     {
@@ -579,6 +587,9 @@ void Search::Worker::clear() {
     pawnCorrectionHistory.fill(5);
     minorPieceCorrectionHistory.fill(0);
     nonPawnCorrectionHistory.fill(0);
+	for (auto& h : threatsCorrectionHistory) {
+		h.fill(0);
+	}
 
     ttMoveHistory = 0;
 

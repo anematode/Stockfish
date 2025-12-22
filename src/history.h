@@ -59,6 +59,11 @@ inline uint16_t non_pawn_index(const Position& pos) {
     return uint16_t(pos.non_pawn_key(c));
 }
 
+inline uint16_t threats_index(const Position& pos, int i) {
+	assert(0 <= i && i <= 3);
+	return uint16_t(pos.threats_key() >> 16 * i);
+}
+
 // StatsEntry is the container of various numerical statistics. We use a class
 // instead of a naked value to directly call history update operator<<() on
 // the entry. The first template parameter T is the base type of the array,
@@ -130,6 +135,7 @@ enum CorrHistType {
     NonPawn,       // By non-pawn material positions and color
     PieceTo,       // By [piece][to] move
     Continuation,  // Combined history of move pairs
+	Threats,       // By 16-bit hash of active threats
 };
 
 namespace Detail {
@@ -142,6 +148,11 @@ struct CorrHistTypedef {
 template<>
 struct CorrHistTypedef<PieceTo> {
     using type = Stats<std::int16_t, CORRECTION_HISTORY_LIMIT, PIECE_NB, SQUARE_NB>;
+};
+
+template<>
+struct CorrHistTypedef<Threats> {
+    using type = Stats<std::int16_t, CORRECTION_HISTORY_LIMIT, UINT_16_HISTORY_SIZE>;
 };
 
 template<>

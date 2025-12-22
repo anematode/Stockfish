@@ -44,6 +44,7 @@ struct StateInfo {
     Key    materialKey;
     Key    pawnKey;
     Key    minorPieceKey;
+    Key    threatsKey;
     Key    nonPawnKey[COLOR_NB];
     Value  nonPawnMaterial[COLOR_NB];
     int    castlingRights;
@@ -152,6 +153,7 @@ class Position {
     Key key() const;
     Key material_key() const;
     Key pawn_key() const;
+    Key threats_key() const;
     Key minor_piece_key() const;
     Key non_pawn_key(Color c) const;
 
@@ -311,6 +313,8 @@ inline Key Position::adjust_key50(Key k) const {
 }
 
 inline Key Position::pawn_key() const { return st->pawnKey; }
+
+inline Key Position::threats_key() const { return st->threatsKey; }
 
 inline Key Position::material_key() const { return st->materialKey; }
 

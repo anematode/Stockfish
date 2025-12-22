@@ -948,6 +948,11 @@ void Position::do_move(Move                      m,
     if (tt)
         prefetch(tt->first_entry(key()));
 
+    // Update threat key
+    for (const auto& dt : dts.list) {
+        st->threatsKey ^= dt.key();
+    }
+
     // Calculate the repetition info. It is the ply distance from the previous
     // occurrence of the same position, negative in the 3-fold case, or zero
     // if the position was not repeated.
