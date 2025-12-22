@@ -315,7 +315,7 @@ struct DirtyThreat {
 
     Key key() const {
         uint32_t d = _mm_crc32_u32(0x31415926, data & 0x3fffffff);
-        return uint64_t((d ^ (d << 16)) >> 16) << 16 * (d % 4);
+        return uint64_t(d >> 16) << 16 * (uint8_t(threatened_sq()) >> 4);
     }
 
    private:
