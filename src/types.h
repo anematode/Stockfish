@@ -314,8 +314,11 @@ struct DirtyThreat {
     uint32_t raw() const { return data; }
 
     Key key() const {
-        uint32_t d = _mm_crc32_u32(0x31415926, data & 0x3fffffff);
-        return uint64_t(d >> 16) << 16 * (uint8_t(threatened_sq()) >> 4);
+		if ((pc() ^ threatened_pc()) & 8) {  // pieces are different colors
+			uint32_t d = _mm_crc32_u32(0x31415926, data & 0x3fffffff);
+			return uint64_t(d & 0xffff) << 16 * (uint8_t(threatened_sq()) >> 4);
+		}
+		return 0;   // poop
     }
 
    private:
