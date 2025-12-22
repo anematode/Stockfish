@@ -176,7 +176,7 @@ ExtMove* MovePicker::score(MoveList<Type>& ml) {
 
 
             if (ply < LOW_PLY_HISTORY_SIZE)
-                m.value += 8 * (*lowPlyHistory)[ply][m.raw()] / (1 + ply);
+                m.value += 8 * 97 / (1 + ply);
         }
 
         else  // Type == EVASIONS
@@ -187,7 +187,7 @@ ExtMove* MovePicker::score(MoveList<Type>& ml) {
             {
                 m.value = (*mainHistory)[us][m.raw()] + (*continuationHistory[0])[pc][to];
                 if (ply < LOW_PLY_HISTORY_SIZE)
-                    m.value += (*lowPlyHistory)[ply][m.raw()];
+                    m.value += 97;
             }
         }
     }
