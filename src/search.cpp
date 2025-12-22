@@ -85,7 +85,7 @@ int correction_value(const Worker& w, const Position& pos, const Stack* const ss
     const auto  bnpcv = w.nonPawnCorrectionHistory[non_pawn_index<BLACK>(pos)][BLACK][us];
 	int total = 0;
 	for (int i = 0; i < 4; ++i) {
-		total += w.threatsCorrectionHistory[i][threats_index(pos, i)];
+		total += w.threatsCorrectionHistory[i][threats_index(pos, i)][us];
 	}
     const auto  cntcv =
       m.is_ok() ? (*(ss - 2)->continuationCorrectionHistory)[pos.piece_on(m.to_sq())][m.to_sq()]
@@ -118,7 +118,7 @@ void update_correction_history(const Position& pos,
       << bonus * nonPawnWeight / 128;
 
 	for (int i = 0; i < 4; ++i) {
-		workerThread.threatsCorrectionHistory[i][threats_index(pos, i)] << bonus;
+		workerThread.threatsCorrectionHistory[i][threats_index(pos, i)][us] << bonus;
 	}
 
     if (m.is_ok())

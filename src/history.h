@@ -152,7 +152,7 @@ struct CorrHistTypedef<PieceTo> {
 
 template<>
 struct CorrHistTypedef<Threats> {
-    using type = Stats<std::int16_t, CORRECTION_HISTORY_LIMIT, UINT_16_HISTORY_SIZE>;
+    using type = Stats<std::int16_t, CORRECTION_HISTORY_LIMIT, UINT_16_HISTORY_SIZE, COLOR_NB>;
 };
 
 template<>
