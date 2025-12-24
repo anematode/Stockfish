@@ -274,9 +274,9 @@ size_t ThreadPool::num_threads() const { return threads.size(); }
 
 void ThreadPool::average_conthists() {
     const size_t threadCount = num_threads();
-    if (threadCount == 1) return;
+    //if (threadCount == 1) return;
 
-    std::vector<__m512i*> histories(threadCount);
+    std::vector<__m256i*> histories(threadCount);
     for (size_t i = 0; i < threadCount; ++i) {
         auto* start = reinterpret_cast<__m256i*>(&threads[i]->worker->continuationHistory[0][0]);
         histories[i] = start;
@@ -289,15 +289,33 @@ void ThreadPool::average_conthists() {
             for (auto* p : histories) {
                 for (size_t j = 0; j < 8; ++j) {
                     __m256i data = _mm256_loadu_si256(&p[i + j]);
-                    __mmask32 eq = _mm256_cmpeq_epi16_mask(data, _mm256_set1_epi16())
+                    __mmask16 not_dflt = _mm256_cmpneq_epi16_mask(data, _mm256_set1_epi16(-529));
+                    total[j] = _mm512_mask_add_epi32(total[j], not_dflt, total[j], _mm512_cvtepi16_epi32(data));
+                    count[j] = _mm256_mask_add_epi16(count[j], not_dflt, count[j], _mm256_set1_epi16(1));
                 }
-                count += p[i] != -529;
             }
 
-            total -= (-529) * count;
-            int average = count == 0 ? -529 : float(total) / float(count);
+            // Compute mean and adjust slightly away from it
+            for (size_t j = 0; j < 8; ++j) {
+                __m512 n = _mm512_cvtepi32_ps(total[j]);
+                __m512 d = _mm512_cvtepi32_ps(_mm512_cvtepi16_epi32(count[j]));
+                __m512i mean = _mm512_cvtps_epi32(_mm512_mul_ps(n, _mm512_rcp14_ps(d)));
+                count[j] = _mm512_cvtepi32_epi16(mean);
+            }
+
+            for (size_t j = 0; j < 4; ++j) {
+                total[j] = _mm512_inserti64x4(_mm512_castsi256_si512(count[2 * j]), count[2 * j + 1], 1);
+            }
+
             for (auto* p : histories) {
-                p[i] = (15 * p[i] + average) / 16;
+                for (size_t j = 0; j < 4; j++) {
+                    __m512i data = _mm512_loadu_si512(&p[i + j * 2]);
+                    __m512i diff_from_mean = _mm512_sub_epi16(total[j], data);
+                    __m512i shr4 = _mm512_srai_epi16(diff_from_mean, 4);
+                    __mmask32 nonzero = _mm512_test_epi16_mask(total[j], total[j]);
+                    data = _mm512_mask_add_epi16(data, nonzero, data, shr4);
+                    _mm512_storeu_si512(&p[i + j * 2], data);
+                }
             }
         }
     };
