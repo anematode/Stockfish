@@ -272,6 +272,44 @@ void ThreadPool::wait_on_thread(size_t threadId) {
 size_t ThreadPool::num_threads() const { return threads.size(); }
 
 
+void ThreadPool::average_conthists() {
+    const size_t threadCount = num_threads();
+    if (threadCount == 1) return;
+
+    std::vector<int16_t*> histories(threadCount);
+    for (size_t i = 0; i < threadCount; ++i) {
+        auto* start = reinterpret_cast<int16_t*>(&threads[i]->worker->continuationHistory[0][0]);
+        histories[i] = start;
+    }
+
+    auto process_range = [&] (size_t start, size_t end) {
+        for (size_t i = start; i < end; ++i) {
+            int total = 0, count = 0;
+            for (auto* p : histories) {
+                total += p[i];
+                count += p[i] != -529;
+            }
+
+            int average = count == 0 ? -529 : float(total) / float(count);
+            for (auto* p : histories) {
+                p[i] = average;
+            }
+        }
+    };
+
+    size_t total = sizeof(ContinuationHistory) / sizeof(int16_t) * 4;
+    size_t perThread = total / threadCount;
+
+    for (size_t i = 0; i < threadCount; ++i) {
+        run_on_thread(i, [&, i, threadCount] () {
+            process_range(i * perThread, i == threadCount - 1 ? total : (i + 1) * perThread);
+        });
+    }
+
+    for (size_t i = 0; i < threadCount; ++i)
+        wait_on_thread(i);
+}
+
 // Wakes up main thread waiting in idle_loop() and returns immediately.
 // Main thread will wake up other threads and start the search.
 void ThreadPool::start_thinking(const OptionsMap&  options,
@@ -332,6 +370,7 @@ void ThreadPool::start_thinking(const OptionsMap&  options,
     for (auto&& th : threads)
         th->wait_for_search_finished();
 
+    average_conthists();
     main_thread()->start_searching();
 }
 
