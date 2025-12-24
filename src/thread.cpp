@@ -276,28 +276,33 @@ void ThreadPool::average_conthists() {
     const size_t threadCount = num_threads();
     if (threadCount == 1) return;
 
-    std::vector<int16_t*> histories(threadCount);
+    std::vector<__m512i*> histories(threadCount);
     for (size_t i = 0; i < threadCount; ++i) {
-        auto* start = reinterpret_cast<int16_t*>(&threads[i]->worker->continuationHistory[0][0]);
+        auto* start = reinterpret_cast<__m256i*>(&threads[i]->worker->continuationHistory[0][0]);
         histories[i] = start;
     }
 
     auto process_range = [&] (size_t start, size_t end) {
-        for (size_t i = start; i < end; ++i) {
-            int total = 0, count = 0;
+        for (size_t i = start; i < end; i += 8) {
+            __m512i total[8] = {};
+            __m256i count[8] = {};
             for (auto* p : histories) {
-                total += p[i];
+                for (size_t j = 0; j < 8; ++j) {
+                    __m256i data = _mm256_loadu_si256(&p[i + j]);
+                    __mmask32 eq = _mm256_cmpeq_epi16_mask(data, _mm256_set1_epi16())
+                }
                 count += p[i] != -529;
             }
 
+            total -= (-529) * count;
             int average = count == 0 ? -529 : float(total) / float(count);
             for (auto* p : histories) {
-                p[i] = average;
+                p[i] = (15 * p[i] + average) / 16;
             }
         }
     };
 
-    size_t total = sizeof(ContinuationHistory) / sizeof(int16_t) * 4;
+    size_t total = sizeof(ContinuationHistory) / sizeof(__m256i) * 4;
     size_t perThread = total / threadCount;
 
     for (size_t i = 0; i < threadCount; ++i) {
