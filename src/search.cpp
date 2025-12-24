@@ -1902,7 +1902,7 @@ void update_quiet_histories(
       << bonus * (bonus > 0 ? 905 : 505) / 1024;
 
     workerThread.nonPawnHistory[non_pawn_history_index(pos, us)][pos.moved_piece(move)][move.to_sq()]
-      << bonus * 850 / 1024;
+      << bonus * 900 / 1024;
 }
 
 }
