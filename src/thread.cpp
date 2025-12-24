@@ -311,7 +311,7 @@ void ThreadPool::average_conthists() {
                 for (size_t j = 0; j < 4; j++) {
                     __m512i data = _mm512_loadu_si512(&p[i + j * 2]);
                     __m512i diff_from_mean = _mm512_sub_epi16(total[j], data);
-                    __m512i shr4 = _mm512_srai_epi16(diff_from_mean, 3);
+                    __m512i shr4 = _mm512_srai_epi16(diff_from_mean, 5);
                     __mmask32 nonzero = _mm512_test_epi16_mask(total[j], total[j]);
                     data = _mm512_mask_add_epi16(data, nonzero, data, shr4);
                     _mm512_storeu_si512(&p[i + j * 2], data);
