@@ -1529,6 +1529,19 @@ bool Position::pos_is_ok() const {
     if (Fast)
         return true;
 
+    uint8_t correctDistances[COLOR_NB] = {};
+    for (Bitboard b = pieces(); b;) {
+        Square s  = pop_lsb(b);
+        Piece  pc = piece_on(s);
+
+        if (type_of(pc) == PAWN) {
+            correctDistances[color_of(pc)] += relative_rank(~color_of(pc), rank_of(s));
+        }
+    }
+
+    assert(st->pawnDistances[0] == correctDistances[0]);
+    assert(st->pawnDistances[1] == correctDistances[1]);
+
     if (pieceCount[W_KING] != 1 || pieceCount[B_KING] != 1
         || attackers_to_exist(square<KING>(~sideToMove), pieces(), sideToMove))
         assert(0 && "pos_is_ok: Kings");
