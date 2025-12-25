@@ -48,7 +48,7 @@ namespace Zobrist {
 Key psq[PIECE_NB][SQUARE_NB];
 Key enpassant[FILE_NB];
 Key castling[CASTLING_RIGHT_NB];
-Key side, noPawns;
+Key side, noPawns, noNonPawn;
 
 }
 
@@ -129,8 +129,9 @@ void Position::init() {
     for (int cr = NO_CASTLING; cr <= ANY_CASTLING; ++cr)
         Zobrist::castling[cr] = rng.rand<Key>();
 
-    Zobrist::side    = rng.rand<Key>();
-    Zobrist::noPawns = rng.rand<Key>();
+    Zobrist::side      = rng.rand<Key>();
+    Zobrist::noPawns   = rng.rand<Key>();
+    Zobrist::noNonPawn = rng.rand<Key>();
 
     // Prepare the cuckoo tables
     cuckoo.fill(0);
@@ -340,6 +341,7 @@ void Position::set_state() const {
     st->key               = 0;
     st->minorPieceKey     = 0;
     st->nonPawnKey[WHITE] = st->nonPawnKey[BLACK] = 0;
+    st->fullNonPawnKey                            = Zobrist::noNonPawn;
     st->pawnKey                                   = Zobrist::noPawns;
     st->nonPawnMaterial[WHITE] = st->nonPawnMaterial[BLACK] = VALUE_ZERO;
     st->checkersBB = attackers_to(square<KING>(sideToMove)) & pieces(~sideToMove);
@@ -358,6 +360,7 @@ void Position::set_state() const {
         else
         {
             st->nonPawnKey[color_of(pc)] ^= Zobrist::psq[pc][s];
+            st->fullNonPawnKey           ^= Zobrist::psq[pc][s];
 
             if (type_of(pc) != KING)
             {
@@ -751,6 +754,8 @@ void Position::do_move(Move                      m,
 
         k ^= Zobrist::psq[captured][rfrom] ^ Zobrist::psq[captured][rto];
         st->nonPawnKey[us] ^= Zobrist::psq[captured][rfrom] ^ Zobrist::psq[captured][rto];
+        st->fullNonPawnKey ^= Zobrist::psq[captured][rfrom] ^ Zobrist::psq[captured][rto];
+
         captured = NO_PIECE;
     }
     else if (captured)
@@ -781,6 +786,7 @@ void Position::do_move(Move                      m,
         {
             st->nonPawnMaterial[them] -= PieceValue[captured];
             st->nonPawnKey[them] ^= Zobrist::psq[captured][capsq];
+            st->fullNonPawnKey   ^= Zobrist::psq[captured][capsq];
 
             if (type_of(captured) <= BISHOP)
                 st->minorPieceKey ^= Zobrist::psq[captured][capsq];
@@ -873,6 +879,7 @@ void Position::do_move(Move                      m,
     else
     {
         st->nonPawnKey[us] ^= Zobrist::psq[pc][from] ^ Zobrist::psq[pc][to];
+        st->fullNonPawnKey ^= Zobrist::psq[pc][from] ^ Zobrist::psq[pc][to];
 
         if (type_of(pc) <= BISHOP)
             st->minorPieceKey ^= Zobrist::psq[pc][from] ^ Zobrist::psq[pc][to];

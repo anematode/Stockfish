@@ -55,8 +55,8 @@ inline int pawn_history_index(const Position& pos) {
     return pos.pawn_key() & (PAWN_HISTORY_SIZE - 1);
 }
 
-inline int non_pawn_history_index(const Position& pos, Color c) {
-    return pos.non_pawn_key(c) & (NON_PAWN_HISTORY_SIZE - 1);
+inline int non_pawn_history_index(const Position& pos) {
+    return pos.full_non_pawn_key() & (NON_PAWN_HISTORY_SIZE - 1);
 }
 
 // StatsEntry is the container of various numerical statistics. We use a class
