@@ -339,6 +339,7 @@ void Position::set_state() const {
 
     st->key               = 0;
     st->minorPieceKey     = 0;
+    st->pawnDistances[WHITE] = st->pawnDistances[BLACK] = 0;
     st->nonPawnKey[WHITE] = st->nonPawnKey[BLACK] = 0;
     st->pawnKey                                   = Zobrist::noPawns;
     st->nonPawnMaterial[WHITE] = st->nonPawnMaterial[BLACK] = VALUE_ZERO;
@@ -352,8 +353,10 @@ void Position::set_state() const {
         Piece  pc = piece_on(s);
         st->key ^= Zobrist::psq[pc][s];
 
-        if (type_of(pc) == PAWN)
+        if (type_of(pc) == PAWN) {
             st->pawnKey ^= Zobrist::psq[pc][s];
+            st->pawnDistances[color_of(pc)] += relative_rank(~color_of(pc), rank_of(s));
+        }
 
         else
         {
@@ -776,6 +779,7 @@ void Position::do_move(Move                      m,
             }
 
             st->pawnKey ^= Zobrist::psq[captured][capsq];
+            st->pawnDistances[them] -= relative_rank(us, capsq);
         }
         else
         {
@@ -865,6 +869,7 @@ void Position::do_move(Move                      m,
 
         // Update pawn hash key
         st->pawnKey ^= Zobrist::psq[pc][from] ^ Zobrist::psq[pc][to];
+        st->pawnDistances[color_of(pc)] -= std::abs(rank_of(to) - rank_of(from));
 
         // Reset rule 50 draw counter
         st->rule50 = 0;
@@ -1504,6 +1509,10 @@ void Position::flip() {
 
 bool Position::material_key_is_ok() const { return compute_material_key() == st->materialKey; }
 
+
+uint32_t Position::progress_index() const {
+    return st->pawnDistances[0] + 64 * st->pawnDistances[1] + count<ALL_PIECES>() * 64 * 64;
+}
 
 // Performs some consistency checks for the position object
 // and raise an assert if something wrong is detected.

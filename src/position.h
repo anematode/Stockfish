@@ -51,6 +51,7 @@ struct StateInfo {
     int    rule50;
     int    pliesFromNull;
     Square epSquare;
+    uint8_t pawnDistances[COLOR_NB];
 
     // Not copied when making a move (will be recomputed anyhow)
     Key        key;
@@ -167,6 +168,7 @@ class Position {
     int   rule50_count() const;
     Value non_pawn_material(Color c) const;
     Value non_pawn_material() const;
+    uint32_t progress_index() const;
 
     // Position consistency check, for debugging
     bool pos_is_ok() const;
