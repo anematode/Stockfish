@@ -167,7 +167,7 @@ ExtMove* MovePicker::score(MoveList<Type>& ml) {
             m.value += (*continuationHistory[2])[pc][to];
             m.value += (*continuationHistory[3])[pc][to];
             m.value += (*continuationHistory[5])[pc][to];
-            m.value += 2 * (*nonPawnHistory)[non_pawn_history_index(pos)][pc][to];
+            m.value += (*nonPawnHistory)[non_pawn_history_index(pos)][pc][to];
 
             // bonus for checks
             m.value += (bool(pos.check_squares(pt) & to) && pos.see_ge(m, -75)) * 16384;

@@ -589,7 +589,7 @@ void Search::Worker::clear() {
 
     sharedHistory.correctionHistory.clear_range(start, end);
 
-    nonPawnHistory.fill(0);
+    nonPawnHistory.fill(-1000);
 
     ttMoveHistory = 0;
 
@@ -1897,12 +1897,11 @@ void update_quiet_histories(
 
     update_continuation_histories(ss, pos.moved_piece(move), move.to_sq(), bonus * 896 / 1024);
 
-    int pIndex = pawn_history_index(pos);
-    workerThread.pawnHistory[pIndex][pos.moved_piece(move)][move.to_sq()]
+    workerThread.pawnHistory[pawn_history_index(pos)][pos.moved_piece(move)][move.to_sq()]
       << bonus * (bonus > 0 ? 905 : 505) / 1024;
 
     workerThread.nonPawnHistory[non_pawn_history_index(pos)][pos.moved_piece(move)][move.to_sq()]
-      << 850 * bonus;
+      << bonus;
 }
 
 }
