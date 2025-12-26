@@ -239,8 +239,10 @@ std::tuple<bool, TTData, TTWriter> TranspositionTable::probe(const Key key, uint
         goto ok;
     }
     for (int i = 1; i < ClusterSize; ++i) {
-        if (tte[i].progress - 1 >= progress)
+        if (tte[i].progress - 1 >= progress) {
+			replace = &tte[i];
             break;
+		}
         if (replace->depth8 - replace->relative_age(generation8)
             > tte[i].depth8 - tte[i].relative_age(generation8))
             replace = &tte[i];
