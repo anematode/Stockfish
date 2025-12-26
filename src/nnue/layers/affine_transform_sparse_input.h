@@ -59,11 +59,11 @@ alignas(CacheLineSize) static constexpr struct OffsetIndices {
             std::uint64_t j = i, k = 0;
             while (j)
             {
-                offset_indices[i][k++] = constexpr_lsb(j);
+                offset_indices[uint8_t(~i)][k++] = constexpr_lsb(j);
                 j &= j - 1;
             }
             while (k < 8)
-                offset_indices[i][k++] = 0;
+                offset_indices[uint8_t(~i)][k++] = 0;
         }
     }
 
@@ -76,6 +76,14 @@ alignas(CacheLineSize) static constexpr struct OffsetIndices {
     #else
         #define RESTRICT
     #endif
+
+constexpr std::array<uint32_t, 256> step_lookup = [] () {
+    std::array<uint32_t, 256> arr{};
+    for (int i = 0; i < 256; ++i) {
+        arr[i] = constexpr_popcount(uint8_t(~i));
+    }
+    return arr;
+} ();
 
 // Find indices of nonzero numbers in an int32_t array
 template<const IndexType InputDimensions>
@@ -144,26 +152,27 @@ void find_nnz(const std::int32_t* RESTRICT input,
     constexpr IndexType InputsPerChunk  = ChunkSize / InputSimdWidth;
     constexpr IndexType OutputsPerChunk = ChunkSize / 8;
 
-    const auto     inputVector = reinterpret_cast<const vec_uint_t*>(input);
-    IndexType      count       = 0;
+    auto     inputVector = reinterpret_cast<const vec_uint_t*>(input);
     vec128_t       base        = vec128_zero;
-    const vec128_t increment   = vec128_set_16(8);
+    vec128_t increment   = vec128_set_16(8);
+    uint32_t count = 0;
+
     for (IndexType i = 0; i < NumChunks; ++i)
     {
         // bitmask of nonzero values in this chunk
         unsigned nnz = 0;
         for (IndexType j = 0; j < InputsPerChunk; ++j)
         {
-            const vec_uint_t inputChunk = inputVector[i * InputsPerChunk + j];
-            nnz |= unsigned(vec_nnz(inputChunk)) << (j * InputSimdWidth);
+            const vec_uint_t inputChunk = *inputVector++;
+            nnz += unsigned(vec_nnz(inputChunk)) << (j * InputSimdWidth);
         }
         for (IndexType j = 0; j < OutputsPerChunk; ++j)
         {
-            const unsigned lookup = (nnz >> (j * 8)) & 0xFF;
+            const unsigned lookup = (nnz >> (j * 8)) & (j == OutputsPerChunk - 1 ? ~0 : 0xFF);
             const vec128_t offsets =
               vec128_load(reinterpret_cast<const vec128_t*>(&Lookup.offset_indices[lookup]));
             vec128_storeu(reinterpret_cast<vec128_t*>(out + count), vec128_add(base, offsets));
-            count += popcount(lookup);
+            count += step_lookup[lookup];
             base = vec128_add(base, increment);
         }
     }
