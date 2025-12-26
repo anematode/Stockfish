@@ -36,7 +36,7 @@
 namespace Stockfish {
 
 constexpr int PAWN_HISTORY_SIZE        = 8192;  // has to be a power of 2
-constexpr int NON_PAWN_HISTORY_SIZE    = 1024;  // has to be a power of 2
+constexpr int NON_PAWN_HISTORY_SIZE    = 8192;  // has to be a power of 2
 constexpr int UINT_16_HISTORY_SIZE     = std::numeric_limits<uint16_t>::max() + 1;
 constexpr int CORRHIST_BASE_SIZE       = UINT_16_HISTORY_SIZE;
 constexpr int CORRECTION_HISTORY_LIMIT = 1024;
@@ -159,8 +159,8 @@ using ContinuationHistory = MultiArray<PieceToHistory, PIECE_NB, SQUARE_NB>;
 // PawnHistory is addressed by the pawn structure and a move's [piece][to]
 using PawnHistory = Stats<std::int16_t, 8192, PAWN_HISTORY_SIZE, PIECE_NB, SQUARE_NB>;
 
-// NonPawnHistory is addressed by the non-pawn structure and a move's from and to squares.
-using NonPawnHistory = Stats<std::int16_t, 8192, NON_PAWN_HISTORY_SIZE, SQUARE_NB, SQUARE_NB>;
+// Quesadilla
+using NonPawnHistory = Stats<std::int16_t, 8192, NON_PAWN_HISTORY_SIZE, PIECE_NB, SQUARE_NB>;
 
 // Correction histories record differences between the static evaluation of
 // positions and their search score. It is used to improve the static evaluation
