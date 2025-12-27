@@ -112,8 +112,7 @@ using vec_uint_t = __m256i;
             #define vec_nnz(a) _mm256_cmpgt_epi32_mask(a, _mm256_setzero_si256())
         #else
             #define vec_nnz(a) \
-                _mm256_movemask_ps( \
-                  _mm256_castsi256_ps(_mm256_cmpgt_epi32(a, _mm256_setzero_si256())))
+                _mm256_movemask_ps(_mm256_castsi256_ps(_mm256_sub_epi32(_mm256_setzero_si256(), a)))
         #endif
     #endif
 
