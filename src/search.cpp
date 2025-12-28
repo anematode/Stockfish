@@ -732,7 +732,7 @@ Value Search::Worker::search(
 
         // Static evaluation is saved as it was before adjustment by correction history
         ttWriter.write(posKey, VALUE_NONE, ss->ttPv, BOUND_NONE, DEPTH_UNSEARCHED, Move::none(),
-                       unadjustedStaticEval, tt.generation());
+                       unadjustedStaticEval, tt.generation(), small);
     }
 
     // Set up the improving flag, which is true if current static evaluation is
@@ -831,7 +831,7 @@ Value Search::Worker::search(
                 {
                     ttWriter.write(posKey, value_to_tt(value, ss->ply), ss->ttPv, b,
                                    std::min(MAX_PLY - 1, depth + 6), Move::none(), VALUE_NONE,
-                                   tt.generation());
+                                   tt.generation(), false);
 
                     return value;
                 }
@@ -966,7 +966,7 @@ Value Search::Worker::search(
             {
                 // Save ProbCut data into transposition table
                 ttWriter.write(posKey, value_to_tt(value, ss->ply), ss->ttPv, BOUND_LOWER,
-                               probCutDepth + 1, move, unadjustedStaticEval, tt.generation());
+                               probCutDepth + 1, move, unadjustedStaticEval, tt.generation(), small);
 
                 if (!is_decisive(value))
                     return value - (probCutBeta - beta);
@@ -1463,7 +1463,7 @@ moves_loop:  // When in check, search starts here
                        : PvNode && bestMove ? BOUND_EXACT
                                             : BOUND_UPPER,
                        moveCount != 0 ? depth : std::min(MAX_PLY - 1, depth + 6), bestMove,
-                       unadjustedStaticEval, tt.generation());
+                       unadjustedStaticEval, tt.generation(), small);
 
     // Adjust correction history if the best move is not a capture
     // and the error direction matches whether we are above/below bounds.
@@ -1563,6 +1563,7 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
         {
             // Never assume anything about values stored in TT
             unadjustedStaticEval = ttData.eval;
+			small = ttData.is_smallnet;
 
             if (!is_valid(unadjustedStaticEval))
                 std::tie(unadjustedStaticEval, small) = evaluate(pos);
@@ -1591,7 +1592,7 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
             if (!ss->ttHit)
                 ttWriter.write(posKey, value_to_tt(bestValue, ss->ply), false, BOUND_LOWER,
                                DEPTH_UNSEARCHED, Move::none(), unadjustedStaticEval,
-                               tt.generation());
+                               tt.generation(), small);
             return bestValue;
         }
 
@@ -1722,7 +1723,7 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
     // is saved as it was before adjustment by correction history.
     ttWriter.write(posKey, value_to_tt(bestValue, ss->ply), pvHit,
                    bestValue >= beta ? BOUND_LOWER : BOUND_UPPER, DEPTH_QS, bestMove,
-                   unadjustedStaticEval, tt.generation());
+                   unadjustedStaticEval, tt.generation(), small);
 
     assert(bestValue > -VALUE_INFINITE && bestValue < VALUE_INFINITE);
 

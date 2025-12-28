@@ -50,18 +50,19 @@ struct TTData {
     Value value, eval;
     Depth depth;
     Bound bound;
-    bool  is_pv;
+    bool  is_pv, is_smallnet;
 
     TTData() = delete;
 
     // clang-format off
-    TTData(Move m, Value v, Value ev, Depth d, Bound b, bool pv) :
+    TTData(Move m, Value v, Value ev, Depth d, Bound b, bool pv, bool is_smallnet) :
         move(m),
         value(v),
         eval(ev),
         depth(d),
         bound(b),
-        is_pv(pv) {};
+        is_pv(pv),
+		is_smallnet(is_smallnet) {};
     // clang-format on
 };
 
@@ -69,7 +70,7 @@ struct TTData {
 // This is used to make racy writes to the global TT.
 struct TTWriter {
    public:
-    void write(Key k, Value v, bool pv, Bound b, Depth d, Move m, Value ev, uint8_t generation8);
+    void write(Key k, Value v, bool pv, Bound b, Depth d, Move m, Value ev, uint8_t generation8, bool is_smallnet);
 
    private:
     friend class TranspositionTable;
