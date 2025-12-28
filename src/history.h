@@ -262,10 +262,10 @@ struct SharedHistories {
 
     UnifiedCorrectionHistory correctionHistory;
     PawnHistory              pawnHistory;
-
+	ButterflyHistory mainHistory;
 
    private:
-    size_t sizeMinus1, pawnHistSizeMinus1;
+    size_t sizeMinus1, pawnHistSizeMinus1, mainHistorySizeMinus1;
 };
 
 }  // namespace Stockfish
