@@ -265,7 +265,7 @@ struct SharedHistories {
 	ButterflyHistory mainHistory;
 
    private:
-    size_t sizeMinus1, pawnHistSizeMinus1, mainHistorySizeMinus1;
+    size_t sizeMinus1, pawnHistSizeMinus1;
 };
 
 }  // namespace Stockfish
