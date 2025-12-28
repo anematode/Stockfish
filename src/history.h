@@ -132,7 +132,7 @@ struct DynStats {
 // during the current search, and is used for reduction and move ordering decisions.
 // It uses 2 tables (one for each color) indexed by the move's from and to squares,
 // see https://www.chessprogramming.org/Butterfly_Boards
-using ButterflyHistory = Stats<std::int16_t, 7183, COLOR_NB, UINT_16_HISTORY_SIZE>;
+using ButterflyHistory = DynStats<AtomicStats<std::int16_t, 7183, COLOR_NB, UINT_16_HISTORY_SIZE>, 1>;
 
 // LowPlyHistory is addressed by ply and move's from and to squares, used
 // to improve move ordering near the root
@@ -222,10 +222,12 @@ using TTMoveHistory = StatsEntry<std::int16_t, 8192>;
 struct SharedHistories {
     SharedHistories(size_t threadCount) :
         correctionHistory(threadCount),
-        pawnHistory(threadCount) {
+        pawnHistory(threadCount),
+		mainHistory(threadCount) {
         assert((threadCount & (threadCount - 1)) == 0 && threadCount != 0);
         sizeMinus1         = correctionHistory.get_size() - 1;
         pawnHistSizeMinus1 = pawnHistory.get_size() - 1;
+		mainHistSizeMinus1 = mainHistory.get_size() - 1;
     }
 
     size_t get_size() const { return sizeMinus1 + 1; }
@@ -260,12 +262,19 @@ struct SharedHistories {
         return correctionHistory[pos.non_pawn_key(c) & sizeMinus1];
     }
 
+    auto& main_entry(const Position& pos) {
+        return mainHistory[pos.pawn_key() & mainHistSizeMinus1];
+    }
+    const auto& main_entry(const Position& pos) const {
+        return mainHistory[pos.pawn_key() & mainHistSizeMinus1];
+    }
+
     UnifiedCorrectionHistory correctionHistory;
     PawnHistory              pawnHistory;
 	ButterflyHistory mainHistory;
 
    private:
-    size_t sizeMinus1, pawnHistSizeMinus1;
+    size_t sizeMinus1, pawnHistSizeMinus1, mainHistSizeMinus1;
 };
 
 }  // namespace Stockfish
