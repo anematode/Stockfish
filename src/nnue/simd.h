@@ -185,7 +185,7 @@ using vec_t      = int16x8_t;
 using vec_i8_t   = int8x16_t;
 using psqt_vec_t = int32x4_t;
 using vec128_t   = uint16x8_t;
-using vec_uint_t = uint32x4_t;
+using vec_uint_t = uint32x4x2_t;
     #define vec_load(a) (*(a))
     #define vec_store(a, b) *(a) = (b)
     #define vec_add_16(a, b) vaddq_s16(a, b)
@@ -203,8 +203,9 @@ using vec_uint_t = uint32x4_t;
     #define vec_sub_psqt_32(a, b) vsubq_s32(a, b)
     #define vec_zero_psqt() psqt_vec_t{0}
 
-static constexpr std::uint32_t Mask[4] = {1, 2, 4, 8};
-    #define vec_nnz(a) vaddvq_u32(vandq_u32(vtstq_u32(a, a), vld1q_u32(Mask)))
+static constexpr std::uint16_t Mask[8] = {1, 2, 4, 8, 16, 32, 64, 128};
+    #define vec_nnz(a) vaddvq_u16(vandq_u16(vcgtq_u16( \
+        vqmovn_high_u32(vqmovn_u32(a.val[0]), a.val[1]), vdupq_n_u16(0)), vld1q_u16(Mask)))
     #define vec128_zero vdupq_n_u16(0)
     #define vec128_set_16(a) vdupq_n_u16(a)
     #define vec128_load(a) vld1q_u16(reinterpret_cast<const std::uint16_t*>(a))

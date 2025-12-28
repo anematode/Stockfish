@@ -132,12 +132,11 @@ void find_nnz(const std::int32_t* RESTRICT input,
         base = _mm512_add_epi32(base, increment);
     }
     count_out = count;
-
     #else
-
     using namespace SIMD;
 
     constexpr IndexType InputSimdWidth = sizeof(vec_uint_t) / sizeof(std::int32_t);
+
     // Inputs are processed InputSimdWidth at a time and outputs are processed 8 at a time so we process in chunks of max(InputSimdWidth, 8)
     constexpr IndexType ChunkSize       = std::max<IndexType>(InputSimdWidth, 8);
     constexpr IndexType NumChunks       = InputDimensions / ChunkSize;
