@@ -326,7 +326,7 @@ class Worker {
     TimePoint elapsed() const;
     TimePoint elapsed_time() const;
 
-    Value evaluate(const Position&);
+    std::pair<Value, bool> evaluate(const Position&);
 
     LimitsType limits;
 
