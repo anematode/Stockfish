@@ -1474,6 +1474,9 @@ moves_loop:  // When in check, search starts here
                                 -CORRECTION_HISTORY_LIMIT / 4, CORRECTION_HISTORY_LIMIT / 4);
 		if (small)
 			bonus /= 4;
+		else
+			bonus = bonus * 19 / 16;
+
         update_correction_history(pos, ss, *this, bonus);
     }
 
