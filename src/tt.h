@@ -26,6 +26,10 @@
 #include "memory.h"
 #include "types.h"
 
+namespace Stockfish::Eval {
+    struct RawEvaluation;
+}
+
 namespace Stockfish {
 
 class ThreadPool;
@@ -55,7 +59,7 @@ struct TTData {
     TTData() = delete;
 
     // clang-format off
-    TTData(Move m, Value v, Value ev, Depth d, Bound b, bool pv) :
+    TTData(Move m, Value v, Value ev, Depth d, Bound b, bool pv, int cplxy) :
         move(m),
         value(v),
         eval(ev),
@@ -69,7 +73,7 @@ struct TTData {
 // This is used to make racy writes to the global TT.
 struct TTWriter {
    public:
-    void write(Key k, Value v, bool pv, Bound b, Depth d, Move m, Value ev, uint8_t generation8);
+    void write(Key k, Value v, bool pv, Bound b, Depth d, Move m, Eval::RawEvaluation ev, uint8_t generation8);
 
    private:
     friend class TranspositionTable;

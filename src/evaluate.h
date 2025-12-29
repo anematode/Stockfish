@@ -44,9 +44,16 @@ class AccumulatorStack;
 
 std::string trace(Position& pos, const Eval::NNUE::Networks& networks);
 
+struct RawEvaluation {
+    int nnue;
+    int nnueComplexity;
+
+    Value finalize(const Position& pos, int optimism = 0) const;
+};
+
 int   simple_eval(const Position& pos);
 bool  use_smallnet(const Position& pos);
-Value evaluate(const NNUE::Networks&          networks,
+std::pair<RawEvaluation, Value> evaluate(const NNUE::Networks&          networks,
                const Position&                pos,
                Eval::NNUE::AccumulatorStack&  accumulators,
                Eval::NNUE::AccumulatorCaches& caches,

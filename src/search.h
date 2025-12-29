@@ -56,6 +56,8 @@ class TranspositionTable;
 class ThreadPool;
 class OptionsMap;
 
+namespace Eval { struct RawEvaluation; };
+
 namespace Search {
 
 // Stack struct keeps track of the information we need to remember from nodes
@@ -326,7 +328,7 @@ class Worker {
     TimePoint elapsed() const;
     TimePoint elapsed_time() const;
 
-    Value evaluate(const Position&);
+    std::pair<Eval::RawEvaluation, Value> evaluate(const Position&);
 
     LimitsType limits;
 
