@@ -17,6 +17,7 @@
 */
 
 #include "tt.h"
+#include "evaluate.h"
 
 #include <cassert>
 #include <cstdint>
@@ -31,6 +32,14 @@
 
 namespace Stockfish {
 
+int unpack_complexity(int v) {
+    assert(0 <= v && v < 32);
+    return v * 128;
+}
+
+int pack_complexity(int c) {
+    return std::min((c + 63) / 128, 31);
+}
 
 // TTEntry struct is the 10 bytes transposition table entry, defined as below:
 //
@@ -50,8 +59,10 @@ struct TTEntry {
 
     // Convert internal bitfields to external types
     TTData read() const {
+        auto [ ptr, offset ] = extra_bits();
+        Eval::RawEvaluation eval { eval16, unpack_complexity(*ptr >> offset & 0x1f) };
         return TTData{Move(move16),           Value(value16),
-                      Value(eval16),          Depth(depth8 + DEPTH_ENTRY_OFFSET),
+                      eval,          Depth(depth8 + DEPTH_ENTRY_OFFSET),
                       Bound(genBound8 & 0x3), bool(genBound8 & 0x4)};
     }
 
@@ -62,6 +73,8 @@ struct TTEntry {
 
    private:
     friend class TranspositionTable;
+
+    std::pair<uint16_t*, int> extra_bits() const;
 
     uint16_t key16;
     uint8_t  depth8;
@@ -91,7 +104,7 @@ bool TTEntry::is_occupied() const { return bool(depth8); }
 // Populates the TTEntry with a new node's data, possibly
 // overwriting an old position. The update is not atomic and can be racy.
 void TTEntry::save(
-  Key k, Value v, bool pv, Bound b, Depth d, Move m, Value ev, uint8_t generation8) {
+  Key k, Value v, bool pv, Bound b, Depth d, Move m, Eval::RawEvaluation ev, uint8_t generation8) {
 
     // Preserve the old ttmove if we don't have a new one
     if (m || uint16_t(k) != key16)
@@ -128,7 +141,7 @@ TTWriter::TTWriter(TTEntry* tte) :
     entry(tte) {}
 
 void TTWriter::write(
-  Key k, Value v, bool pv, Bound b, Depth d, Move m, Value ev, uint8_t generation8) {
+  Key k, Value v, bool pv, Bound b, Depth d, Move m, Eval::RawEvaluation ev, uint8_t generation8) {
     entry->save(k, v, pv, b, d, m, ev, generation8);
 }
 
@@ -247,5 +260,15 @@ std::tuple<bool, TTData, TTWriter> TranspositionTable::probe(const Key key) cons
 TTEntry* TranspositionTable::first_entry(const Key key) const {
     return &table[mul_hi64(key, clusterCount)].entry[0];
 }
+
+
+std::pair<uint16_t *, int> TTEntry::extra_bits() const {
+    uintptr_t ptr = reinterpret_cast<uintptr_t>(this);
+    uint16_t* data = reinterpret_cast<uint16_t*>(
+        ptr & ~(sizeof(Cluster) - 1)
+    );
+    return { data, int((ptr % 32) / 2) };
+}
+
 
 }  // namespace Stockfish
