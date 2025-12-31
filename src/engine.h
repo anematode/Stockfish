@@ -22,14 +22,12 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
-#include <map>
 #include <optional>
 #include <string>
 #include <string_view>
 #include <utility>
 #include <vector>
 
-#include "history.h"
 #include "nnue/network.h"
 #include "numa.h"
 #include "position.h"
@@ -124,7 +122,6 @@ class Engine {
 
     Search::SearchManager::UpdateContext  updateContext;
     std::function<void(std::string_view)> onVerifyNetworks;
-    std::map<NumaIndex, SharedHistories>  sharedHists;
 };
 
 }  // namespace Stockfish
