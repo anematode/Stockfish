@@ -208,7 +208,7 @@ class Position {
     std::array<Bitboard, PIECE_TYPE_NB> byTypeBB;
     std::array<Bitboard, COLOR_NB>      byColorBB;
 
-    int          pieceCount[PIECE_NB];
+    int8_t      pieceCount[PIECE_NB];
     int          castlingRightsMask[SQUARE_NB];
     Square       castlingRookSquare[CASTLING_RIGHT_NB];
     Bitboard     castlingPath[CASTLING_RIGHT_NB];
