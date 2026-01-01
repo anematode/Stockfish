@@ -268,7 +268,7 @@ TTEntry* TranspositionTable::first_entry(const Key key) const {
 std::pair<uint16_t *, int> TTEntry::extra_bits() const {
     uintptr_t ptr = reinterpret_cast<uintptr_t>(this);
     uint16_t* data = reinterpret_cast<uint16_t*>(
-        ptr & ~(sizeof(Cluster) - 1)
+        (ptr & ~(sizeof(Cluster) - 1)) + offsetof(Cluster, padding)
     );
     return { data, int((ptr % 32) / 2) };
 }
