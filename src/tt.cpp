@@ -32,12 +32,12 @@
 
 namespace Stockfish {
 
-int unpack_complexity(int v) {
+static int unpack_complexity(int v) {
     assert(0 <= v && v < 32);
     return v * 128;
 }
 
-int pack_complexity(int c) {
+static int pack_complexity(int c) {
     return std::min((c + 63) / 128, 31);
 }
 
@@ -67,7 +67,7 @@ struct TTEntry {
     }
 
     bool is_occupied() const;
-    void save(Key k, Value v, bool pv, Bound b, Depth d, Move m, Value ev, uint8_t generation8);
+    void save(Key k, Value v, bool pv, Bound b, Depth d, Move m, Eval::RawEvaluation ev, uint8_t generation8);
     // The returned age is a multiple of TranspositionTable::GENERATION_DELTA
     uint8_t relative_age(const uint8_t generation8) const;
 
@@ -121,7 +121,10 @@ void TTEntry::save(
         depth8    = uint8_t(d - DEPTH_ENTRY_OFFSET);
         genBound8 = uint8_t(generation8 | uint8_t(pv) << 2 | b);
         value16   = int16_t(v);
-        eval16    = int16_t(ev);
+        eval16    = int16_t(ev.nnue);
+        auto [ ptr, bitOffset ] = extra_bits();
+        int mask = 0x1f << bitOffset;
+        *ptr = (~mask & *ptr) | (pack_complexity(ev.nnueComplexity) << bitOffset);
     }
 }
 
@@ -252,7 +255,7 @@ std::tuple<bool, TTData, TTWriter> TranspositionTable::probe(const Key key) cons
             replace = &tte[i];
 
     return {false,
-            TTData{Move::none(), VALUE_NONE, VALUE_NONE, DEPTH_ENTRY_OFFSET, BOUND_NONE, false},
+            TTData{Move::none(), VALUE_NONE, {}, DEPTH_ENTRY_OFFSET, BOUND_NONE, false},
             TTWriter(replace)};
 }
 

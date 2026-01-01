@@ -669,7 +669,7 @@ Value Search::Worker::search(
         // Step 2. Check for aborted search and immediate draw
         if (threads.stop.load(std::memory_order_relaxed) || pos.is_draw(ss->ply)
             || ss->ply >= MAX_PLY)
-            return (ss->ply >= MAX_PLY && !ss->inCheck) ? evaluate(pos) : value_draw(nodes);
+            return (ss->ply >= MAX_PLY && !ss->inCheck) ? evaluate(pos).second : value_draw(nodes);
 
         // Step 3. Mate distance pruning. Even if we mate at the next move our score
         // would be at best mate_in(ss->ply + 1), but if alpha is already bigger because
@@ -704,21 +704,24 @@ Value Search::Worker::search(
     ttCapture    = ttData.move && pos.capture_stage(ttData.move);
 
     // Step 6. Static evaluation of the position
-    Value      unadjustedStaticEval = VALUE_NONE;
+    Eval::RawEvaluation rawEvaluation{};
+    Value      uncorrectedStaticEval = VALUE_NONE;
     const auto correctionValue      = correction_value(*this, pos, ss);
     // Skip early pruning when in check
     if (ss->inCheck)
         ss->staticEval = eval = (ss - 2)->staticEval;
     else if (excludedMove)
-        unadjustedStaticEval = eval = ss->staticEval;
+        uncorrectedStaticEval = eval = ss->staticEval;
     else if (ss->ttHit)
     {
         // Never assume anything about values stored in TT
-        unadjustedStaticEval = ttData.eval;
-        if (!is_valid(unadjustedStaticEval))
-            unadjustedStaticEval = evaluate(pos);
+        rawEvaluation = ttData.eval;
+        if (!is_valid(rawEvaluation.nnue))
+            std::tie(rawEvaluation, uncorrectedStaticEval) = evaluate(pos);
+        else
+            uncorrectedStaticEval = rawEvaluation.finalize(pos, optimism[pos.side_to_move()]);
 
-        ss->staticEval = eval = to_corrected_static_eval(unadjustedStaticEval, correctionValue);
+        ss->staticEval = eval = to_corrected_static_eval(uncorrectedStaticEval, correctionValue);
 
         // ttValue can be used as a better position evaluation
         if (is_valid(ttData.value)
@@ -727,12 +730,12 @@ Value Search::Worker::search(
     }
     else
     {
-        unadjustedStaticEval = evaluate(pos);
-        ss->staticEval = eval = to_corrected_static_eval(unadjustedStaticEval, correctionValue);
+        std::tie(rawEvaluation, uncorrectedStaticEval) = evaluate(pos);
+        ss->staticEval = eval = to_corrected_static_eval(uncorrectedStaticEval, correctionValue);
 
         // Static evaluation is saved as it was before adjustment by correction history
         ttWriter.write(posKey, VALUE_NONE, ss->ttPv, BOUND_NONE, DEPTH_UNSEARCHED, Move::none(),
-                       unadjustedStaticEval, tt.generation());
+                       rawEvaluation, tt.generation());
     }
 
     // Set up the improving flag, which is true if current static evaluation is
@@ -830,10 +833,10 @@ Value Search::Worker::search(
                 if (b == BOUND_EXACT || (b == BOUND_LOWER ? value >= beta : value <= alpha))
                 {
                     ttWriter.write(posKey, value_to_tt(value, ss->ply), ss->ttPv, b,
-                                   std::min(MAX_PLY - 1, depth + 6), Move::none(), VALUE_NONE,
+                                   std::min(MAX_PLY - 1, depth + 6), Move::none(), {},
                                    tt.generation());
 
-                    return value;t
+                    return value;
                 }
 
                 if (PvNode)
@@ -966,7 +969,7 @@ Value Search::Worker::search(
             {
                 // Save ProbCut data into transposition table
                 ttWriter.write(posKey, value_to_tt(value, ss->ply), ss->ttPv, BOUND_LOWER,
-                               probCutDepth + 1, move, unadjustedStaticEval, tt.generation());
+                               probCutDepth + 1, move, rawEvaluation, tt.generation());
 
                 if (!is_decisive(value))
                     return value - (probCutBeta - beta);
@@ -1463,7 +1466,7 @@ moves_loop:  // When in check, search starts here
                        : PvNode && bestMove ? BOUND_EXACT
                                             : BOUND_UPPER,
                        moveCount != 0 ? depth : std::min(MAX_PLY - 1, depth + 6), bestMove,
-                       unadjustedStaticEval, tt.generation());
+                       rawEvaluation, tt.generation());
 
     // Adjust correction history if the best move is not a capture
     // and the error direction matches whether we are above/below bounds.
@@ -1530,7 +1533,7 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
 
     // Step 2. Check for an immediate draw or maximum ply reached
     if (pos.is_draw(ss->ply) || ss->ply >= MAX_PLY)
-        return (ss->ply >= MAX_PLY && !ss->inCheck) ? evaluate(pos) : VALUE_DRAW;
+        return (ss->ply >= MAX_PLY && !ss->inCheck) ? evaluate(pos).second : VALUE_DRAW;
 
     assert(0 <= ss->ply && ss->ply < MAX_PLY);
 
@@ -1550,7 +1553,8 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
         return ttData.value;
 
     // Step 4. Static evaluation of the position
-    Value unadjustedStaticEval = VALUE_NONE;
+    Eval::RawEvaluation rawEvaluation{};
+    Value uncorrectedStaticEval  = VALUE_NONE;
     if (ss->inCheck)
         bestValue = futilityBase = -VALUE_INFINITE;
     else
@@ -1560,13 +1564,14 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
         if (ss->ttHit)
         {
             // Never assume anything about values stored in TT
-            unadjustedStaticEval = ttData.eval;
+            rawEvaluation = ttData.eval;
+            uncorrectedStaticEval = rawEvaluation.finalize(pos, optimism[pos.side_to_move()]);
 
-            if (!is_valid(unadjustedStaticEval))
-                unadjustedStaticEval = evaluate(pos);
+            if (!is_valid(uncorrectedStaticEval))
+                std::tie(rawEvaluation, uncorrectedStaticEval) = evaluate(pos);
 
             ss->staticEval = bestValue =
-              to_corrected_static_eval(unadjustedStaticEval, correctionValue);
+              to_corrected_static_eval(uncorrectedStaticEval, correctionValue);
 
             // ttValue can be used as a better position evaluation
             if (is_valid(ttData.value) && !is_decisive(ttData.value)
@@ -1575,9 +1580,9 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
         }
         else
         {
-            unadjustedStaticEval = evaluate(pos);
+            std::tie(rawEvaluation, uncorrectedStaticEval) = evaluate(pos);
             ss->staticEval       = bestValue =
-              to_corrected_static_eval(unadjustedStaticEval, correctionValue);
+              to_corrected_static_eval(uncorrectedStaticEval, correctionValue);
         }
 
         // Stand pat. Return immediately if static value is at least beta
@@ -1588,7 +1593,7 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
 
             if (!ss->ttHit)
                 ttWriter.write(posKey, value_to_tt(bestValue, ss->ply), false, BOUND_LOWER,
-                               DEPTH_UNSEARCHED, Move::none(), unadjustedStaticEval,
+                               DEPTH_UNSEARCHED, Move::none(), rawEvaluation,
                                tt.generation());
             return bestValue;
         }
@@ -1717,10 +1722,10 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
     }
 
     // Save gathered info in transposition table. The static evaluation
-    // is saved as it was before adjustment by correction history.
+    // is saved as it was before adjustment by correction history and optimism/50mr.
     ttWriter.write(posKey, value_to_tt(bestValue, ss->ply), pvHit,
                    bestValue >= beta ? BOUND_LOWER : BOUND_UPPER, DEPTH_QS, bestMove,
-                   unadjustedStaticEval, tt.generation());
+                   rawEvaluation, tt.generation());
 
     assert(bestValue > -VALUE_INFINITE && bestValue < VALUE_INFINITE);
 
