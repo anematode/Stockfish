@@ -57,19 +57,19 @@ struct StatsEntry {
     static_assert(std::is_arithmetic_v<T>, "Not an arithmetic type");
 
    private:
-    std::conditional_t<Atomic, std::atomic<T>, T> entry;
+    T entry;
 
    public:
     void operator=(const T& v) {
         if constexpr (Atomic)
-            entry.store(v, std::memory_order_relaxed);
+            std::atomic_ref { entry }.store(v, std::memory_order_relaxed);
         else
             entry = v;
     }
 
     operator T() const {
         if constexpr (Atomic)
-            return entry.load(std::memory_order_relaxed);
+            return std::atomic_ref{ entry }.load(std::memory_order_relaxed);
         else
             return entry;
     }
