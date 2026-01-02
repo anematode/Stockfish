@@ -498,36 +498,83 @@ class NumaConfig {
             cfg         = empty();
         };
 
-        // /sys/devices/system/node/online contains information about active NUMA nodes
-        auto nodeIdsStr = read_file_to_string("/sys/devices/system/node/online");
-        if (!nodeIdsStr.has_value() || nodeIdsStr->empty())
+        // We first attempt to allocate one node per L3 domain, for optimal performance
+        // on processors with non-uniform cache access.
+        // /sys/devices/system/cpu/cpu<n>/cache/index3/shared_cpu_list contains info
+        // on which (logical) cores share L3 with a given core.
+        std::set<CpuIndex> seenCpus;
+
+        auto nextUnseenCpu = [&seenCpus]() {
+            for (CpuIndex i = 0;; ++i)
+                if (!seenCpus.count(i))
+                    return i;
+        };
+
+        NumaIndex numaIndex  = 0;
+        bool      l3_success = true;
+        while (true)
         {
-            fallback();
-        }
-        else
-        {
-            remove_whitespace(*nodeIdsStr);
-            for (size_t n : indices_from_shortened_string(*nodeIdsStr))
+            CpuIndex next = nextUnseenCpu();
+            auto     siblingsStr =
+              read_file_to_string("/sys/devices/system/cpu/cpu" + std::to_string(next)
+                                  + "/cache/index3/shared_cpu_list");
+
+            if (!siblingsStr.has_value() || siblingsStr->empty())
             {
-                // /sys/devices/system/node/node.../cpulist
-                std::string path =
-                  std::string("/sys/devices/system/node/node") + std::to_string(n) + "/cpulist";
-                auto cpuIdsStr = read_file_to_string(path);
-                // Now, we only bail if the file does not exist. Some nodes may be
-                // empty, that's fine. An empty node still has a file that appears
-                // to have some whitespace, so we need to handle that.
-                if (!cpuIdsStr.has_value())
+                if (next == 0)
                 {
-                    fallback();
-                    break;
+                    l3_success = false;  // fall back to NUMA node allocation
                 }
-                else
+                break;  // read all available CPUs
+            }
+
+            bool nonempty = false;
+            for (size_t c : indices_from_shortened_string(*siblingsStr))
+            {
+                if (is_cpu_allowed(c))
                 {
-                    remove_whitespace(*cpuIdsStr);
-                    for (size_t c : indices_from_shortened_string(*cpuIdsStr))
+                    cfg.add_cpu_to_node(numaIndex, c);
+                    nonempty = true;
+                }
+                seenCpus.insert(c);
+            }
+            numaIndex += nonempty ? 1 : 0;
+        }
+
+        if (!l3_success)
+        {
+            // If the above fails, we try to allocate one node per NUMA node.
+            // /sys/devices/system/node/online contains information about active NUMA nodes
+            auto nodeIdsStr = read_file_to_string("/sys/devices/system/node/online");
+            if (!nodeIdsStr.has_value() || nodeIdsStr->empty())
+            {
+                fallback();
+            }
+            else
+            {
+                remove_whitespace(*nodeIdsStr);
+                for (size_t n : indices_from_shortened_string(*nodeIdsStr))
+                {
+                    // /sys/devices/system/node/node.../cpulist
+                    std::string path =
+                      std::string("/sys/devices/system/node/node") + std::to_string(n) + "/cpulist";
+                    auto cpuIdsStr = read_file_to_string(path);
+                    // Now, we only bail if the file does not exist. Some nodes may be
+                    // empty, that's fine. An empty node still has a file that appears
+                    // to have some whitespace, so we need to handle that.
+                    if (!cpuIdsStr.has_value())
                     {
-                        if (is_cpu_allowed(c))
-                            cfg.add_cpu_to_node(n, c);
+                        fallback();
+                        break;
+                    }
+                    else
+                    {
+                        remove_whitespace(*cpuIdsStr);
+                        for (size_t c : indices_from_shortened_string(*cpuIdsStr))
+                        {
+                            if (is_cpu_allowed(c))
+                                cfg.add_cpu_to_node(n, c);
+                        }
                     }
                 }
             }
