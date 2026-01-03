@@ -77,7 +77,7 @@ using SearchedList                  = ValueList<Move, SEARCHEDLIST_CAPACITY>;
 // (*Scaler) All tuned parameters at time controls shorter than
 // optimized for require verifications at longer time controls
 
-int correction_value(const Worker& w, const Position& pos, const Stack* const ss) {
+std::pair<int, int> correction_value(const Worker& w, const Position& pos, const Stack* const ss) {
     const Color us     = pos.side_to_move();
     const auto  m      = (ss - 1)->currentMove;
     const auto& shared = w.sharedHistory;
@@ -90,7 +90,10 @@ int correction_value(const Worker& w, const Position& pos, const Stack* const ss
                     + (*(ss - 4)->continuationCorrectionHistory)[pos.piece_on(m.to_sq())][m.to_sq()]
                   : 8;
 
-    return 10347 * pcv + 8821 * micv + 11665 * (wnpcv + bnpcv) + 7841 * cntcv;
+    return {
+        10347 * pcv + 8821 * micv + 11665 * (wnpcv + bnpcv) + 7841 * cntcv,
+        std::abs(pcv) + std::abs(micv) + std::abs(wnpcv) + std::abs(bnpcv) + std::abs(cntcv)
+    };
 }
 
 // Add correctionHistory value to raw staticEval and guarantee evaluation
@@ -711,7 +714,7 @@ Value Search::Worker::search(
 
     // Step 6. Static evaluation of the position
     Value      unadjustedStaticEval = VALUE_NONE;
-    const auto correctionValue      = correction_value(*this, pos, ss);
+    const auto [ correctionValue, corrplexity ]      = correction_value(*this, pos, ss);
     // Skip early pruning when in check
     if (ss->inCheck)
         ss->staticEval = eval = (ss - 2)->staticEval;
@@ -935,7 +938,8 @@ Value Search::Worker::search(
     // Step 11. ProbCut
     // If we have a good enough capture (or queen promotion) and a reduced search
     // returns a value much above beta, we can (almost) safely prune the previous move.
-    probCutBeta = beta + 235 - 63 * improving;
+    probCutBeta = beta + 179 - 63 * improving + corrplexity / 4;
+
     if (depth >= 3
         && !is_decisive(beta)
         // If value from transposition table is lower than probCutBeta, don't attempt
@@ -1561,7 +1565,7 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
         bestValue = futilityBase = -VALUE_INFINITE;
     else
     {
-        const auto correctionValue = correction_value(*this, pos, ss);
+        const auto [ correctionValue, corrplexity ] = correction_value(*this, pos, ss);
 
         if (ss->ttHit)
         {
