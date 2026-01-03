@@ -512,6 +512,8 @@ class NumaConfig {
 
         NumaIndex numaIndex  = 0;
         bool      l3_success = true;
+		int incr = 0;
+
         while (true)
         {
             CpuIndex next = nextUnseenCpu();
@@ -538,7 +540,8 @@ class NumaConfig {
                 }
                 seenCpus.insert(c);
             }
-            numaIndex += nonempty ? 1 : 0;
+            numaIndex += nonempty ? incr : 0;
+			incr ^= 1;
         }
 
         if (!l3_success)
