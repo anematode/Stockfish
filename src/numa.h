@@ -715,8 +715,10 @@ class NumaConfig {
     static NumaConfig from_string(const std::string& s) {
         NumaConfig cfg = empty();
 
+		auto geese = split(s, ";");
+
         NumaIndex n = 0;
-        for (auto&& nodeStr : split(s, ":"))
+        for (auto&& nodeStr : split(geese.at(0), ":"))
         {
             auto indices = indices_from_shortened_string(std::string(nodeStr));
             if (!indices.empty())
@@ -732,7 +734,15 @@ class NumaConfig {
         }
 
         cfg.customAffinity = true;
-        cfg.parent_all();
+
+		if (geese.size() == 2) {
+			std::string k = std::string(geese.at(1));
+            auto indices = indices_from_shortened_string(std::string(k));
+			for (size_t i = 0; i < indices.size(); ++i)
+				cfg.nodeToParent[i] = indices[i];
+		} else {
+			cfg.parent_all();
+		}
 
         return cfg;
     }
