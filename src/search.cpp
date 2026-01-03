@@ -938,7 +938,7 @@ Value Search::Worker::search(
     // Step 11. ProbCut
     // If we have a good enough capture (or queen promotion) and a reduced search
     // returns a value much above beta, we can (almost) safely prune the previous move.
-    probCutBeta = beta + 207 - 63 * improving + corrplexity / 8;
+    probCutBeta = beta + 123 - 63 * improving + corrplexity / 2;
 
     if (depth >= 3
         && !is_decisive(beta)
