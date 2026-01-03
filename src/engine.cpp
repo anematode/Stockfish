@@ -403,6 +403,14 @@ std::string Engine::thread_allocation_information_as_string() const {
     ss << " with NUMA node thread binding: ";
     ss << boundThreadsByNodeStr;
 
+    ss << "\n";
+    ss << "NUMA node parent config: ";
+
+    const auto& map = numaContext.get_numa_config().nodeToParent;
+    for (auto [child, parent] : map) {
+        ss << child << " -> " << parent << "; ";
+    }
+
     return ss.str();
 }
 }

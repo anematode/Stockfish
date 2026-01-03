@@ -58,7 +58,7 @@ class OptionalThreadToNumaNodeBinder {
         if (numaConfig != nullptr)
             return numaConfig->bind_current_thread_to_numa_node(numaId);
         else
-            return NumaReplicatedAccessToken(numaId);
+            return NumaReplicatedAccessToken(numaId, numaId);
     }
 
    private:

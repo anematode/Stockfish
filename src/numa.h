@@ -436,15 +436,16 @@ inline static const auto STARTUP_USE_OLD_AFFINITY_API =
 class NumaReplicatedAccessToken {
    public:
     NumaReplicatedAccessToken() :
-        n(0) {}
+        n(0), parentN(0) {}
 
-    explicit NumaReplicatedAccessToken(NumaIndex idx) :
-        n(idx) {}
+    explicit NumaReplicatedAccessToken(NumaIndex idx, NumaIndex parentIdx) :
+        n(idx), parentN(parentIdx) {}
 
     NumaIndex get_numa_index() const { return n; }
+    NumaIndex get_parent_index() const { return parentN; }
 
    private:
-    NumaIndex n;
+    NumaIndex n, parentN;
 };
 
 // Designed as immutable, because there is no good reason to alter an already
@@ -511,7 +512,7 @@ class NumaConfig {
         };
 
         NumaIndex numaIndex  = 0;
-        bool      l3_success = true;
+        bool      nucaSuccess = true;
         while (true)
         {
             CpuIndex next = nextUnseenCpu();
@@ -523,7 +524,7 @@ class NumaConfig {
             {
                 if (next == 0)
                 {
-                    l3_success = false;  // fall back to NUMA node allocation
+                    nucaSuccess = false;  // fall back to NUMA node allocation
                 }
                 break;  // read all available CPUs
             }
@@ -541,39 +542,51 @@ class NumaConfig {
             numaIndex += nonempty ? 1 : 0;
         }
 
-        if (!l3_success)
+        // If the above succeeded, we collect system NUMA information to parent each L3 domain node
+        // to the representative node. If the above fails, we try to allocate one node per NUMA node.
+        // /sys/devices/system/node/online contains information about active NUMA nodes
+        auto nodeIdsStr = read_file_to_string("/sys/devices/system/node/online");
+        if (!nodeIdsStr.has_value() || nodeIdsStr->empty())
         {
-            // If the above fails, we try to allocate one node per NUMA node.
-            // /sys/devices/system/node/online contains information about active NUMA nodes
-            auto nodeIdsStr = read_file_to_string("/sys/devices/system/node/online");
-            if (!nodeIdsStr.has_value() || nodeIdsStr->empty())
-            {
+            if (!nucaSuccess)
                 fallback();
-            }
-            else
+        }
+        else
+        {
+            remove_whitespace(*nodeIdsStr);
+            for (size_t n : indices_from_shortened_string(*nodeIdsStr))
             {
-                remove_whitespace(*nodeIdsStr);
-                for (size_t n : indices_from_shortened_string(*nodeIdsStr))
+                // /sys/devices/system/node/node.../cpulist
+                std::string path =
+                  std::string("/sys/devices/system/node/node") + std::to_string(n) + "/cpulist";
+                auto cpuIdsStr = read_file_to_string(path);
+                // Now, we only bail if the file does not exist. Some nodes may be
+                // empty, that's fine. An empty node still has a file that appears
+                // to have some whitespace, so we need to handle that.
+                if (!cpuIdsStr.has_value())
                 {
-                    // /sys/devices/system/node/node.../cpulist
-                    std::string path =
-                      std::string("/sys/devices/system/node/node") + std::to_string(n) + "/cpulist";
-                    auto cpuIdsStr = read_file_to_string(path);
-                    // Now, we only bail if the file does not exist. Some nodes may be
-                    // empty, that's fine. An empty node still has a file that appears
-                    // to have some whitespace, so we need to handle that.
-                    if (!cpuIdsStr.has_value())
-                    {
+                    if (!nucaSuccess)
                         fallback();
-                        break;
-                    }
-                    else
+                    break;
+                }
+                else
+                {
+                    remove_whitespace(*cpuIdsStr);
+                    constexpr NumaIndex NoIndex = NumaIndex(-1);
+                    NumaIndex representative = NoIndex;
+
+                    for (size_t c : indices_from_shortened_string(*cpuIdsStr))
                     {
-                        remove_whitespace(*cpuIdsStr);
-                        for (size_t c : indices_from_shortened_string(*cpuIdsStr))
-                        {
-                            if (is_cpu_allowed(c))
+                        if (is_cpu_allowed(c)) {
+                            if (nucaSuccess) {
+                                assert(seenCpus.count(c) == 1);
+                                NumaIndex node = cfg.nodeByCpu.at(c);
+                                if (representative == NoIndex)
+                                    representative = node;
+                                cfg.nodeToParent[node] = representative;
+                            } else {
                                 cfg.add_cpu_to_node(n, c);
+                            }
                         }
                     }
                 }
@@ -682,6 +695,10 @@ class NumaConfig {
         // We have to ensure no empty NUMA nodes persist.
         cfg.remove_empty_numa_nodes();
 
+        if (cfg.nodeToParent.empty()) {
+            cfg.parent_all();
+        }
+
         // If the user explicitly opts out from respecting the current process affinity
         // then it may be inconsistent with the current affinity (obviously), so we
         // consider it custom.
@@ -715,6 +732,7 @@ class NumaConfig {
         }
 
         cfg.customAffinity = true;
+        cfg.parent_all();
 
         return cfg;
     }
@@ -979,7 +997,7 @@ class NumaConfig {
 
 #endif
 
-        return NumaReplicatedAccessToken(n);
+        return NumaReplicatedAccessToken( n, nodeToParent.at(n));
     }
 
     template<typename FuncT>
@@ -994,6 +1012,7 @@ class NumaConfig {
 
     std::vector<std::set<CpuIndex>> nodes;
     std::map<CpuIndex, NumaIndex>   nodeByCpu;
+    std::map<NumaIndex, NumaIndex>  nodeToParent;
 
    private:
     CpuIndex highestCpuIndex;
@@ -1033,6 +1052,12 @@ class NumaConfig {
             highestCpuIndex = c;
 
         return true;
+    }
+
+    void parent_all() {
+        for (size_t i = 0; i < num_numa_nodes(); ++i) {
+            nodeToParent[i] = i;
+        }
     }
 
     // Returns true if successful
@@ -1154,7 +1179,7 @@ class NumaReplicated: public NumaReplicatedBase {
 
     const T& operator[](NumaReplicatedAccessToken token) const {
         assert(token.get_numa_index() < instances.size());
-        return *(instances[token.get_numa_index()]);
+        return *(instances[token.get_parent_index()]);
     }
 
     const T& operator*() const { return *(instances[0]); }
@@ -1186,6 +1211,10 @@ class NumaReplicated: public NumaReplicatedBase {
         {
             for (NumaIndex n = 0; n < cfg.num_numa_nodes(); ++n)
             {
+                if (cfg.nodeToParent.at(n) != n) {
+                    instances.emplace_back(nullptr);
+                    continue;
+                }
                 cfg.execute_on_numa_node(
                   n, [this, &source]() { instances.emplace_back(std::make_unique<T>(source)); });
             }
@@ -1239,9 +1268,9 @@ class LazyNumaReplicated: public NumaReplicatedBase {
     ~LazyNumaReplicated() override = default;
 
     const T& operator[](NumaReplicatedAccessToken token) const {
-        assert(token.get_numa_index() < instances.size());
-        ensure_present(token.get_numa_index());
-        return *(instances[token.get_numa_index()]);
+        assert(token.get_parent_index() < instances.size());
+        ensure_present(token.get_parent_index());
+        return *(instances[token.get_parent_index()]);
     }
 
     const T& operator*() const { return *(instances[0]); }
@@ -1349,9 +1378,9 @@ class LazyNumaReplicatedSystemWide: public NumaReplicatedBase {
     ~LazyNumaReplicatedSystemWide() override = default;
 
     const T& operator[](NumaReplicatedAccessToken token) const {
-        assert(token.get_numa_index() < instances.size());
-        ensure_present(token.get_numa_index());
-        return *(instances[token.get_numa_index()]);
+        assert(token.get_parent_index() < instances.size());
+        ensure_present(token.get_parent_index());
+        return *(instances[token.get_parent_index()]);
     }
 
     const T& operator*() const { return *(instances[0]); }
@@ -1396,6 +1425,8 @@ class LazyNumaReplicatedSystemWide: public NumaReplicatedBase {
         // as a discriminator, locate the hardware/system numadomain this cpuindex belongs to
         CpuIndex    cpu     = *cfg.nodes[idx].begin();  // get a CpuIndex from NumaIndex
         NumaIndex   sys_idx = cfg_sys.is_cpu_assigned(cpu) ? cfg_sys.nodeByCpu.at(cpu) : 0;
+        // Use parent node for discriminator purposes
+        sys_idx = cfg_sys.nodeToParent.at(sys_idx);
         std::string s       = cfg_sys.to_string() + "$" + std::to_string(sys_idx);
         return std::hash<std::string>{}(s);
     }
