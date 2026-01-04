@@ -11,15 +11,23 @@ SCRIPTS_DIR = os.path.dirname(os.path.abspath(__file__))
 SRC_DIR = os.path.join(os.path.dirname(SCRIPTS_DIR), "src")
 BUILDS_DIR = os.path.join(os.path.dirname(SCRIPTS_DIR), "builds")
 
+def top_level_only(l: list[str]):
+	s = set()
+	for name in l:
+		s.add(n
+
+# Get list of relevant source files + .nnue files
 files = check_call(["git", "ls-files"], cwd=SRC_DIR).splitlines()
+files = top_level_only(files)
 print(files)
+exit(0)
 
 class Arch:
 	def __init__(self, name: str):
 		self.name = name
 		# e.g. Stockfish_x86_64_avx2
 		self.namespace = "Stockfish_" + name.replace("-","_")
-		self.build_dir = os.path.join(BUILDS_DIR, self.name)
+		kself.build_dir = os.path.join(BUILDS_DIR, self.name)
 
 	def set_up(self):
 		# delete the build dir if it already exists, then create a src directory
