@@ -92,7 +92,7 @@ std::pair<int, int> correction_value(const Worker& w, const Position& pos, const
 
     return {
         10347 * pcv + 8821 * micv + 11665 * (wnpcv + bnpcv) + 7841 * cntcv,
-        std::abs(pcv) + std::abs(micv) + std::abs(wnpcv) + std::abs(bnpcv) + std::abs(cntcv)
+        pcv * pcv + micv * micv + wnpcv * wnpcv + bnpcv * bnpcv + cntcv * cntcv
     };
 }
 
@@ -929,16 +929,18 @@ Value Search::Worker::search(
 
     improving |= ss->staticEval >= beta;
 
+
     // Step 10. Internal iterative reductions
     // At sufficient depth, reduce depth for PV/Cut nodes without a TTMove.
     // (*Scaler) Making IIR more aggressive scales poorly.
-    if (!allNode && depth >= 6 && !ttData.move && priorReduction <= 3)
+    if (!allNode && depth >= 6 && !ttData.move && priorReduction <= 3 && corrplexity >= 300000) {
         depth--;
+	}
 
     // Step 11. ProbCut
     // If we have a good enough capture (or queen promotion) and a reduced search
     // returns a value much above beta, we can (almost) safely prune the previous move.
-    probCutBeta = beta + 179 - 63 * improving + corrplexity / 4;
+    probCutBeta = beta + 235 - 63 * improving;
 
     if (depth >= 3
         && !is_decisive(beta)
