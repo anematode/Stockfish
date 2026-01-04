@@ -980,6 +980,7 @@ void Position::do_move(Move                      m,
     }
 
     dts.ksq = square<KING>(us);
+	st->incomingThreatsKey = dts.incomingThreatsKey;
 
     assert(pos_is_ok());
 
@@ -1053,7 +1054,7 @@ void Position::undo_move(Move m) {
 }
 
 template<bool PutPiece>
-inline void add_dirty_threat(
+inline uint32_t add_dirty_threat(
   DirtyThreats* const dts, Piece pc, Piece threatened, Square s, Square threatenedSq) {
     if (PutPiece)
     {
@@ -1061,14 +1062,16 @@ inline void add_dirty_threat(
         dts->threateningSqs |= square_bb(s);
     }
 
-    dts->list.push_back({pc, threatened, s, threatenedSq, PutPiece});
+	DirtyThreat dt{pc, threatened, s, threatenedSq, PutPiece};
+    dts->list.push_back(dt);
+	return dt.raw();
 }
 
 #ifdef USE_AVX512ICL
 // Given a DirtyThreat template and bit offsets to insert the piece type and square, write the threats
-// present at the given bitboard.
+// present at the given bitboard. Returns array of DirtyThreats.
 template<int SqShift, int PcShift>
-void write_multiple_dirties(const Position& p,
+__m512i write_multiple_dirties(const Position& p,
                             Bitboard        mask,
                             DirtyThreat     dt_template,
                             DirtyThreats*   dts) {
@@ -1101,8 +1104,35 @@ void write_multiple_dirties(const Position& p,
     const __m512i dirties =
       _mm512_ternarylogic_epi32(template_v, threat_squares, threat_pieces, 254 /* A | B | C */);
     _mm512_storeu_si512(reinterpret_cast<__m512i*>(write), dirties);
+	
+	return _mm512_maskz_mov_epi32((1 << dt_count) - 1, dirties);  // zero out inactive lanes
 }
 #endif
+
+static void murmur_hash(uint32_t& acc, uint32_t x)
+{
+    x ^= x >> 16;
+    x *= 0x85ebca6bU;
+    x ^= x >> 13;
+    x *= 0xc2b2ae35U;
+    x ^= x >> 16;
+	acc ^= x;
+}
+
+#ifdef USE_AVX512ICL
+static uint32_t murmur_hash(__m512i x) {
+#define XOR_SHIFT(n) x = _mm512_xor_si512(x, _mm512_srli_epi32(x, n));
+#define MUL_BY(n) x = _mm512_mullo_epi32(x, _mm512_set1_epi32(n));
+	XOR_SHIFT(16) MUL_BY(0x85ebca6bU) XOR_SHIFT(13) MUL_BY(0xc2b2ae35U) XOR_SHIFT(16)
+	// Reduce XOR. No intrinsic :/
+	__m256i half = _mm256_xor_si256(_mm512_extracti64x4_epi64(x, 1), _mm512_castsi512_si256(x));
+	__m128i quarter = _mm_xor_si128(_mm256_extracti128_si256(half, 1), _mm256_castsi256_si128(half));
+	quarter = _mm_xor_si128(_mm_shuffle_epi32(quarter, 0b01000100), quarter);
+	uint64_t eighth = _mm_cvtsi128_si64(quarter);
+	return uint32_t((eighth >> 32) ^ eighth);
+}
+#endif
+
 
 template<bool PutPiece, bool ComputeRay>
 void Position::update_piece_threats(Piece                     pc,
@@ -1141,8 +1171,10 @@ void Position::update_piece_threats(Piece                     pc,
     }
 
     Bitboard all_attackers = sliders | incoming_threats;
-    if (!all_attackers)
+    if (!all_attackers) {
+		dts->incomingThreatsKey = 0;
         return;  // Square s is threatened iff there's at least one attacker
+	}
 
     if constexpr (PutPiece)
     {
@@ -1151,8 +1183,9 @@ void Position::update_piece_threats(Piece                     pc,
     }
 
     DirtyThreat dt_template{NO_PIECE, pc, Square(0), s, PutPiece};
-    write_multiple_dirties<DirtyThreat::PcSqOffset, DirtyThreat::PcOffset>(*this, all_attackers,
+    __m512i threatsVec = write_multiple_dirties<DirtyThreat::PcSqOffset, DirtyThreat::PcOffset>(*this, all_attackers,
                                                                            dt_template, dts);
+	dts->incomingThreatsKey = murmur_hash(threatsVec);
 #else
     while (threatened)
     {
@@ -1164,6 +1197,8 @@ void Position::update_piece_threats(Piece                     pc,
 
         add_dirty_threat<PutPiece>(dts, pc, threatenedPc, s, threatenedSq);
     }
+
+	uint32_t incomingThreatsKey = 0;
 #endif
 
     if constexpr (ComputeRay)
@@ -1185,7 +1220,9 @@ void Position::update_piece_threats(Piece                     pc,
             }
 
 #ifndef USE_AVX512ICL  // for ICL, direct threats were processed earlier (all_attackers)
-            add_dirty_threat<PutPiece>(dts, slider, pc, sliderSq, s);
+            uint32_t raw = add_dirty_threat<PutPiece>(dts, slider, pc, sliderSq, s);
+			if constexpr (PutPiece)
+				murmur_hash(incomingThreatKey, raw);
 #endif
         }
     }
@@ -1203,9 +1240,14 @@ void Position::update_piece_threats(Piece                     pc,
         assert(srcSq != s);
         assert(srcPc != NO_PIECE);
 
-        add_dirty_threat<PutPiece>(dts, srcPc, pc, srcSq, s);
+        uint32_t raw = add_dirty_threat<PutPiece>(dts, srcPc, pc, srcSq, s);
+		if constexpr (PutPiece)
+			murmur_hash(incomingThreatKey, raw);
     }
+	dts->incomingThreatKey = incomingThreatKey;
 #endif
+
+	return;
 }
 
 // Helper used to do/undo a castling move. This is a bit
