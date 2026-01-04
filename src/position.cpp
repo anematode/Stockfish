@@ -1127,7 +1127,7 @@ static uint32_t murmur_hash(__m512i x) {
 	// Reduce XOR. No intrinsic :/
 	__m256i half = _mm256_xor_si256(_mm512_extracti64x4_epi64(x, 1), _mm512_castsi512_si256(x));
 	__m128i quarter = _mm_xor_si128(_mm256_extracti128_si256(half, 1), _mm256_castsi256_si128(half));
-	quarter = _mm_xor_si128(_mm_shuffle_epi32(quarter, 0b01000100), quarter);
+	quarter = _mm_xor_si128(_mm_shuffle_epi32(quarter, 0b11101110), quarter);
 	uint64_t eighth = _mm_cvtsi128_si64(quarter);
 	return uint32_t((eighth >> 32) ^ eighth);
 }
@@ -1185,7 +1185,8 @@ void Position::update_piece_threats(Piece                     pc,
     DirtyThreat dt_template{NO_PIECE, pc, Square(0), s, PutPiece};
     __m512i threatsVec = write_multiple_dirties<DirtyThreat::PcSqOffset, DirtyThreat::PcOffset>(*this, all_attackers,
                                                                            dt_template, dts);
-	dts->incomingThreatsKey = murmur_hash(threatsVec);
+	if constexpr (PutPiece)
+		dts->incomingThreatsKey = murmur_hash(threatsVec);
 #else
     while (threatened)
     {
@@ -1222,7 +1223,7 @@ void Position::update_piece_threats(Piece                     pc,
 #ifndef USE_AVX512ICL  // for ICL, direct threats were processed earlier (all_attackers)
             uint32_t raw = add_dirty_threat<PutPiece>(dts, slider, pc, sliderSq, s);
 			if constexpr (PutPiece)
-				murmur_hash(incomingThreatKey, raw);
+				murmur_hash(incomingThreatsKey, raw);
 #endif
         }
     }
@@ -1242,9 +1243,9 @@ void Position::update_piece_threats(Piece                     pc,
 
         uint32_t raw = add_dirty_threat<PutPiece>(dts, srcPc, pc, srcSq, s);
 		if constexpr (PutPiece)
-			murmur_hash(incomingThreatKey, raw);
+			murmur_hash(incomingThreatsKey, raw);
     }
-	dts->incomingThreatKey = incomingThreatKey;
+	dts->incomingThreatsKey = incomingThreatsKey;
 #endif
 
 	return;
