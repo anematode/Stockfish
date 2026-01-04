@@ -736,7 +736,7 @@ Value Search::Worker::search(
     }
     else
     {
-        unadjustedStaticEval = evaluate(pos);
+        unadjustedStaticEval = evaluate(pos, corrplexity);
         ss->staticEval = eval = to_corrected_static_eval(unadjustedStaticEval, correctionValue);
 
         // Static evaluation is saved as it was before adjustment by correction history
@@ -938,7 +938,7 @@ Value Search::Worker::search(
     // Step 11. ProbCut
     // If we have a good enough capture (or queen promotion) and a reduced search
     // returns a value much above beta, we can (almost) safely prune the previous move.
-    probCutBeta = beta + 220 - 63 * improving + corrplexity / 16;
+    probCutBeta = beta + 235 - 63 * improving;
 
     if (depth >= 3
         && !is_decisive(beta)
@@ -1585,7 +1585,7 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
         }
         else
         {
-            unadjustedStaticEval = evaluate(pos);
+            unadjustedStaticEval = evaluate(pos, corrplexity);
             ss->staticEval       = bestValue =
               to_corrected_static_eval(unadjustedStaticEval, correctionValue);
         }
@@ -1756,9 +1756,9 @@ TimePoint Search::Worker::elapsed() const {
 
 TimePoint Search::Worker::elapsed_time() const { return main_manager()->tm.elapsed_time(); }
 
-Value Search::Worker::evaluate(const Position& pos) {
+Value Search::Worker::evaluate(const Position& pos, int corrplexity) {
     return Eval::evaluate(networks[numaAccessToken], pos, accumulatorStack, refreshTable,
-                          optimism[pos.side_to_move()]);
+                          optimism[pos.side_to_move()], corrplexity);
 }
 
 namespace {
