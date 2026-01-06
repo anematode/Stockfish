@@ -1158,7 +1158,10 @@ void Position::update_piece_threats(Piece                     pc,
       (PseudoAttacks[KNIGHT][s] & knights) | (attacks_bb<PAWN>(s, WHITE) & blackPawns)
       | (attacks_bb<PAWN>(s, BLACK) & whitePawns) | (PseudoAttacks[KING][s] & kings);
 
+	uint32_t incomingThreatsKey = 0;
+
 #ifdef USE_AVX512ICL
+	__m512i threatsVec = _mm512_setzero_si512();
     if (threatened)
     {
         if constexpr (PutPiece)
@@ -1168,13 +1171,13 @@ void Position::update_piece_threats(Piece                     pc,
         }
 
         DirtyThreat dt_template{pc, NO_PIECE, s, Square(0), PutPiece};
-        write_multiple_dirties<DirtyThreat::ThreatenedSqOffset, DirtyThreat::ThreatenedPcOffset>(
+        threatsVec = write_multiple_dirties<DirtyThreat::ThreatenedSqOffset, DirtyThreat::ThreatenedPcOffset>(
           *this, threatened, dt_template, dts);
     }
 
     Bitboard all_attackers = sliders | incoming_threats;
     if (!all_attackers) {
-		dts->incomingThreatsKey = 0;
+		dts->incomingThreatsKey = PutPiece ? murmur_hash(threatsVec) : 0;
         return;  // Square s is threatened iff there's at least one attacker
 	}
 
@@ -1185,10 +1188,10 @@ void Position::update_piece_threats(Piece                     pc,
     }
 
     DirtyThreat dt_template{NO_PIECE, pc, Square(0), s, PutPiece};
-    __m512i threatsVec = write_multiple_dirties<DirtyThreat::PcSqOffset, DirtyThreat::PcOffset>(*this, all_attackers,
+    __m512i threatsVec2 = write_multiple_dirties<DirtyThreat::PcSqOffset, DirtyThreat::PcOffset>(*this, all_attackers,
                                                                            dt_template, dts);
 	if constexpr (PutPiece)
-		dts->incomingThreatsKey = murmur_hash(threatsVec);
+		dts->incomingThreatsKey = murmur_hash(threatsVec) ^ murmur_hash(threatsVec2);
 #else
     while (threatened)
     {
@@ -1198,10 +1201,10 @@ void Position::update_piece_threats(Piece                     pc,
         assert(threatenedSq != s);
         assert(threatenedPc);
 
-        add_dirty_threat<PutPiece>(dts, pc, threatenedPc, s, threatenedSq);
+        uint32_t raw = add_dirty_threat<PutPiece>(dts, pc, threatenedPc, s, threatenedSq);
+		if constexpr (PutPiece)
+			murmur_hash(incomingThreatsKey, raw);
     }
-
-	uint32_t incomingThreatsKey = 0;
 #endif
 
     if constexpr (ComputeRay)

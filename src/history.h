@@ -36,7 +36,6 @@
 namespace Stockfish {
 
 constexpr int PAWN_HISTORY_BASE_SIZE   = 8192;  // has to be a power of 2
-constexpr int INCOMING_THREATS_SIZE   = 256;  // has to be a power of 2
 constexpr int UINT_16_HISTORY_SIZE     = std::numeric_limits<uint16_t>::max() + 1;
 constexpr int CORRHIST_BASE_SIZE       = UINT_16_HISTORY_SIZE;
 constexpr int CORRECTION_HISTORY_LIMIT = 1024;
@@ -139,7 +138,7 @@ using ButterflyHistory = Stats<std::int16_t, 7183, COLOR_NB, UINT_16_HISTORY_SIZ
 // to improve move ordering near the root
 using LowPlyHistory = Stats<std::int16_t, 7183, LOW_PLY_HISTORY_SIZE, UINT_16_HISTORY_SIZE>;
 
-// CapturePieceToHistory is addressed by a move's [piece][to][captured piece type][threat key]
+// CapturePieceToHistory is addressed by a move's [piece][to][captured piece type]
 using CapturePieceToHistory = Stats<std::int16_t, 10692, PIECE_NB, SQUARE_NB, PIECE_TYPE_NB>;
 
 // PieceToHistory is like ButterflyHistory but is addressed by a move's [piece][to]
