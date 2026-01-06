@@ -1,5 +1,5 @@
 /*
-  Stockfish, a UCI chess playing engine derived from Glaurung 2.1
+  Stockfishi a UCI chess playing engine derived from Glaurung 2.1
   Copyright (C) 2004-2026 The Stockfish developers (see AUTHORS file)
 
   Stockfish is free software: you can redistribute it and/or modify
@@ -109,6 +109,8 @@ void TTEntry::save(
         genBound8 = uint8_t(generation8 | uint8_t(pv) << 2 | b);
         value16   = int16_t(v);
         eval16    = int16_t(ev);
+
+		_mm_clwb(this);
     }
 }
 
