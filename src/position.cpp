@@ -1113,7 +1113,7 @@ __m512i write_multiple_dirties(const Position& p,
 
 static void murmur_hash(uint32_t& acc, uint32_t x)
 {
-    x ^= x >> 16;
+    x ^= x >> 16; 
     x *= 0x85ebca6bU;
     x ^= x >> 13;
     x *= 0xc2b2ae35U;
