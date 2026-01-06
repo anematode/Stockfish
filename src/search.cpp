@@ -85,12 +85,13 @@ int correction_value(const Worker& w, const Position& pos, const Stack* const ss
     const int   micv   = shared.minor_piece_correction_entry(pos).at(us).minor;
     const int   wnpcv  = shared.nonpawn_correction_entry<WHITE>(pos).at(us).nonPawnWhite;
     const int   bnpcv  = shared.nonpawn_correction_entry<BLACK>(pos).at(us).nonPawnBlack;
+	const int   thtcv  = shared.threats_correction_entry(pos).at(us).threats;
     const int   cntcv =
-      m.is_ok() ? (*(ss - 2)->continuationCorrectionHistory)[pos.piece_on(m.to_sq())][m.to_sq()][pos.incoming_threats_key()]
-                    + (*(ss - 4)->continuationCorrectionHistory)[pos.piece_on(m.to_sq())][m.to_sq()][pos.incoming_threats_key()]
-                  : 6;
+      m.is_ok() ? (*(ss - 2)->continuationCorrectionHistory)[pos.piece_on(m.to_sq())][m.to_sq()]
+                    + (*(ss - 4)->continuationCorrectionHistory)[pos.piece_on(m.to_sq())][m.to_sq()]
+                  : 8;
 
-    return 10347 * pcv + 8821 * micv + 11665 * (wnpcv + bnpcv) + 10000 * cntcv;
+    return 10347 * pcv + 8821 * micv + 11665 * (wnpcv + bnpcv) + 7183 * cntcv + 6000 * thtcv;
 }
 
 // Add correctionHistory value to raw staticEval and guarantee evaluation
@@ -113,14 +114,14 @@ void update_correction_history(const Position& pos,
     shared.minor_piece_correction_entry(pos).at(us).minor << bonus * 156 / 128;
     shared.nonpawn_correction_entry<WHITE>(pos).at(us).nonPawnWhite << bonus * nonPawnWeight / 128;
     shared.nonpawn_correction_entry<BLACK>(pos).at(us).nonPawnBlack << bonus * nonPawnWeight / 128;
+	shared.threats_correction_entry(pos).at(us).threats << bonus / 128;
 
     if (m.is_ok())
     {
         const Square to = m.to_sq();
         const Piece  pc = pos.piece_on(m.to_sq());
-		size_t k = pos.incoming_threats_key();
-        (*(ss - 2)->continuationCorrectionHistory)[pc][to][k] << bonus * 127 / 128;
-        (*(ss - 4)->continuationCorrectionHistory)[pc][to][k] << bonus * 59 / 128;
+        (*(ss - 2)->continuationCorrectionHistory)[pc][to] << bonus * 127 / 128;
+        (*(ss - 4)->continuationCorrectionHistory)[pc][to] << bonus * 59 / 128;
     }
 }
 
@@ -283,7 +284,7 @@ void Search::Worker::iterative_deepening() {
     {
         (ss - i)->continuationHistory =
           &continuationHistory[0][0][NO_PIECE][0];  // Use as a sentinel
-        (ss - i)->continuationCorrectionHistory = &sharedHistory.continuationCorrectionHistory[NO_PIECE][0];
+        (ss - i)->continuationCorrectionHistory = &continuationCorrectionHistory[NO_PIECE][0];
         (ss - i)->staticEval                    = VALUE_NONE;
     }
 
@@ -564,7 +565,7 @@ void Search::Worker::do_move(
         ss->continuationHistory =
           &continuationHistory[ss->inCheck][capture][dirtyPiece.pc][move.to_sq()];
         ss->continuationCorrectionHistory =
-          &sharedHistory.continuationCorrectionHistory[dirtyPiece.pc][move.to_sq()];
+          &continuationCorrectionHistory[dirtyPiece.pc][move.to_sq()];
     }
 }
 
@@ -572,7 +573,7 @@ void Search::Worker::do_null_move(Position& pos, StateInfo& st, Stack* const ss)
     pos.do_null_move(st, tt);
     ss->currentMove                   = Move::null();
     ss->continuationHistory           = &continuationHistory[0][0][NO_PIECE][0];
-    ss->continuationCorrectionHistory = &sharedHistory.continuationCorrectionHistory[NO_PIECE][0];
+    ss->continuationCorrectionHistory = &continuationCorrectionHistory[NO_PIECE][0];
 }
 
 void Search::Worker::undo_move(Position& pos, const Move move) {
@@ -594,7 +595,7 @@ void Search::Worker::clear() {
 
     ttMoveHistory = 0;
 
-    for (auto& to : sharedHistory.continuationCorrectionHistory)
+    for (auto& to : continuationCorrectionHistory)
         for (auto& h : to)
             h.fill(8);
 

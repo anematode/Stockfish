@@ -879,6 +879,8 @@ void Position::do_move(Move                      m,
             st->minorPieceKey ^= Zobrist::psq[pc][from] ^ Zobrist::psq[pc][to];
     }
 
+	st->incomingThreatsKey = dts.incomingThreatsKey;
+
     // If en passant is impossible, then k will not change and we can prefetch earlier
     if (tt && !checkEP)
         prefetch(tt->first_entry(adjust_key50(k)));
@@ -886,10 +888,11 @@ void Position::do_move(Move                      m,
     if (history)
     {
         prefetch(&history->pawn_entry(*this)[pc][to]);
-        prefetch(&history->pawn_correction_entry(*this));
-        prefetch(&history->minor_piece_correction_entry(*this));
-        prefetch(&history->nonpawn_correction_entry<WHITE>(*this));
-        prefetch(&history->nonpawn_correction_entry<BLACK>(*this));
+        prefetch(&history->pawn_correction_entry(*this).at(us).pawn);
+        prefetch(&history->minor_piece_correction_entry(*this).at(us).minor);
+        prefetch(&history->nonpawn_correction_entry<WHITE>(*this).at(us).nonPawnWhite);
+        prefetch(&history->nonpawn_correction_entry<BLACK>(*this).at(us).nonPawnBlack);
+        prefetch(&history->threats_correction_entry(*this).at(us).threats);
     }
 
     // Set capture piece
@@ -980,7 +983,6 @@ void Position::do_move(Move                      m,
     }
 
     dts.ksq = square<KING>(us);
-	st->incomingThreatsKey = dts.incomingThreatsKey;
 
     assert(pos_is_ok());
 

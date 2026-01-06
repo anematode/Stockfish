@@ -172,12 +172,14 @@ struct CorrectionBundle {
     StatsEntry<T, D, true> minor;
     StatsEntry<T, D, true> nonPawnWhite;
     StatsEntry<T, D, true> nonPawnBlack;
+    StatsEntry<T, D, true> threats;
 
     void operator=(T val) {
         pawn         = val;
         minor        = val;
         nonPawnWhite = val;
         nonPawnBlack = val;
+		threats = val;
     }
 };
 
@@ -191,7 +193,7 @@ struct CorrHistTypedef {
 
 template<>
 struct CorrHistTypedef<PieceTo> {
-    using type = AtomicStats<std::int16_t, CORRECTION_HISTORY_LIMIT, PIECE_NB, SQUARE_NB, INCOMING_THREATS_SIZE>;
+    using type = Stats<std::int16_t, CORRECTION_HISTORY_LIMIT, PIECE_NB, SQUARE_NB>;
 };
 
 template<>
@@ -252,6 +254,13 @@ struct SharedHistories {
         return correctionHistory[pos.minor_piece_key() & sizeMinus1];
     }
 
+    auto& threats_correction_entry(const Position& pos) {
+        return correctionHistory[pos.incoming_threats_key() & sizeMinus1];
+    }
+    const auto& threats_correction_entry(const Position& pos) const {
+        return correctionHistory[pos.incoming_threats_key() & sizeMinus1];
+    }
+
     template<Color c>
     auto& nonpawn_correction_entry(const Position& pos) {
         return correctionHistory[pos.non_pawn_key(c) & sizeMinus1];
@@ -263,7 +272,6 @@ struct SharedHistories {
 
     UnifiedCorrectionHistory correctionHistory;
     PawnHistory              pawnHistory;
-	CorrectionHistory<Continuation> continuationCorrectionHistory;
 
 
    private:
