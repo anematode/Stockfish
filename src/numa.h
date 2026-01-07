@@ -644,7 +644,7 @@ class NumaConfig {
             if (!GetLogicalProcessorInformationEx(RelationCache, info, &bufSize))
                 goto fail;
 
-            while (reinterpret_cast<char*>(info) - &*buffer.begin() < bufSize)
+            while (reinterpret_cast<char*>(info) < buffer.data() + bufSize)
             {
                 if (info->Relationship == RelationCache && info->Cache.Level == 3)
                 {
