@@ -653,8 +653,9 @@ class NumaConfig {
                     {
                         for (BYTE number = 0; number < WIN_PROCESSOR_GROUP_SIZE; ++number)
                         {
+                            WORD groupNumber = info->Cache.GroupMasks[procGroup].Group;
                             const CpuIndex c =
-                              static_cast<CpuIndex>(procGroup) * WIN_PROCESSOR_GROUP_SIZE
+                              static_cast<CpuIndex>(groupNumber) * WIN_PROCESSOR_GROUP_SIZE
                               + static_cast<CpuIndex>(number);
                             if (!(info->Cache.GroupMasks[procGroup].Mask & (1ULL << number))
                                 || !is_cpu_allowed(c))
