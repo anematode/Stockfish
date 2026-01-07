@@ -47,6 +47,10 @@ static_assert((PAWN_HISTORY_BASE_SIZE & (PAWN_HISTORY_BASE_SIZE - 1)) == 0,
 static_assert((CORRHIST_BASE_SIZE & (CORRHIST_BASE_SIZE - 1)) == 0,
               "CORRHIST_BASE_SIZE has to be a power of 2");
 
+inline size_t threats_correction_index(const Position& pos) {
+    return pos.incoming_threats_key() & 0x3ffff;
+}
+
 // StatsEntry is the container of various numerical statistics. We use a class
 // instead of a naked value to directly call history update operator<<() on
 // the entry. The first template parameter T is the base type of the array,
@@ -163,6 +167,7 @@ enum CorrHistType {
     NonPawn,       // By non-pawn material positions and color
     PieceTo,       // By [piece][to] move
     Continuation,  // Combined history of move pairs
+    Threats
 };
 
 template<typename T, int D>
@@ -191,6 +196,11 @@ struct CorrHistTypedef {
 template<>
 struct CorrHistTypedef<PieceTo> {
     using type = Stats<std::int16_t, CORRECTION_HISTORY_LIMIT, PIECE_NB, SQUARE_NB>;
+};
+
+template<>
+struct CorrHistTypedef<Threats> {
+    using type = Stats<std::int16_t, CORRECTION_HISTORY_LIMIT, CORRHIST_BASE_SIZE * 4>;
 };
 
 template<>

@@ -332,7 +332,7 @@ struct DirtyThreats {
     Square          prevKsq, ksq;
 
     Bitboard threatenedSqs, threateningSqs;
-	uint32_t incomingThreatsKey;
+    uint32_t incomingThreatsKey;
 };
 
     #define ENABLE_INCR_OPERATORS_ON(T) \

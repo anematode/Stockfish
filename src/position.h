@@ -61,7 +61,7 @@ struct StateInfo {
     Bitboard   checkSquares[PIECE_TYPE_NB];
     Piece      capturedPiece;
     int        repetition;
-	uint32_t   incomingThreatsKey;
+    uint32_t   incomingThreatsKey;
 };
 
 
@@ -151,12 +151,12 @@ class Position {
     bool see_ge(Move m, int threshold = 0) const;
 
     // Accessing hash keys
-    Key key() const;
-    Key material_key() const;
-    Key pawn_key() const;
-    Key minor_piece_key() const;
-    Key non_pawn_key(Color c) const;
-	uint32_t incoming_threats_key() const { return st->incomingThreatsKey; }
+    Key      key() const;
+    Key      material_key() const;
+    Key      pawn_key() const;
+    Key      minor_piece_key() const;
+    Key      non_pawn_key(Color c) const;
+    uint32_t incoming_threats_key() const { return st->incomingThreatsKey; }
 
     // Other properties of the position
     Color side_to_move() const;
