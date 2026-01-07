@@ -646,7 +646,7 @@ class NumaConfig {
 
             while (reinterpret_cast<char*>(info) - &*buffer.begin() < bufSize)
             {
-                if (info->Relationship == RelationCache && info->Cache.level == 3)
+                if (info->Relationship == RelationCache && info->Cache.Level == 3)
                 {
                     L3Domain domain{};
                     for (WORD procGroup = 0; procGroup < info->Cache.GroupCount; ++procGroup)
@@ -656,11 +656,11 @@ class NumaConfig {
                             const CpuIndex c =
                               static_cast<CpuIndex>(procGroup) * WIN_PROCESSOR_GROUP_SIZE
                               + static_cast<CpuIndex>(number);
-                            if (!(info->Cache.GroupMasks[procGroup] & (1ULL << number))
+                            if (!(info->Cache.GroupMasks[procGroup].Mask & (1ULL << number))
                                 || !is_cpu_allowed(c))
                                 continue;
                             domain.systemNumaIndex = systemConfig.nodeByCpu.at(c);
-                            domain.cpus.add(c);
+                            domain.cpus.insert(c);
                         }
                     }
                     if (!domain.cpus.empty())
@@ -674,7 +674,7 @@ class NumaConfig {
             if (!l3Domains.empty())
             {
                 l3Success = true;
-                cfg       = NumaConfig::from_l3_domains(l3Domains);
+                cfg       = NumaConfig::from_l3_info(l3Domains);
             }
         }
 fail:;
