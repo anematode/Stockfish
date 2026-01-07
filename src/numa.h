@@ -674,7 +674,7 @@ class NumaConfig {
             if (!l3Domains.empty())
             {
                 l3Success = true;
-                cfg       = NumaConfig::from_l3_info(l3Domains);
+                cfg       = NumaConfig::from_l3_info(std::move(l3Domains));
             }
         }
 fail:;
