@@ -493,7 +493,7 @@ class NumaConfig {
     // If l3 is true, the function will attempt to query the system for L3 domains
     // and use these in the config.
     static NumaConfig from_system([[maybe_unused]] bool respectProcessAffinity = true,
-                                  bool                  l3                     = true) {
+                                  [[maybe_unused]] bool l3                     = true) {
         NumaConfig cfg = empty();
 
 #if defined(__linux__) && !defined(__ANDROID__)
