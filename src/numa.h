@@ -628,24 +628,78 @@ class NumaConfig {
             return !allowedCpus.has_value() || allowedCpus->count(c) == 1;
         };
 
-        WORD numProcGroups = GetActiveProcessorGroupCount();
-        for (WORD procGroup = 0; procGroup < numProcGroups; ++procGroup)
+        bool l3Success = false;
+        if (l3)
         {
-            for (BYTE number = 0; number < WIN_PROCESSOR_GROUP_SIZE; ++number)
-            {
-                PROCESSOR_NUMBER procnum;
-                procnum.Group    = procGroup;
-                procnum.Number   = number;
-                procnum.Reserved = 0;
-                USHORT nodeNumber;
+            NumaConfig systemConfig = NumaConfig::from_system(respectProcessAffinity, false);
+            std::vector<L3Domain> l3Domains;
 
-                const BOOL     status = GetNumaProcessorNodeEx(&procnum, &nodeNumber);
-                const CpuIndex c      = static_cast<CpuIndex>(procGroup) * WIN_PROCESSOR_GROUP_SIZE
-                                 + static_cast<CpuIndex>(number);
-                if (status != 0 && nodeNumber != std::numeric_limits<USHORT>::max()
-                    && is_cpu_allowed(c))
+            DWORD bufSize = 0;
+            GetLogicalProcessorInformationEx(RelationCache, nullptr, &bufSize);
+            if (GetLastError() != ERROR_INSUFFICIENT_BUFFER)
+                goto fail;
+
+            std::vector<char> buffer(bufSize);
+            auto info = reinterpret_cast<PSYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX>(buffer.data());
+            if (!GetLogicalProcessorInformationEx(RelationCache, info, &bufSize))
+                goto fail;
+
+            while (reinterpret_cast<char*>(info) < buffer.begin() + bufSize)
+            {
+                if (info->Relationship == RelationCache && info->Cache.level == 3)
                 {
-                    cfg.add_cpu_to_node(nodeNumber, c);
+                    L3Domain domain{};
+                    for (WORD procGroup = 0; procGroup < info->Cache.GroupCount; ++procGroup)
+                    {
+                        for (BYTE number = 0; number < WIN_PROCESSOR_GROUP_SIZE; ++number)
+                        {
+                            const CpuIndex c =
+                              static_cast<CpuIndex>(procGroup) * WIN_PROCESSOR_GROUP_SIZE
+                              + static_cast<CpuIndex>(number);
+                            if (!(info->Cache.GroupMasks[procGroup] & (1ULL << number))
+                                || !is_cpu_allowed(c))
+                                continue;
+                            domain.systemNumaIndex = systemConfig.nodeByCpu.at(c);
+                            domain.cpus.add(c);
+                        }
+                    }
+                    if (!domain.cpus.empty())
+                        l3Domains.push_back(std::move(domain));
+                }
+                // Variable length data structure, advance to next
+                info = reinterpret_cast<PSYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX>(
+                  reinterpret_cast<char*>(info) + info->Size);
+            }
+
+            if (!l3Domains.empty())
+            {
+                l3Success = true;
+                cfg       = NumaConfig::from_l3_domains(l3Domains);
+            }
+        }
+fail:;
+
+        if (!l3Success)
+        {
+            WORD numProcGroups = GetActiveProcessorGroupCount();
+            for (WORD procGroup = 0; procGroup < numProcGroups; ++procGroup)
+            {
+                for (BYTE number = 0; number < WIN_PROCESSOR_GROUP_SIZE; ++number)
+                {
+                    PROCESSOR_NUMBER procnum;
+                    procnum.Group    = procGroup;
+                    procnum.Number   = number;
+                    procnum.Reserved = 0;
+                    USHORT nodeNumber;
+
+                    const BOOL     status = GetNumaProcessorNodeEx(&procnum, &nodeNumber);
+                    const CpuIndex c = static_cast<CpuIndex>(procGroup) * WIN_PROCESSOR_GROUP_SIZE
+                                     + static_cast<CpuIndex>(number);
+                    if (status != 0 && nodeNumber != std::numeric_limits<USHORT>::max()
+                        && is_cpu_allowed(c))
+                    {
+                        cfg.add_cpu_to_node(nodeNumber, c);
+                    }
                 }
             }
         }
