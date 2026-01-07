@@ -888,12 +888,11 @@ void Position::do_move(Move                      m,
     if (history)
     {
         prefetch(&history->pawn_entry(*this)[pc][to]);
-        prefetch(&history->pawn_correction_entry(*this).at(us).pawn);
-        prefetch(&history->minor_piece_correction_entry(*this).at(us).minor);
-        prefetch(&history->nonpawn_correction_entry<WHITE>(*this).at(us).nonPawnWhite);
-        prefetch(&history->nonpawn_correction_entry<BLACK>(*this).at(us).nonPawnBlack);
-        prefetch(&history->threats_correction_entry(*this).at(us).threats);
-    }
+        prefetch(&history->pawn_correction_entry(*this));
+        prefetch(&history->minor_piece_correction_entry(*this));
+        prefetch(&history->nonpawn_correction_entry<WHITE>(*this));
+        prefetch(&history->nonpawn_correction_entry<BLACK>(*this));
+    e
 
     // Set capture piece
     st->capturedPiece = captured;
