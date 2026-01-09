@@ -447,6 +447,11 @@ class NumaReplicatedAccessToken {
     NumaIndex n;
 };
 
+struct L3Domain {
+    NumaIndex          systemNumaIndex{};
+    std::set<CpuIndex> cpus{};
+};
+
 // Designed as immutable, because there is no good reason to alter an already
 // existing config in a way that doesn't require recreating it completely, and
 // it would be complex and expensive to maintain class invariants.
@@ -478,11 +483,10 @@ class NumaConfig {
         add_cpu_range_to_node(NumaIndex{0}, CpuIndex{0}, numCpus - 1);
     }
 
-    struct L3Domain {
-        NumaIndex          systemNumaIndex{};
-        std::set<CpuIndex> cpus{};
-    };
-
+    // The default configuration will attempt to group L3 domains up to this size.
+    // This size was found to be a good balance between the Elo gain of increased
+    // history sharing and the speed loss from more cross-cache accesses (see
+    // PR#6526). The user can always explicitly override the NumaPolicy.
     static constexpr size_t MaxL3BundleSize = 32;
 
     // This function queries the system for the mapping of processors to NUMA nodes.
@@ -518,57 +522,13 @@ class NumaConfig {
             cfg         = empty();
         };
 
-        bool l3Success = false;
-        if (l3)
+        std::optional<NumaConfig> l3AwareConfig =
+          l3 ? try_get_l3_aware_config(respectProcessAffinity, is_cpu_allowed) : std::nullopt;
+        if (l3AwareConfig.has_value())
         {
-            // Get the normal system configuration so we know what to which NUMA node
-            // each L3 domain belongs.
-            NumaConfig systemConfig = NumaConfig::from_system(respectProcessAffinity, false);
-            std::vector<L3Domain> l3Domains;
-
-            std::set<CpuIndex> seenCpus;
-            auto               nextUnseenCpu = [&seenCpus]() {
-                for (CpuIndex i = 0;; ++i)
-                    if (!seenCpus.count(i))
-                        return i;
-            };
-
-            while (true)
-            {
-                CpuIndex next = nextUnseenCpu();
-                auto     siblingsStr =
-                  read_file_to_string("/sys/devices/system/cpu/cpu" + std::to_string(next)
-                                      + "/cache/index3/shared_cpu_list");
-
-                if (!siblingsStr.has_value() || siblingsStr->empty())
-                {
-                    break;  // we have read all available CPUs
-                }
-
-                L3Domain domain;
-                for (size_t c : indices_from_shortened_string(*siblingsStr))
-                {
-                    if (is_cpu_allowed(c))
-                    {
-                        domain.systemNumaIndex = systemConfig.nodeByCpu.at(c);
-                        domain.cpus.insert(c);
-                    }
-                    seenCpus.insert(c);
-                }
-                if (!domain.cpus.empty())
-                {
-                    l3Domains.emplace_back(std::move(domain));
-                }
-            }
-
-            if (!l3Domains.empty())
-            {
-                cfg       = NumaConfig::from_l3_info(std::move(l3Domains));
-                l3Success = true;
-            }
-        }  // if (l3)
-
-        if (!l3Success)
+            cfg = std::move(*l3AwareConfig);
+        }
+        else
         {
             // /sys/devices/system/node/online contains information about active NUMA nodes
             auto nodeIdsStr = read_file_to_string("/sys/devices/system/node/online");
@@ -628,59 +588,14 @@ class NumaConfig {
             return !allowedCpus.has_value() || allowedCpus->count(c) == 1;
         };
 
-        bool l3Success = false;
-        if (l3)
+
+        std::optional<NumaConfig> l3AwareConfig =
+          l3 ? try_get_l3_aware_config(respectProcessAffinity, is_cpu_allowed) : std::nullopt;
+        if (l3AwareConfig.has_value())
         {
-            NumaConfig systemConfig = NumaConfig::from_system(respectProcessAffinity, false);
-            std::vector<L3Domain> l3Domains;
-
-            DWORD bufSize = 0;
-            GetLogicalProcessorInformationEx(RelationCache, nullptr, &bufSize);
-            if (GetLastError() != ERROR_INSUFFICIENT_BUFFER)
-                goto fail;
-
-            std::vector<char> buffer(bufSize);
-            auto info = reinterpret_cast<PSYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX>(buffer.data());
-            if (!GetLogicalProcessorInformationEx(RelationCache, info, &bufSize))
-                goto fail;
-
-            while (reinterpret_cast<char*>(info) < buffer.data() + bufSize)
-            {
-                if (info->Relationship == RelationCache && info->Cache.Level == 3)
-                {
-                    L3Domain domain{};
-                    for (WORD procGroup = 0; procGroup < info->Cache.GroupCount; ++procGroup)
-                    {
-                        for (BYTE number = 0; number < WIN_PROCESSOR_GROUP_SIZE; ++number)
-                        {
-                            WORD groupNumber = info->Cache.GroupMasks[procGroup].Group;
-                            const CpuIndex c =
-                              static_cast<CpuIndex>(groupNumber) * WIN_PROCESSOR_GROUP_SIZE
-                              + static_cast<CpuIndex>(number);
-                            if (!(info->Cache.GroupMasks[procGroup].Mask & (1ULL << number))
-                                || !is_cpu_allowed(c))
-                                continue;
-                            domain.systemNumaIndex = systemConfig.nodeByCpu.at(c);
-                            domain.cpus.insert(c);
-                        }
-                    }
-                    if (!domain.cpus.empty())
-                        l3Domains.push_back(std::move(domain));
-                }
-                // Variable length data structure, advance to next
-                info = reinterpret_cast<PSYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX>(
-                  reinterpret_cast<char*>(info) + info->Size);
-            }
-
-            if (!l3Domains.empty())
-            {
-                l3Success = true;
-                cfg       = NumaConfig::from_l3_info(std::move(l3Domains));
-            }
+            cfg = std::move(*l3AwareConfig);
         }
-fail:;
-
-        if (!l3Success)
+        else
         {
             WORD numProcGroups = GetActiveProcessorGroupCount();
             for (WORD procGroup = 0; procGroup < numProcGroups; ++procGroup)
@@ -1169,6 +1084,100 @@ fail:;
 
         return indices;
     }
+
+    template<typename Pred>
+    static std::optional<NumaConfig> try_get_l3_aware_config(bool   respectProcessAffinity,
+                                                             Pred&& is_cpu_allowed) {
+        // Get the normal system configuration so we know what to which NUMA node
+        // each L3 domain belongs.
+        NumaConfig            systemConfig = NumaConfig::from_system(respectProcessAffinity, false);
+        std::vector<L3Domain> l3Domains;
+
+        std::set<CpuIndex> seenCpus;
+        auto               nextUnseenCpu = [&seenCpus]() {
+            for (CpuIndex i = 0;; ++i)
+                if (!seenCpus.count(i))
+                    return i;
+        };
+
+#if defined(__linux__) && !defined(__ANDROID__)
+        while (true)
+        {
+            CpuIndex next = nextUnseenCpu();
+            auto     siblingsStr =
+              read_file_to_string("/sys/devices/system/cpu/cpu" + std::to_string(next)
+                                  + "/cache/index3/shared_cpu_list");
+
+            if (!siblingsStr.has_value() || siblingsStr->empty())
+            {
+                break;  // we have read all available CPUs
+            }
+
+            L3Domain domain;
+            for (size_t c : indices_from_shortened_string(*siblingsStr))
+            {
+                if (is_cpu_allowed(c))
+                {
+                    domain.systemNumaIndex = systemConfig.nodeByCpu.at(c);
+                    domain.cpus.insert(c);
+                }
+                seenCpus.insert(c);
+            }
+            if (!domain.cpus.empty())
+            {
+                l3Domains.emplace_back(std::move(domain));
+            }
+        }
+#elif defined(_WIN64)
+        NumaConfig            systemConfig = NumaConfig::from_system(respectProcessAffinity, false);
+        std::vector<L3Domain> l3Domains;
+
+        DWORD bufSize = 0;
+        GetLogicalProcessorInformationEx(RelationCache, nullptr, &bufSize);
+        if (GetLastError() != ERROR_INSUFFICIENT_BUFFER)
+            goto fail;
+
+        std::vector<char> buffer(bufSize);
+        auto info = reinterpret_cast<PSYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX>(buffer.data());
+        if (!GetLogicalProcessorInformationEx(RelationCache, info, &bufSize))
+            goto fail;
+
+        while (reinterpret_cast<char*>(info) < buffer.data() + bufSize)
+        {
+            info = std::launder(info);
+            if (info->Relationship == RelationCache && info->Cache.Level == 3)
+            {
+                L3Domain domain{};
+                for (WORD procGroup = 0; procGroup < info->Cache.GroupCount; ++procGroup)
+                {
+                    for (BYTE number = 0; number < WIN_PROCESSOR_GROUP_SIZE; ++number)
+                    {
+                        WORD           groupNumber = info->Cache.GroupMasks[procGroup].Group;
+                        const CpuIndex c =
+                          static_cast<CpuIndex>(groupNumber) * WIN_PROCESSOR_GROUP_SIZE
+                          + static_cast<CpuIndex>(number);
+                        if (!(info->Cache.GroupMasks[procGroup].Mask & (1ULL << number))
+                            || !is_cpu_allowed(c))
+                            continue;
+                        domain.systemNumaIndex = systemConfig.nodeByCpu.at(c);
+                        domain.cpus.insert(c);
+                    }
+                }
+                if (!domain.cpus.empty())
+                    l3Domains.push_back(std::move(domain));
+            }
+            // Variable length data structure, advance to next
+            info = reinterpret_cast<PSYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX>(
+              reinterpret_cast<char*>(info) + info->Size);
+        }
+#endif
+
+        if (!l3Domains.empty())
+            return {NumaConfig::from_l3_info(std::move(l3Domains))};
+
+        return std::nullopt;
+    }
+
 
     // L3 domains within a system NUMA node will be bundled so long as the
     // total number of threads is <= MaxL3BundleSize.

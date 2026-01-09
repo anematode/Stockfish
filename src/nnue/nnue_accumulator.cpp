@@ -347,8 +347,8 @@ struct AccumulatorUpdateContext {
           to_psqt_weight_vector(indices)...);
     }
 
-    void apply(const typename FeatureSet::IndexList& added,
-               const typename FeatureSet::IndexList& removed) {
+    void apply(typename FeatureSet::IndexList& added,
+               typename FeatureSet::IndexList& removed) {
         const auto& fromAcc = from.template acc<Dimensions>().accumulation[perspective];
         auto&       toAcc   = to.template acc<Dimensions>().accumulation[perspective];
 
@@ -362,13 +362,47 @@ struct AccumulatorUpdateContext {
 
         const auto* threatWeights = &featureTransformer.threatWeights[0];
 
+		ValueList<int, 96> fusible;
+
+		int fusibleMask = 0;
+		for (int i = std::min(added.ssize(), removed.ssize()) - 1; i >= 0; --i) {
+			featureTransformer.may_fuse(added[i], removed[i]);
+		}
+
         for (IndexType j = 0; j < Dimensions / Tiling::TileHeight; ++j)
         {
             auto* fromTile = reinterpret_cast<const vec_t*>(&fromAcc[j * Tiling::TileHeight]);
             auto* toTile   = reinterpret_cast<vec_t*>(&toAcc[j * Tiling::TileHeight]);
 
+			int i = 0;
+
             for (IndexType k = 0; k < Tiling::NumRegs; ++k)
                 acc[k] = fromTile[k];
+
+#define vec_narrow_sub_8 _mm256_sub_epi8
+
+			int mask = fusibleMask;
+            for (; i < std::min(removed.ssize(), added.ssize()); ++i) {
+				bool fusible = mask & 1;
+                size_t       indexR = removed[i];
+                size_t       indexA = added[i];
+                const size_t offsetR = Dimensions * indexR;
+                const size_t offsetA = Dimensions * indexA;
+                auto*        columnR = reinterpret_cast<const vec_i8_t*>(&threatWeights[offsetR]);
+                auto*        columnA = reinterpret_cast<const vec_i8_t*>(&threatWeights[offsetA]);
+
+				if (fusible) {
+					for (IndexType k = 0; k < Tiling::NumRegs; ++k) {
+						acc[k] = vec_add_16(acc[k], vec_convert_8_16(vec_narrow_sub_8(columnA[k], columnR[k])));
+					}
+				} else {
+					for (IndexType k = 0; k < Tiling::NumRegs; ++k) {
+						acc[k] = vec_add_16(acc[k], vec_convert_8_16(columnA[k]));
+						acc[k] = vec_sub_16(acc[k], vec_convert_8_16(columnR[k]));
+					}
+				}
+				mask >>= 1;
+			}
 
             for (int i = 0; i < removed.ssize(); ++i)
             {

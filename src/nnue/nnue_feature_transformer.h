@@ -173,6 +173,19 @@ class FeatureTransformer {
 
         if (!UseThreats)
             scale_weights(true);
+		else {
+			for (size_t i = 0; i < ThreatInputDimensions; ++i) {
+				MinMaxData& d = threatMinMaxData[i];
+				std::fill_n(d.min, 64, 127);
+				std::fill_n(d.max, 64, -128);
+				for (size_t j = 0; j < HalfDimensions; ++j) {
+					int8_t w = threatWeights[HalfDimensions * i + j];
+					int k = j % 64;
+					d.min[k] = std::min(d.min[k], w);
+					d.max[k] = std::max(d.max[k], w);
+				}
+			}
+		}
 
         return !stream.fail();
     }
@@ -409,6 +422,25 @@ class FeatureTransformer {
         return psqt;
     }  // end of function transform()
 
+	struct MinMaxData {
+		int8_t min[64] = {};
+		int8_t max[64] = {};
+	};
+
+	bool may_fuse(size_t addI, size_t removeI) const {
+		const MinMaxData& add = threatMinMaxData[addI];
+		const MinMaxData& rmv = threatMinMaxData[removeI];
+
+		auto fail = [] (const int8_t *a, const int8_t *b) {
+			__m512i p = _mm512_load_si512(a);
+			__m512i q = _mm512_load_si512(b);
+			return _mm512_cmpneq_epi8_mask(_mm512_sub_epi8(p, q), _mm512_subs_epi8(p, q));
+		};
+	
+		bool result = _kortestz_mask64_u8(fail(add.min, rmv.max), fail(add.max, rmv.min));
+		return result;
+	}
+
     alignas(CacheLineSize) std::array<BiasType, HalfDimensions> biases;
     alignas(CacheLineSize) std::array<WeightType, HalfDimensions * InputDimensions> weights;
     alignas(CacheLineSize)
@@ -418,6 +450,7 @@ class FeatureTransformer {
     alignas(CacheLineSize)
       std::array<PSQTWeightType,
                  UseThreats ? ThreatInputDimensions * PSQTBuckets : 0> threatPsqtWeights;
+	alignas(CacheLineSize) std::array<MinMaxData, ThreatInputDimensions> threatMinMaxData;
 };
 
 }  // namespace Stockfish::Eval::NNUE
