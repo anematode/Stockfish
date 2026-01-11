@@ -187,8 +187,6 @@ void Search::Worker::start_searching() {
     // Non-main threads go directly to iterative_deepening()
     if (!is_mainthread())
     {
-		for (auto& o : sharedHistory.optimism)
-			for (auto& k : o) k.reset();
         iterative_deepening();
         return;
     }
@@ -319,6 +317,8 @@ void Search::Worker::iterative_deepening() {
         for (int i = 0; i < UINT_16_HISTORY_SIZE; i++)
             mainHistory[c][i] =
               (mainHistory[c][i] - mainHistoryDefault) * 3 / 4 + mainHistoryDefault;
+	for (auto& o : sharedHistory.optimism)
+		for (auto& k : o) k.reset();
 
     // Iterative deepening loop until requested to stop or the target depth is reached
     while (++rootDepth < MAX_PLY && !threads.stop
