@@ -277,7 +277,7 @@ struct SharedHistories {
 
     UnifiedCorrectionHistory correctionHistory;
     PawnHistory              pawnHistory;
-	std::array<MeanOptimism, MAX_PLY> optimism;
+	std::array<std::array<MeanOptimism, MAX_PLY>, COLOR_NB> optimism;
 
 
    private:
