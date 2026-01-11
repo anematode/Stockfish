@@ -215,6 +215,21 @@ using CorrectionHistory = typename Detail::CorrHistTypedef<T>::type;
 
 using TTMoveHistory = StatsEntry<std::int16_t, 8192>;
 
+struct MeanOptimism {
+	alignas(64) std::atomic<int64_t> data;
+
+	void reset() {
+        data = 0;
+	}
+
+	int get(int adjust) {
+		int64_t addend = (int64_t(adjust) << 32) | 1;
+		int64_t value = data.fetch_add(addend, std::memory_order_relaxed);
+		value += addend;
+		return (value >> 32) / uint32_t(value);
+	}
+};
+
 // Set of histories shared between groups of threads. To avoid excessive
 // cross-node data transfer, histories are shared only between threads
 // on a given NUMA node. The passed size must be a power of two to make
@@ -262,6 +277,7 @@ struct SharedHistories {
 
     UnifiedCorrectionHistory correctionHistory;
     PawnHistory              pawnHistory;
+	std::array<MeanOptimism, MAX_PLY> optimism;
 
 
    private:

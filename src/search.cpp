@@ -194,6 +194,7 @@ void Search::Worker::start_searching() {
     main_manager()->tm.init(limits, rootPos.side_to_move(), rootPos.game_ply(), options,
                             main_manager()->originalTimeAdjust);
     tt.new_search();
+	for (auto& o : sharedHistory.optimism) o.reset();
 
     if (rootMoves.empty())
     {
@@ -358,7 +359,8 @@ void Search::Worker::iterative_deepening() {
             beta      = std::min(avg + delta, VALUE_INFINITE);
 
             // Adjust optimism based on root move's averageScore
-            optimism[us]  = 142 * avg / (std::abs(avg) + 91);
+			int myOptimism = 142 * avg / (std::abs(avg) + 91);
+            optimism[us]  = pvIdx == 0 ? sharedHistory.optimism[rootDepth].get(myOptimism) : myOptimism;
             optimism[~us] = -optimism[us];
 
             // Start with a small aspiration window and, in the case of a fail
