@@ -166,6 +166,7 @@ sse2 = no
 ssse3 = no
 sse41 = no
 avx2 = no
+bmi2 = no
 avxvnni = no
 avx512 = no
 vnni512 = no
@@ -249,6 +250,7 @@ ifeq ($(findstring -avx2,$(ARCH)),-avx2)
 	ssse3 = yes
 	sse41 = yes
 	avx2 = yes
+	bmi2 = yes
 endif
 
 ifeq ($(findstring -avxvnni,$(ARCH)),-avxvnni)
@@ -828,6 +830,12 @@ endif
 ### 3.7 pext
 ifeq ($(pext),yes)
 	CXXFLAGS += -DUSE_PEXT
+	ifeq ($(comp),$(filter $(comp),gcc clang mingw icx))
+		CXXFLAGS += -mbmi2
+	endif
+endif
+
+ifeq ($(bmi2),yes)
 	ifeq ($(comp),$(filter $(comp),gcc clang mingw icx))
 		CXXFLAGS += -mbmi2
 	endif
