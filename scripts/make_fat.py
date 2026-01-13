@@ -57,7 +57,8 @@ class Arch:
 	def make(self, make_threads: int):
 		env = {}
 		env["ARCH"] = self.name
-		env["CXXFLAGS"] = f"-ffat-lto-objects -DStockfish={self.namespace}"
+		mangled = f"_ZN{len(self.namespace)}{self.namespace}4mainEiPPc"
+		env["CXXFLAGS"] = f"-ffat-lto-objects -DStockfish={self.namespace} -DFAT_BINARY -Wl,-e,{mangled}"
 		return run_make(self.build_dir, [f"-j{make_threads}", "fat-object"], additional_env=env)
 
 	def get_merged_object(self):
@@ -67,13 +68,7 @@ class Arch:
 		path = self.get_merged_object()
 		assert os.path.exists(path)
 
-		weaken_symbols = ["gEmbeddedNNUEBigEnd", "gEmbeddedNNUEBigSize", "gEmbeddedNNUESmallEnd", "gEmbeddedNNUESmallSize", "gEmbeddedNNUESmallStart", "gEmbeddedNNUEBigStart"]
-		weaken = []
-		for i in weaken_symbols:
-			weaken.append("--weaken-symbol")
-			weaken.append(i)
-
-		cmd = ["objcopy", "--rename-section", f".init_array=.{self.suffix}_init", "--localize-symbol", "main", "--localize-symbol", ".gnu.lto_main*", *weaken, path]
+		cmd = ["objcopy", "--rename-section", f".init_array=.{self.suffix}_init", path]
 		check_output(cmd, cwd=self.build_dir)
 		
 	name: str
