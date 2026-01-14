@@ -445,6 +445,28 @@ void move_to_front(std::vector<T>& vec, Predicate pred) {
     #define sf_assume(cond)
 #endif
 
+template <typename T, typename Init>
+class LazyStatic {
+public:
+
+	static LazyStatic<T> 
+	T& operator*() {
+		return construct();
+	}
+
+	const T& operator*() const {
+		return construct();
+	}
+private:
+	T& construct() const {
+		std::call_once(flag, [&] () { data = new T; });
+		return *data;
+	}
+
+	mutable std::once_flag flag;
+	mutable T* data;
+};
+
 }  // namespace Stockfish
 
 template<std::size_t N>
