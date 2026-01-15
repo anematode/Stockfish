@@ -57,19 +57,19 @@ struct StatsEntry {
     static_assert(std::is_arithmetic_v<T>, "Not an arithmetic type");
 
    private:
-    std::conditional_t<Atomic, std::atomic<T>, T> entry;
+    T entry;
 
    public:
     void operator=(const T& v) {
         if constexpr (Atomic)
-            entry.store(v, std::memory_order_relaxed);
+            __atomic_store_n(&entry, v, __ATOMIC_RELAXED);
         else
             entry = v;
     }
 
     operator T() const {
         if constexpr (Atomic)
-            return entry.load(std::memory_order_relaxed);
+            return __atomic_load_n(&entry, __ATOMIC_RELAXED);
         else
             return entry;
     }
@@ -78,9 +78,8 @@ struct StatsEntry {
         // Make sure that bonus is in range [-D, D]
         int clampedBonus = std::clamp(bonus, -D, D);
         T   val          = *this;
-        *this            = val + clampedBonus - val * std::abs(clampedBonus) / D;
-
-        assert(std::abs(T(*this)) <= D);
+		*this = val + clampedBonus - val * std::abs(clampedBonus) / D;
+        assert(std::abs(val) <= D);
     }
 };
 
