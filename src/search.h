@@ -294,7 +294,7 @@ class Worker {
     ContinuationHistory             continuationHistory[2][2];
     CorrectionHistory<Continuation> continuationCorrectionHistory;
 
-    TTMoveHistory    ttMoveHistory;
+    TTMoveHistory    ttMoveHistory[COLOR_NB];
     SharedHistories& sharedHistory;
 
    private:
