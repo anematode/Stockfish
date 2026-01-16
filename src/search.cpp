@@ -1160,7 +1160,7 @@ moves_loop:  // When in check, search starts here
             // subtree by returning a softbound.
             else if (value >= beta && !is_decisive(value))
             {
-                ttMoveHistory[us] << std::max(-400 - 100 * depth, -4000);
+                ttMoveHistory[us] << std::max(-600 - 150 * depth, -6000);
                 return value;
             }
 
@@ -1418,7 +1418,7 @@ moves_loop:  // When in check, search starts here
         update_all_stats(pos, ss, *this, bestMove, prevSq, quietsSearched, capturesSearched, depth,
                          ttData.move, moveCount);
         if (!PvNode)
-            ttMoveHistory[us] << (bestMove == ttData.move ? 809 : -865);
+            ttMoveHistory[us] << (bestMove == ttData.move ? 1214 : -1297);
     }
 
     // Bonus for prior quiet countermove that caused the fail low
