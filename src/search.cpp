@@ -592,7 +592,7 @@ void Search::Worker::clear() {
     sharedHistory.pawnHistory.clear_range(-1238, numaThreadIdx, numaTotal);
 
     for (auto& h : ttMoveHistory)
-		h = 0;
+        h = 0;
 
     for (auto& to : continuationCorrectionHistory)
         for (auto& h : to)
