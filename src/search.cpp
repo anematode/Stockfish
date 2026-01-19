@@ -1258,7 +1258,8 @@ moves_loop:  // When in check, search starts here
         // Step 17. Late moves reduction / extension (LMR)
         if (depth >= 2 && moveCount > 1)
         {
-			int k = pos.key() & 1023; 
+			// Using pos.key() means that the same rng will be used for a given pos
+			int k = pos.key() & 1023;
 			if (r >= 0)
 				r = (r + k) >> 10;
 			else
