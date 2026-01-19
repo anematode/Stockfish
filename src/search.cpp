@@ -1230,8 +1230,14 @@ moves_loop:  // When in check, search starts here
         // Step 17. Late moves reduction / extension (LMR)
         if (depth >= 2 && moveCount > 1)
         {
+			r = r * 14 / 16;  // this is really cringe but I'll try something beter later
 			auto random_trunc = [&] (int r) {
-				return r / 1024 + ((nodes.load(std::memory_order_relaxed) % 1024) < (r % 1024));
+				int trunc = r / 1024;
+				int err = r - trunc * 1024;
+				if ((nodes.load(std::memory_order_relaxed) & 1023) < std::abs(err)) {
+					return trunc + (err > 0 ? 1 : -1);
+				}
+				return trunc;
 			};
 
             // In general we want to cap the LMR depth search at newDepth, but when
