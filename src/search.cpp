@@ -52,6 +52,34 @@
 
 namespace Stockfish {
 
+int R1 = 714;
+int R2 = 73;
+int R3 = 30370;
+int R4 = 3372;
+int R5 = 997;
+int R6 = 1119;
+int R7 = 256;
+int R8 = 1024;
+int R9 = 2151;
+int R10 = 850;
+int R11 = 1140;
+int R12 = 3957;
+int R13 = 5654;
+
+TUNE(R1)
+TUNE(R2)
+TUNE(R3)
+TUNE(R4)
+TUNE(R5)
+TUNE(R6)
+TUNE(R7)
+TUNE(R8)
+TUNE(R9)
+TUNE(R10)
+TUNE(R11)
+TUNE(R12)
+TUNE(R13)
+
 namespace TB = Tablebases;
 
 void syzygy_extend_pv(const OptionsMap&            options,
@@ -1192,25 +1220,25 @@ moves_loop:  // When in check, search starts here
             r -= 2719 + PvNode * 983 + (ttData.value > alpha) * 922
                + (ttData.depth >= depth) * (934 + cutNode * 1011);
 
-        r += 714;  // Base reduction offset to compensate for other tweaks
-        r -= moveCount * 73;
-        r -= std::abs(correctionValue) / 30370;
+        r += R1;  // Base reduction offset to compensate for other tweaks
+        r -= moveCount * R2;
+        r -= std::abs(correctionValue) / R3;
 
         // Increase reduction for cut nodes
         if (cutNode)
-            r += 3372 + 997 * !ttData.move;
+            r += R4 + R5 * !ttData.move;
 
         // Increase reduction if ttMove is a capture
         if (ttCapture)
-            r += 1119;
+            r += R6;
 
         // Increase reduction if next ply has a lot of fail high
         if ((ss + 1)->cutoffCnt > 1)
-            r += 256 + 1024 * ((ss + 1)->cutoffCnt > 2) + 1024 * allNode;
+            r += R7 + R8 * ((ss + 1)->cutoffCnt > 2) + R8 * allNode;
 
         // For first picked move (ttMove) reduce reduction
         if (move == ttData.move)
-            r -= 2151;
+            r -= R9;
 
         if (capture)
             ss->statScore = 868 * int(PieceValue[pos.captured_piece()]) / 128
@@ -1221,7 +1249,7 @@ moves_loop:  // When in check, search starts here
                           + (*contHist[1])[movedPiece][move.to_sq()];
 
         // Decrease/increase reduction for moves with a good/bad history
-        r -= ss->statScore * 850 / 8192;
+        r -= ss->statScore * R10 / 8192;
 
         // Scale up reductions for expected ALL nodes
         if (allNode)
@@ -1271,11 +1299,11 @@ moves_loop:  // When in check, search starts here
         {
             // Increase reduction if ttMove is not present
             if (!ttData.move)
-                r += 1140;
+                r += R11;
 
             // Note that if expected reduction is high, we reduce search depth here
             value = -search<NonPV>(pos, ss + 1, -(alpha + 1), -alpha,
-                                   newDepth - (r > 3957) - (r > 5654 && newDepth > 2), !cutNode);
+                                   newDepth - (r > R12) - (r > R13 && newDepth > 2), !cutNode);
         }
 
         // For PV nodes only, do a full PV search on the first move or after a fail high,
