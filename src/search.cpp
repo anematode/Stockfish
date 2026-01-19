@@ -1192,7 +1192,7 @@ moves_loop:  // When in check, search starts here
             r -= 2719 + PvNode * 983 + (ttData.value > alpha) * 922
                + (ttData.depth >= depth) * (934 + cutNode * 1011);
 
-        r += 714;  // Base reduction offset to compensate for other tweaks
+        r += 212;  // Base reduction offset to compensate for other tweaks
         r -= moveCount * 73;
         r -= std::abs(correctionValue) / 30370;
 
@@ -1230,7 +1230,6 @@ moves_loop:  // When in check, search starts here
         // Step 17. Late moves reduction / extension (LMR)
         if (depth >= 2 && moveCount > 1)
         {
-			r = r * 14 / 16;  // this is really cringe but I'll try something beter later
 			auto random_trunc = [&] (int r) {
 				int trunc = r / 1024;
 				int err = r - trunc * 1024;
@@ -1273,6 +1272,7 @@ moves_loop:  // When in check, search starts here
         // Step 18. Full-depth search when LMR is skipped
         else if (!PvNode || moveCount > 1)
         {
+			r += 512;
             // Increase reduction if ttMove is not present
             if (!ttData.move)
                 r += 1140;
