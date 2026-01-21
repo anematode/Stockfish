@@ -910,14 +910,8 @@ void Position::do_move(Move                      m,
     // Accurate e.p. info is needed for correct zobrist key generation and 3-fold checking
     while (checkEP)
     {
-        Square epSquare = to - pawn_push(us);
-
-        auto updateEpSquare = [&] {
-            st->epSquare = epSquare;
-            k ^= Zobrist::enpassant[file_of(epSquare)];
-        };
-
-        Bitboard pawns = attacks_bb<PAWN>(epSquare, us) & pieces(them, PAWN);
+        Square   epSquare = to - pawn_push(us);
+        Bitboard pawns    = attacks_bb<PAWN>(epSquare, us) & pieces(them, PAWN);
 
         // If there are no pawns attacking the ep square, ep is not possible
         if (!pawns)
@@ -932,7 +926,10 @@ void Position::do_move(Move                      m,
         // At this point, if at least one pawn was not a blocker for the enemy king or lies
         // on the same line as the enemy king and en passant square, a legal capture exists.
         if (pawns & (~st->previous->blockersForKing[them] | line_bb(epSquare, ksq)))
-            updateEpSquare();
+        {
+            st->epSquare = epSquare;
+            k ^= Zobrist::enpassant[file_of(epSquare)];
+        }
 
         break;
     }
