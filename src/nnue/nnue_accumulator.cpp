@@ -370,7 +370,23 @@ struct AccumulatorUpdateContext {
             for (IndexType k = 0; k < Tiling::NumRegs; ++k)
                 acc[k] = fromTile[k];
 
-            for (int i = 0; i < removed.ssize(); ++i)
+			int i = 0;
+            for (; i < std::min(added.ssize(), removed.ssize()); ++i)
+            {
+                size_t       indexR  = removed[i];
+                const size_t offsetR = Dimensions * indexR;
+                auto*        columnR = reinterpret_cast<const vec_i8_t*>(&threatWeights[offsetR]);
+                size_t       indexA  = added[i];
+                const size_t offsetA = Dimensions * indexA;
+                auto*        columnA = reinterpret_cast<const vec_i8_t*>(&threatWeights[offsetA]);
+
+                for (IndexType k = 0; k < Tiling::NumRegs; ++k) {
+					__m256i p = _mm256_subs_epi8(columnA[k], columnR[k]);
+                    acc[k] = vec_add_16(acc[k], vec_convert_8_16(p));
+				}
+            }
+
+            for (; i < removed.ssize(); ++i)
             {
                 size_t       index  = removed[i];
                 const size_t offset = Dimensions * index;
@@ -388,7 +404,7 @@ struct AccumulatorUpdateContext {
     #endif
             }
 
-            for (int i = 0; i < added.ssize(); ++i)
+            for (; i < added.ssize(); ++i)
             {
                 size_t       index  = added[i];
                 const size_t offset = Dimensions * index;
