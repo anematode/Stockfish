@@ -910,12 +910,14 @@ void Position::do_move(Move                      m,
     // Accurate e.p. info is needed for correct zobrist key generation and 3-fold checking
     while (checkEP)
     {
+        Square epSquare = to - pawn_push(us);
+
         auto updateEpSquare = [&] {
-            st->epSquare = to - pawn_push(us);
-            k ^= Zobrist::enpassant[file_of(st->epSquare)];
+            st->epSquare = epSquare;
+            k ^= Zobrist::enpassant[file_of(epSquare)];
         };
 
-        Bitboard pawns = attacks_bb<PAWN>(to - pawn_push(us), us) & pieces(them, PAWN);
+        Bitboard pawns = attacks_bb<PAWN>(epSquare, us) & pieces(them, PAWN);
 
         // If there are no pawns attacking the ep square, ep is not possible
         if (!pawns)
@@ -925,35 +927,11 @@ void Position::do_move(Move                      m,
         if (checkers() & ~square_bb(to))
             break;
 
-        if (more_than_one(pawns))
-        {
-            // If there are two pawns potentially being able to capture and at least one
-            // is not pinned, ep is legal as there are no horizontal exposed checks
-            if (!more_than_one(blockers_for_king(them) & pawns))
-            {
-                updateEpSquare();
-                break;
-            }
+        Square ksq = square<KING>(them);
 
-            // If there is no pawn on our king's file, and thus both pawns are pinned
-            // by bishops, ep is not legal as the king square must be in front of the to square.
-            // And because the ep square and the king are not on a common diagonal, either ep capture
-            // would expose the king to a check from one of the bishops
-            if (!(file_bb(square<KING>(them)) & pawns))
-                break;
-
-            // Otherwise remove the pawn on the king file, as an ep capture by it can never be legal and the
-            // check below relies on there only being one pawn
-            pawns &= ~file_bb(square<KING>(them));
-        }
-
-        Square   ksq      = square<KING>(them);
-        Square   capsq    = to;
-        Bitboard occupied = (pieces() ^ lsb(pawns) ^ capsq) | (to - pawn_push(us));
-
-        // If our king is not attacked after making the move, ep is legal.
-        if (!(attacks_bb<ROOK>(ksq, occupied) & pieces(us, QUEEN, ROOK))
-            && !(attacks_bb<BISHOP>(ksq, occupied) & pieces(us, QUEEN, BISHOP)))
+        // At this point, if at least one pawn was not a blocker for the enemy king or lies
+        // on the same line as the enemy king and en passant square, a legal capture exists.
+        if (pawns & (~st->previous->blockersForKing[them] | line_bb(epSquare, ksq)))
             updateEpSquare();
 
         break;
