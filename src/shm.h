@@ -533,9 +533,13 @@ struct SystemWideSharedConstant {
     // Content is addressed by its hash. An additional discriminator can be added to account for differences
     // that are not present in the content, for example NUMA node allocation.
     SystemWideSharedConstant(const T& value, std::size_t discriminator = 0) {
-                std::size_t content_hash = value.get_content_hash();
-                std::size_t executable_hash =
-                    static_cast<std::size_t>(Stockfish::stable_hash_string_view(getExecutablePathHash()));
+		if (IsProfileMake) {
+			backend = SharedMemoryBackendFallback<T>("", value);
+			return;
+		}
+		std::size_t content_hash = value.get_content_hash();
+		std::size_t executable_hash =
+			static_cast<std::size_t>(Stockfish::stable_hash_string_view(getExecutablePathHash()));
 
         std::string shm_name = std::string("Local\\sf_") + std::to_string(content_hash) + "$"
                              + std::to_string(executable_hash) + "$"

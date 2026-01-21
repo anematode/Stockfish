@@ -664,8 +664,6 @@ class SharedMemory: public detail::SharedMemoryBase {
 template<typename T>
 [[nodiscard]] std::optional<SharedMemory<T>> create_shared(const std::string& name,
                                                            const T& initial_value) noexcept {
-	if (IsProfileMake)
-		return std::nullopt;
     SharedMemory<T> shm(name);
     if (shm.open(initial_value))
         return shm;
