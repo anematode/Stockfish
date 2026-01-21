@@ -51,6 +51,8 @@
     #define SF_MAX_SEM_NAME_LEN 255
 #endif
 
+#include "misc.h"
+
 
 namespace Stockfish::shm {
 
@@ -172,7 +174,7 @@ class SharedMemory: public detail::SharedMemoryBase {
     }
 
     static std::string make_sentinel_base(const std::string& name) {
-        uint64_t hash = std::hash<std::string>{}(name);
+        uint64_t hash = stable_hash_string_view(std::string_view(name));
         char     buf[32];
         std::snprintf(buf, sizeof(buf), "sfshm_%016" PRIx64, static_cast<uint64_t>(hash));
         return buf;

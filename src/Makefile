@@ -1117,7 +1117,7 @@ FORCE:
 
 clang-profile-make:
 	$(MAKE) ARCH=$(ARCH) COMP=$(COMP) \
-	EXTRACXXFLAGS='-fprofile-generate ' \
+	EXTRACXXFLAGS='-fprofile-generate -DSF_PROFILE_MAKE' \
 	EXTRALDFLAGS=' -fprofile-generate' \
 	all
 
@@ -1131,7 +1131,7 @@ clang-profile-use:
 gcc-profile-make:
 	@mkdir -p profdir
 	$(MAKE) ARCH=$(ARCH) COMP=$(COMP) \
-	EXTRACXXFLAGS='-fprofile-generate=profdir' \
+	EXTRACXXFLAGS='-fprofile-generate=profdir -DSF_PROFILE_MAKE' \
 	EXTRACXXFLAGS+=$(EXTRAPROFILEFLAGS) \
 	EXTRALDFLAGS='-lgcov' \
 	all
@@ -1145,7 +1145,7 @@ gcc-profile-use:
 
 icx-profile-make:
 	$(MAKE) ARCH=$(ARCH) COMP=$(COMP) \
-	EXTRACXXFLAGS='-fprofile-instr-generate ' \
+	EXTRACXXFLAGS='-fprofile-instr-generate -DSF_PROFILE_MAKE' \
 	EXTRALDFLAGS=' -fprofile-instr-generate' \
 	all
 
