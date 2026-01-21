@@ -314,6 +314,7 @@ inline std::uint64_t stable_hash_bytes(const void* data, std::size_t size) {
     return h;
 }
 
+
 inline std::uint64_t stable_hash_string_view(std::string_view sv) {
     return stable_hash_bytes(sv.data(), sv.size());
 }
@@ -416,15 +417,6 @@ struct CommandLine {
     int    argc;
     char** argv;
 };
-
-// To get deterministic PGO builds, disable certain features when generating
-// the profile.
-inline volatile bool IsProfileMake =
-#ifdef SF_PROFILE_MAKE
-  true;
-#else
-  false;
-#endif
 
 namespace Utility {
 
