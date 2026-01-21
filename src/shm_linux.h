@@ -86,8 +86,8 @@ class SharedMemoryRegistry {
 
     static void unregister_instance(SharedMemoryBase* instance) {
         std::scoped_lock lock(registry_mutex_);
-		active_instances_.erase(
-			std::remove(active_instances_.begin(), active_instances_.end(), instance), active_instances_.end());
+        active_instances_.erase(
+            std::remove(active_instances_.begin(), active_instances_.end(), instance), active_instances_.end());
     }
 
     static void cleanup_all(bool skip_unmap = false) noexcept {
@@ -445,8 +445,8 @@ class SharedMemory: public detail::SharedMemoryBase {
     }
 
     std::string sentinel_full_path(pid_t pid) const {
-		char buf[1024];
-		snprintf(buf, sizeof(buf), "/dev/shm/%s.%ld", sentinel_base_.c_str(), long(pid));
+        char buf[1024];
+        snprintf(buf, sizeof(buf), "/dev/shm/%s.%ld", sentinel_base_.c_str(), long(pid));
         return buf;
     }
 
