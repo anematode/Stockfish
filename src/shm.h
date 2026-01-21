@@ -512,12 +512,11 @@ template<typename T>
 struct SystemWideSharedConstant {
    private:
     static std::string createHashString(const std::string& input) {
+		char buf[1024];
         std::uint64_t hash = Stockfish::stable_hash_string_view(input);
+		std::snprintf(buf, sizeof(buf), "%016" PRIx64, hash);
 
-        std::stringstream ss;
-        ss << std::hex << std::setfill('0') << hash;
-
-        return ss.str();
+        return buf;
     }
 
    public:
