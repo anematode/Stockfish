@@ -837,34 +837,27 @@ void Position::do_move(Move                      m,
         // Check if the en passant square needs to be set. Accurate e.p. info is needed
         // for correct zobrist key generation and 3-fold checking.
         if ((int(to) ^ int(from)) == 16)
-            while (true)
+        {
+            Square   epSquare = to - pawn_push(us);
+            Bitboard pawns    = attacks_bb<PAWN>(epSquare, us) & pieces(them, PAWN);
+
+            // If there are no pawns attacking the ep square, ep is not possible.
+            if (pawns)
             {
-                Square   epSquare = to - pawn_push(us);
-                Bitboard pawns    = attacks_bb<PAWN>(epSquare, us) & pieces(them, PAWN);
+                Square   ksq         = square<KING>(them);
+                Bitboard notBlockers = ~st->previous->blockersForKing[them];
+                bool     noDiscovery = (from & notBlockers) || ((int(from) ^ int(ksq)) & 7) == 0;
 
-                // If there are no pawns attacking the ep square, ep is not possible.
-                if (!pawns)
-                    break;
-
-                Square ksq = square<KING>(them);
-                bool   isDiscovery =
-                  from & st->previous->blockersForKing[them] && (int(from) ^ int(ksq)) & 7;
-
-                // If the pawn gives discovered check, ep is never legal.
-                if (isDiscovery)
-                    break;
-
-                // At this point, if at least one pawn was not a blocker for the enemy king or lies
-                // on the same line as the enemy king and en passant square, a legal capture exists.
-                if (pawns & (~st->previous->blockersForKing[them] | line_bb(epSquare, ksq)))
+                // If the pawn gives discovered check, ep is never legal. Else, if at least one
+                // pawn was not a blocker for the enemy king or lies on the same line as the
+                // enemy king and en passant square, a legal capture exists.
+                if (noDiscovery && pawns & (notBlockers | line_bb(epSquare, ksq)))
                 {
                     st->epSquare = epSquare;
                     k ^= Zobrist::enpassant[file_of(epSquare)];
                 }
-
-                break;
             }
-
+        }
         else if (m.type_of() == PROMOTION)
         {
             Piece     promotion     = make_piece(us, m.promotion_type());
