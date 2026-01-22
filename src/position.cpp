@@ -834,7 +834,7 @@ void Position::do_move(Move                      m,
     // If the moving piece is a pawn do some special extra work
     if (type_of(pc) == PAWN)
     {
-        // Check later if the en passant square needs to be set. Accurate e.p. info is needed
+        // Check if the en passant square needs to be set. Accurate e.p. info is needed
         // for correct zobrist key generation and 3-fold checking.
         if ((int(to) ^ int(from)) == 16)
             while (true)
