@@ -32,15 +32,6 @@
 
 namespace Stockfish {
 
-static int unpack_complexity(int v) {
-    assert(0 <= v && v < 32);
-    return v * 128;
-}
-
-static int pack_complexity(int c) {
-    return std::min((c + 63) / 128, 31);
-}
-
 // TTEntry struct is the 10 bytes transposition table entry, defined as below:
 //
 // key        16 bit
@@ -59,8 +50,7 @@ struct TTEntry {
 
     // Convert internal bitfields to external types
     TTData read() const {
-        auto [ ptr, offset ] = extra_bits();
-        Eval::RawEvaluation eval { eval16, unpack_complexity(*ptr >> offset & 0x1f) };
+        Eval::RawEvaluation eval { eval16, complexity16 };
         return TTData{Move(move16),           Value(value16),
                       eval,          Depth(depth8 + DEPTH_ENTRY_OFFSET),
                       Bound(genBound8 & 0x3), bool(genBound8 & 0x4)};
@@ -74,14 +64,13 @@ struct TTEntry {
    private:
     friend class TranspositionTable;
 
-    std::pair<uint16_t*, int> extra_bits() const;
-
     uint16_t key16;
     uint8_t  depth8;
     uint8_t  genBound8;
     Move     move16;
     int16_t  value16;
     int16_t  eval16;
+    int16_t  complexity16;
 };
 
 // `genBound8` is where most of the details are. We use the following constants to manipulate 5 leading generation bits
@@ -122,9 +111,7 @@ void TTEntry::save(
         genBound8 = uint8_t(generation8 | uint8_t(pv) << 2 | b);
         value16   = int16_t(v);
         eval16    = int16_t(ev.nnue);
-        auto [ ptr, bitOffset ] = extra_bits();
-        int mask = 0x1f << bitOffset;
-        *ptr = (~mask & *ptr) | (pack_complexity(ev.nnueComplexity) << bitOffset);
+	complexity16 = int16_t(ev.nnueComplexity);
     }
 }
 
@@ -157,10 +144,9 @@ static constexpr int ClusterSize = 3;
 
 struct Cluster {
     TTEntry entry[ClusterSize];
-    char    padding[2];  // Pad to 32 bytes
 };
 
-static_assert(sizeof(Cluster) == 32, "Suboptimal Cluster size");
+static_assert(sizeof(Cluster) == 36, "Suboptimal Cluster size");
 
 
 // Sets the size of the transposition table,
@@ -263,15 +249,5 @@ std::tuple<bool, TTData, TTWriter> TranspositionTable::probe(const Key key) cons
 TTEntry* TranspositionTable::first_entry(const Key key) const {
     return &table[mul_hi64(key, clusterCount)].entry[0];
 }
-
-
-std::pair<uint16_t *, int> TTEntry::extra_bits() const {
-    uintptr_t ptr = reinterpret_cast<uintptr_t>(this);
-    uint16_t* data = reinterpret_cast<uint16_t*>(
-        (ptr & ~(sizeof(Cluster) - 1)) + offsetof(Cluster, padding)
-    );
-    return { data, int((ptr % 32) / 2) };
-}
-
 
 }  // namespace Stockfish

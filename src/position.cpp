@@ -884,8 +884,11 @@ void Position::do_move(Move                      m,
     }
 
     // If en passant is impossible, then k will not change and we can prefetch earlier
-    if (tt && !checkEP)
-        prefetch(tt->first_entry(adjust_key50(k)));
+    if (tt && !checkEP) {
+	auto* ent = (const char*) tt->first_entry(adjust_key50(k));
+        prefetch(ent);
+        prefetch(ent + 35);
+    }
 
     if (history)
     {
@@ -961,8 +964,11 @@ void Position::do_move(Move                      m,
 
     // Update the key with the final value
     st->key = k;
-    if (tt)
-        prefetch(tt->first_entry(key()));
+    if (tt) {
+	auto* ent = (const char*) tt->first_entry(key());
+        prefetch(ent);
+        prefetch(ent + 35);
+    }
 
     // Calculate the repetition info. It is the ply distance from the previous
     // occurrence of the same position, negative in the 3-fold case, or zero
