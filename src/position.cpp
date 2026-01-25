@@ -904,8 +904,11 @@ void Position::do_move(Move                      m,
 
     // Update the key with the final value
     st->key = k;
-    if (tt)
-        prefetch(tt->first_entry(key()));
+    if (tt) {
+	auto addr = (const char*)tt->first_entry(key());
+        prefetch(addr);
+        prefetch(addr + 39);
+    }
 
     if (history)
     {
