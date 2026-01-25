@@ -846,12 +846,12 @@ void Position::do_move(Move                      m,
             {
                 Square   ksq         = square<KING>(them);
                 Bitboard notBlockers = ~st->previous->blockersForKing[them];
-                bool     noDiscovery = (from & notBlockers) || ((int(from) ^ int(ksq)) & 7) == 0;
+                bool     noDiscovery = (from & notBlockers) || file_of(from) == file_of(ksq);
 
                 // If the pawn gives discovered check, ep is never legal. Else, if at least one
                 // pawn was not a blocker for the enemy king or lies on the same line as the
                 // enemy king and en passant square, a legal capture exists.
-                if (noDiscovery && pawns & (notBlockers | line_bb(epSquare, ksq)))
+                if (noDiscovery && (pawns & (notBlockers | line_bb(epSquare, ksq))))
                 {
                     st->epSquare = epSquare;
                     k ^= Zobrist::enpassant[file_of(epSquare)];
