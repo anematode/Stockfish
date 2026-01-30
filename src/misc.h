@@ -37,6 +37,10 @@
 #include <type_traits>
 #include <vector>
 
+#ifdef USE_AVX2
+#include <immintrin.h>
+#endif
+
 #define stringify2(x) #x
 #define stringify(x) stringify2(x)
 
@@ -307,6 +311,21 @@ inline uint64_t mul_hi64(uint64_t a, uint64_t b) {
 }
 
 inline std::uint64_t hash_bytes(const char* data, std::size_t size) {
+#ifdef USE_AVX2
+    // CRC32 checksum for hash
+    std::uint32_t checksum = 0;
+    const char*   p        = data;
+    std::size_t   i        = 0;
+    for (; i + 7 < size; i += 8)
+    {
+        std::uint64_t bytes;
+        memcpy(&bytes, &p[i], 8);
+        checksum = _mm_crc32_u64(checksum, bytes);
+    }
+    for (; i < size; ++i)
+        checksum = _mm_crc32_u8(checksum, p[i]);
+    return checksum;
+#else
     // FNV-1a 64-bit
     const char*   p = data;
     std::uint64_t h = 14695981039346656037ull;
@@ -320,6 +339,7 @@ inline std::uint64_t hash_bytes(const char* data, std::size_t size) {
     for (; i < size; ++i)
         h = (h ^ p[i]) * 1099511628211ull;
     return h;
+#endif
 }
 
 template<typename T>
