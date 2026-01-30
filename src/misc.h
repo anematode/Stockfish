@@ -38,7 +38,7 @@
 #include <vector>
 
 #ifdef USE_AVX2
-#include <immintrin.h>
+    #include <immintrin.h>
 #endif
 
 #define stringify2(x) #x
@@ -329,14 +329,7 @@ inline std::uint64_t hash_bytes(const char* data, std::size_t size) {
     // FNV-1a 64-bit
     const char*   p = data;
     std::uint64_t h = 14695981039346656037ull;
-    std::size_t   i = 0;
-    for (; i + 7 < size; i += 8)
-    {
-        std::uint64_t bytes;
-        memcpy(&bytes, &p[i], 8);
-        h = (h ^ bytes) * 1099511628211ull;
-    }
-    for (; i < size; ++i)
+    for (std::size_t i = 0; i < size; ++i)
         h = (h ^ p[i]) * 1099511628211ull;
     return h;
 #endif
