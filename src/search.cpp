@@ -853,6 +853,12 @@ Value Search::Worker::search(
         }
     }
 
+    if (!ttCapture) {
+        // Prefetch the TT move if the key is easy to calculate
+        auto key = pos.non_capture_key(ttData.move);
+        prefetch(tt.first_entry(key));
+    }
+
     if (ss->inCheck)
         goto moves_loop;
 

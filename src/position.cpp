@@ -299,6 +299,12 @@ Position& Position::set(const string& fenStr, bool isChess960, StateInfo* si) {
 }
 
 
+Key Position::non_capture_key(Move move) const {
+    auto pc = piece_on(move.from_sq());
+    Key k = st->key ^ Zobrist::psq[pc][move.from_sq()] ^ Zobrist::psq[pc][move.to_sq()] ^ Zobrist::side;
+    return adjust_key50(k);
+}
+
 // Helper function used to set castling
 // rights given the corresponding color and the rook starting square.
 void Position::set_castling_right(Color c, Square rfrom) {
