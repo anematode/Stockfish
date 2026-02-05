@@ -734,6 +734,7 @@ Value Search::Worker::search(
     }
     else
     {
+        ttWriter.prefetchWrite();
         unadjustedStaticEval = evaluate(pos);
         ss->staticEval = eval = to_corrected_static_eval(unadjustedStaticEval, correctionValue);
 
@@ -966,6 +967,9 @@ Value Search::Worker::search(
             if (value >= probCutBeta && probCutDepth > 0)
                 value = -search<NonPV>(pos, ss + 1, -probCutBeta, -probCutBeta + 1, probCutDepth,
                                        !cutNode);
+
+            if (value >= probCutBeta)
+                ttWriter.prefetchWrite();
 
             undo_move(pos, move);
 
