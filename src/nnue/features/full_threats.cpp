@@ -271,6 +271,14 @@ void FullThreats::append_active_indices(Color perspective, const Position& pos, 
     }
 }
 
+static void prefetch4(const void* p) {
+    const char* q = (const char*)p;
+    prefetch(q);
+    prefetch(q + 64);
+    prefetch(q + 128);
+    prefetch(q + 192);
+}
+
 // Get a list of indices for recently changed features
 
 void FullThreats::append_changed_indices(Color            perspective,
@@ -328,8 +336,7 @@ void FullThreats::append_changed_indices(Color            perspective,
         if (index < Dimensions)
         {
             if (prefetchBase)
-                __builtin_prefetch(
-                  prefetchBase + static_cast<std::ptrdiff_t>(index) * prefetchStride, 0, 3);
+                prefetch4(prefetchBase + static_cast<std::ptrdiff_t>(index) * prefetchStride);
             insert.push_back(index);
         }
     }
