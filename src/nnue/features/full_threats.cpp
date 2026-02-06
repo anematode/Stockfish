@@ -33,6 +33,13 @@
 
 namespace Stockfish::Eval::NNUE::Features {
 
+static void prefetch256(const char* addr) {
+    __builtin_prefetch(addr, 0, 1);
+    __builtin_prefetch(addr + 64, 0, 1);
+    __builtin_prefetch(addr + 128, 0, 1);
+    __builtin_prefetch(addr + 192, 0, 1);
+}
+
 struct HelperOffsets {
     int cumulativePieceOffset, cumulativeOffset;
 };
@@ -327,9 +334,9 @@ void FullThreats::append_changed_indices(Color            perspective,
 
         if (index < Dimensions)
         {
-            if (prefetchBase)
-                __builtin_prefetch(
-                  prefetchBase + static_cast<std::ptrdiff_t>(index) * prefetchStride, 0, 1);
+            if (prefetchBase) {
+                prefetch256((const char*)(prefetchBase + static_cast<std::ptrdiff_t>(index) * prefetchStride));
+            }
             insert.push_back(index);
         }
     }
