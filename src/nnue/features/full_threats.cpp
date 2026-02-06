@@ -329,7 +329,7 @@ void FullThreats::append_changed_indices(Color            perspective,
         {
             if (prefetchBase)
                 __builtin_prefetch(
-                  prefetchBase + static_cast<std::ptrdiff_t>(index) * prefetchStride, 0, 3);
+                  prefetchBase + static_cast<std::ptrdiff_t>(index) * prefetchStride, 0, 1);
             insert.push_back(index);
         }
     }
