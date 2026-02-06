@@ -279,6 +279,26 @@ class AffineTransformSparseInput {
         #define vec_set_32(a) vreinterpretq_s8_u32(vdupq_n_u32(a))
         #define vec_add_dpbusd_32 SIMD::neon_m128_add_dpbusd_epi32
     #endif
+
+#if defined(USE_AVX512) && defined(USE_VNNI)
+        if constexpr (InputDimensions == 128) {
+            const auto input32 = reinterpret_cast<const std::int32_t*>(input);
+            const std::int8_t* weights_cp = weights;
+
+            constexpr IndexType SplitBy = 4;
+            __m512i regs[SplitBy] = { _mm512_loadu_si512(biases), _mm512_setzero_si512(), _mm512_setzero_si512(), _mm512_setzero_si512() };
+            for (IndexType j = 0; j < InputDimensions / ChunkSize; ++j) {
+                vec_add_dpbusd_32(regs[j % SplitBy], vec_set_32(input32[j]), 
+                  *reinterpret_cast<const invec_t*>(&weights_cp[j * OutputDimensions * ChunkSize]));
+            }
+            for (IndexType k = 1; k < SplitBy; ++k) {
+                regs[0] = vec_add_32(regs[0], regs[k]);
+            }
+            _mm512_storeu_si512(output, regs[0]);
+            return;
+        }
+#endif
+
         constexpr IndexType OutputSimdWidth = sizeof(outvec_t) / sizeof(OutputType);
         constexpr IndexType NumChunks = ceil_to_multiple<IndexType>(InputDimensions, 8) / ChunkSize;
         constexpr IndexType NumAccums = OutputDimensions / OutputSimdWidth;
