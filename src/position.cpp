@@ -909,8 +909,9 @@ void Position::do_move(Move                      m,
 
     // Update the key with the final value
     st->key = k;
-    if (tt)
-        prefetch(tt->first_entry(key()));
+    if (tt) {
+        __builtin_prefetch(tt->first_entry(key()), 1, 3);
+    }
 
     if (history)
     {
