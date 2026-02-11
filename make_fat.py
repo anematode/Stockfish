@@ -164,13 +164,13 @@ def build_arch(src_dir, build_dir, arch_name, make_arch, jobs, comp):
     # Re-create stub since clean removed .o files
     create_nnue_stub(arch_build_dir, comp)
 
-    # The key flags for fat binary build:
-    # - NNUE_EMBEDDING_EXTERN: use extern declarations for NNUE data (shared)
-    # - -save-temps: preserve LTO-resolved .ltrans.o files (only needed for final)
-    # - -no-pie: needed for -save-temps partial link extraction
-    extra_cxx = "-DNNUE_EMBEDDING_EXTERN -no-pie"
-    extra_ld_pgo = f"-no-pie {stub_basename}"
-    extra_ld_final = f"-save-temps -no-pie {stub_basename}"
+    # Pass our flags via environment variables so they persist through
+    # the PGO make targets (which override EXTRACXXFLAGS/EXTRALDFLAGS).
+    # ENV_CXXFLAGS and ENV_LDFLAGS are captured at MAKELEVEL=0 and
+    # prepended to all subsequent compile/link commands.
+    env = os.environ.copy()
+    env["CXXFLAGS"] = "-DNNUE_EMBEDDING_EXTERN -no-pie"
+    env["LDFLAGS"] = f"-no-pie {os.path.join(arch_build_dir, stub_basename)}"
 
     # Build with PGO + LTO
     print(f"\n{'='*60}")
@@ -180,10 +180,8 @@ def build_arch(src_dir, build_dir, arch_name, make_arch, jobs, comp):
     # Step 1: Build instrumented executable
     print(f"\n  Step 1/4: Building instrumented executable for {arch_name}...")
     run(["make", f"-j{jobs}", f"ARCH={make_arch}", f"COMP={comp}",
-         f"EXTRACXXFLAGS={extra_cxx}",
-         f"EXTRALDFLAGS={extra_ld_pgo}",
          "net", "config-sanity", "objclean", "profileclean"],
-        cwd=arch_build_dir)
+        cwd=arch_build_dir, env=env)
     # Re-create stub after profileclean
     create_nnue_stub(arch_build_dir, comp)
 
@@ -205,10 +203,8 @@ def build_arch(src_dir, build_dir, arch_name, make_arch, jobs, comp):
         profile_use = "gcc-profile-use"
 
     run(["make", f"-j{jobs}", f"ARCH={make_arch}", f"COMP={comp}",
-         f"EXTRACXXFLAGS={extra_cxx}",
-         f"EXTRALDFLAGS={extra_ld_pgo}",
          profile_make],
-        cwd=arch_build_dir)
+        cwd=arch_build_dir, env=env)
 
     # Step 2: Run benchmark for PGO
     print(f"\n  Step 2/4: Running benchmark for {arch_name}...")
@@ -221,31 +217,42 @@ def build_arch(src_dir, build_dir, arch_name, make_arch, jobs, comp):
     # Step 3: Build optimized executable with profile data
     print(f"\n  Step 3/4: Building optimized executable for {arch_name}...")
     run(["make", f"-j{jobs}", f"ARCH={make_arch}", f"COMP={comp}", "objclean"],
-        cwd=arch_build_dir)
+        cwd=arch_build_dir, env=env)
     # Re-create stub since objclean may have removed it
     create_nnue_stub(arch_build_dir, comp)
 
-    extra_cxx_final = "-DNNUE_EMBEDDING_EXTERN -save-temps -no-pie"
+    # For the final build, also add -save-temps to get ltrans files
+    env_final = env.copy()
+    env_final["CXXFLAGS"] = "-DNNUE_EMBEDDING_EXTERN -save-temps -no-pie"
+    env_final["LDFLAGS"] = f"-save-temps -no-pie {os.path.join(arch_build_dir, stub_basename)}"
+
     run(["make", f"-j{jobs}", f"ARCH={make_arch}", f"COMP={comp}",
-         f"EXTRACXXFLAGS={extra_cxx_final}",
-         f"EXTRALDFLAGS={extra_ld_final}",
          profile_use],
-        cwd=arch_build_dir)
+        cwd=arch_build_dir, env=env_final)
+
+    # Find and preserve the LTO-resolved .ltrans.o files BEFORE cleaning.
+    # profileclean deletes stockfish.*lt* which matches our ltrans files.
+    ltrans_files_raw = sorted(glob.glob(os.path.join(arch_build_dir, "*.ltrans*.ltrans.o")))
+    if not ltrans_files_raw:
+        raise RuntimeError(
+            f"No .ltrans.o files found for {arch_name}. "
+            f"LTO may not have been applied. Check build output."
+        )
+
+    # Copy ltrans files to safe location
+    ltrans_files = []
+    for i, f in enumerate(ltrans_files_raw):
+        safe_path = os.path.join(arch_build_dir, f"ltrans_saved_{i}.o")
+        shutil.copy2(f, safe_path)
+        ltrans_files.append(safe_path)
+
+    print(f"  Found {len(ltrans_files)} LTO-resolved object file(s) for {arch_name}")
 
     # Step 4: Clean profile data
     print(f"\n  Step 4/4: Cleaning profile data for {arch_name}...")
     run(["make", f"ARCH={make_arch}", f"COMP={comp}", "profileclean"],
         cwd=arch_build_dir)
 
-    # Find the LTO-resolved .ltrans.o files
-    ltrans_files = sorted(glob.glob(os.path.join(arch_build_dir, "*.ltrans*.ltrans.o")))
-    if not ltrans_files:
-        raise RuntimeError(
-            f"No .ltrans.o files found for {arch_name}. "
-            f"LTO may not have been applied. Check build output."
-        )
-
-    print(f"  Found {len(ltrans_files)} LTO-resolved object file(s) for {arch_name}")
     return arch_build_dir, ltrans_files
 
 
