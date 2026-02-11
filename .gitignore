@@ -14,4 +14,4 @@ src/-lstdc++.res
 tsan.supp
 __pycache__/
 tests/syzygy
-tests/bench_tmp.epd
+tests/bench_tmp.epd_codeql_detected_source_root
