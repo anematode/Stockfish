@@ -36,16 +36,16 @@
 
 // FAT_ENTRY_DECLARATIONS_BEGIN
 // (make_fat.py will verify these match the linked architectures)
-extern "C" int sf_main_x86_64(int argc, char* argv[]);
-extern "C" int sf_main_x86_64_sse3_popcnt(int argc, char* argv[]);
-extern "C" int sf_main_x86_64_ssse3(int argc, char* argv[]);
-extern "C" int sf_main_x86_64_sse41_popcnt(int argc, char* argv[]);
-extern "C" int sf_main_x86_64_avx2(int argc, char* argv[]);
-extern "C" int sf_main_x86_64_bmi2(int argc, char* argv[]);
-extern "C" int sf_main_x86_64_avxvnni(int argc, char* argv[]);
-extern "C" int sf_main_x86_64_avx512(int argc, char* argv[]);
-extern "C" int sf_main_x86_64_vnni512(int argc, char* argv[]);
 extern "C" int sf_main_x86_64_avx512icl(int argc, char* argv[]);
+extern "C" int sf_main_x86_64_vnni512(int argc, char* argv[]);
+extern "C" int sf_main_x86_64_avx512(int argc, char* argv[]);
+extern "C" int sf_main_x86_64_avxvnni(int argc, char* argv[]);
+extern "C" int sf_main_x86_64_bmi2(int argc, char* argv[]);
+extern "C" int sf_main_x86_64_avx2(int argc, char* argv[]);
+extern "C" int sf_main_x86_64_sse41_popcnt(int argc, char* argv[]);
+extern "C" int sf_main_x86_64_ssse3(int argc, char* argv[]);
+extern "C" int sf_main_x86_64_sse3_popcnt(int argc, char* argv[]);
+extern "C" int sf_main_x86_64(int argc, char* argv[]);
 // FAT_ENTRY_DECLARATIONS_END
 
 struct CpuFeatures {
@@ -146,8 +146,7 @@ static CpuFeatures detect_cpu() {
         f.avx512bitalg   = (ecx >> 12) & 1;
         f.avx512vpopcntdq = (ecx >> 14) & 1;
 
-        f.avxvnni  = (eax >> 4) & 1;  // AVX-VNNI is in leaf 7, sub-leaf 1
-        // Actually AVX-VNNI is in sub-leaf 1
+        // AVX-VNNI is in leaf 7, sub-leaf 1
         __cpuid_count(7, 1, eax, ebx, ecx, edx);
         f.avxvnni = (eax >> 4) & 1;
     }
@@ -185,17 +184,15 @@ static CpuFeatures detect_cpu() {
 
     // Detect AMD Zen 1/2 (slow pdep/pext)
     if (f.is_amd && f.bmi2) {
-        uint32_t family = ((eax >> 8) & 0xf);
-        uint32_t ext_family = ((eax >> 20) & 0xff);
-
-        // Re-read leaf 1 for family info
-        __cpuid(1, eax, ebx, ecx, edx);
-        family = ((eax >> 8) & 0xf);
-        ext_family = ((eax >> 20) & 0xff);
+        // Read family info from leaf 1
+        uint32_t eax1, ebx1, ecx1, edx1;
+        __cpuid(1, eax1, ebx1, ecx1, edx1);
+        uint32_t family     = (eax1 >> 8) & 0xf;
+        uint32_t ext_family = (eax1 >> 20) & 0xff;
         uint32_t full_family = family + ext_family;
 
-        // Zen 1/Zen+ is family 0x17 (23), Zen 2 is also family 0x17
-        // Zen 3 is family 0x19 (25)
+        // Zen 1/Zen+ and Zen 2 are family 0x17 (23)
+        // Zen 3 is family 0x19 (25) -- fast pdep/pext
         if (full_family == 0x17) {
             f.is_zen1_2 = true;
         }

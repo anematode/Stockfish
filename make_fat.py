@@ -489,6 +489,10 @@ def build_arch_no_pgo(src_dir, build_dir, arch_name, make_arch, jobs, comp):
     """
     Build one architecture WITHOUT PGO (but still with LTO).
     Used for faster testing.
+
+    Note: LTO is enabled by default in the Makefile when optimize=yes
+    and debug=no (the defaults). The -save-temps flag captures the
+    LTO-resolved native code in .ltrans.o files.
     """
     arch_build_dir = setup_arch_build_dir(src_dir, build_dir, arch_name)
 
