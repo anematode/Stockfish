@@ -43,7 +43,14 @@
 //     const unsigned char *const gEmbeddedNNUEEnd;     // a marker to the end
 //     const unsigned int         gEmbeddedNNUESize;    // the size of the embedded file
 // Note that this does not work in Microsoft Visual Studio.
-#if !defined(_MSC_VER) && !defined(NNUE_EMBEDDING_OFF)
+#if defined(NNUE_EMBEDDING_EXTERN)
+extern const unsigned char        gEmbeddedNNUEBigData[];
+extern const unsigned char* const gEmbeddedNNUEBigEnd;
+extern const unsigned int         gEmbeddedNNUEBigSize;
+extern const unsigned char        gEmbeddedNNUESmallData[];
+extern const unsigned char* const gEmbeddedNNUESmallEnd;
+extern const unsigned int         gEmbeddedNNUESmallSize;
+#elif !defined(_MSC_VER) && !defined(NNUE_EMBEDDING_OFF)
 INCBIN(EmbeddedNNUEBig, EvalFileDefaultNameBig);
 INCBIN(EmbeddedNNUESmall, EvalFileDefaultNameSmall);
 #else
