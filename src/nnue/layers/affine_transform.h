@@ -28,6 +28,14 @@
 #include "../nnue_common.h"
 #include "../simd.h"
 
+#if defined(__GNUC__) || defined(__clang__)
+    #define AFFINE_RESTRICT __restrict__
+#elif defined(_MSC_VER)
+    #define AFFINE_RESTRICT __restrict
+#else
+    #define AFFINE_RESTRICT
+#endif
+
 /*
   This file contains the definition for a fully connected layer (aka affine transform).
 
@@ -49,10 +57,10 @@ namespace Stockfish::Eval::NNUE::Layers {
 #ifndef ENABLE_SEQ_OPT
 
 template<IndexType InputDimensions, IndexType PaddedInputDimensions, IndexType OutputDimensions>
-static void affine_transform_non_ssse3(std::int32_t*       output,
-                                       const std::int8_t*  weights,
-                                       const std::int32_t* biases,
-                                       const std::uint8_t* input) {
+static void affine_transform_non_ssse3(std::int32_t* AFFINE_RESTRICT       output,
+                                       const std::int8_t*                   weights,
+                                       const std::int32_t*                  biases,
+                                       const std::uint8_t* AFFINE_RESTRICT  input) {
     #if defined(USE_SSE2) || defined(USE_NEON)
         #if defined(USE_SSE2)
     // At least a multiple of 16, with SSE2.
@@ -192,7 +200,8 @@ class AffineTransform {
     }
 
     // Forward propagation
-    void propagate(const InputType* input, OutputType* output) const {
+    void propagate(const InputType* AFFINE_RESTRICT input,
+                   OutputType* AFFINE_RESTRICT      output) const {
 
 #ifdef ENABLE_SEQ_OPT
 
