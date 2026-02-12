@@ -129,7 +129,7 @@ ExtMove* MovePicker::score(MoveList<Type>& ml) {
     Color us = pos.side_to_move();
 
     [[maybe_unused]] Bitboard threatByLesser[KING + 1];
-    [[maybe_unused]] const auto* pawnHist = &sharedHistory->pawn_entry(pos);
+    [[maybe_unused]] const auto& pawnEntry = sharedHistory->pawn_entry(pos);
     if constexpr (Type == QUIETS)
     {
         threatByLesser[PAWN]   = 0;
@@ -160,7 +160,7 @@ ExtMove* MovePicker::score(MoveList<Type>& ml) {
         {
             // histories
             m.value = 2 * (*mainHistory)[us][m.raw()];
-            m.value += 2 * (*pawnHist)[pc][to];
+            m.value += 2 * pawnEntry[pc][to];
             m.value += (*continuationHistory[0])[pc][to];
             m.value += (*continuationHistory[1])[pc][to];
             m.value += (*continuationHistory[2])[pc][to];
