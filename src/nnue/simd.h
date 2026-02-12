@@ -275,17 +275,13 @@ template<typename VecWrapper,
          std::enable_if_t<sizeof...(ops) == sizeof...(Ts), bool>                    = true>
 typename VecWrapper::type
 fused(const typename VecWrapper::type& in, const T& operand, const Ts&... operands) {
-    switch (update_op)
-    {
-    case Add :
+    if constexpr (update_op == Add)
         return fused<VecWrapper, ops...>(VecWrapper::add(in, operand), operands...);
-    case Sub :
+    else if constexpr (update_op == Sub)
         return fused<VecWrapper, ops...>(VecWrapper::sub(in, operand), operands...);
-    default :
+    else
         static_assert(update_op == Add || update_op == Sub,
                       "Only Add and Sub are currently supported.");
-        return typename VecWrapper::type();
-    }
 }
 
 #if defined(USE_AVX512)
