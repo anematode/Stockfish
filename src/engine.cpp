@@ -167,6 +167,7 @@ Engine::Engine(std::optional<std::string>                                 path,
     pos.set(StartFEN, false, &states->back());
 
     // Minimal options needed for search — small TT, 1 thread, no syzygy.
+    options.add("NumaPolicy", Option("none"));
     options.add("Threads", Option(1, 1, 1));
     options.add("Hash", Option(1, 1, 1));
     options.add("MultiPV", Option(1, 1, MAX_MOVES));
