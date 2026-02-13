@@ -178,6 +178,7 @@ struct InfoFull: InfoShort {
     size_t           tbHits;
     std::string_view pv;
     int              hashfull;
+    Value            rawScore;  // raw internal Value (side-to-move perspective)
 };
 
 struct InfoIteration {
