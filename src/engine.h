@@ -115,12 +115,10 @@ class Engine {
     std::string                            thread_binding_information_as_string() const;
 
     // Public accessor for SPSA perturbation.
-    // Returns the external (shared) networks if present, otherwise the internal ones.
-    LazyNumaReplicatedSystemWide<Eval::NNUE::Networks>& get_networks() {
-        return externalNetworks ? const_cast<LazyNumaReplicatedSystemWide<Eval::NNUE::Networks>&>(
-                                   *externalNetworks)
-                               : networks;
-    }
+    // The non-const overload always returns this engine's own networks member
+    // (use the owning engine to mutate shared networks).
+    // The const overload returns external networks if present.
+    LazyNumaReplicatedSystemWide<Eval::NNUE::Networks>& get_networks() { return networks; }
     const LazyNumaReplicatedSystemWide<Eval::NNUE::Networks>& get_networks() const {
         return externalNetworks ? *externalNetworks : networks;
     }
