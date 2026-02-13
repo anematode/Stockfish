@@ -19,10 +19,10 @@
 // SPSA perturbation of NNUE fc_2 weights to minimize |rawEval - depth5Search|.
 // Replaces the normal UCI main loop.
 //
-// A single Engine instance owns the one network copy.  Raw NN evals are
-// parallelised across std::threads that share the engine's network via const
-// reference.  Depth-5 searches go through the Engine serially (each search
-// already uses the full thread-pool internally).
+// One primary Engine owns the single network copy.  N worker Engines share
+// that network via the shared-network constructor, so depth-5 searches run
+// in parallel across positions without duplicating the ~100MB network.
+// Each worker Engine uses 1 search thread internally.
 //
 // Both rawEval (from Eval::evaluate) and depth5Search (from InfoFull.rawScore)
 // are in SF internal Value units, from the side-to-move perspective.  No
@@ -100,28 +100,28 @@ static void scatter_params(NetworkBig& net, const std::vector<double>& theta) {
 // positions.  Both values are in SF internal Value units (side-to-move
 // perspective).
 //
-// A single Engine is used.  Raw NN evals are parallelised across worker
-// threads that share the engine's network (read-only).  Depth-5 searches are
-// serial through the Engine (which itself uses its internal thread-pool).
+// Raw NN evals are parallelised across std::threads sharing the primary
+// engine's network (read-only).  Depth-5 searches are parallelised across
+// the worker engine pool, each running a single-threaded search.
 // ---------------------------------------------------------------------------
-static double evaluate_objective(Engine&                           engine,
-                                 const std::vector<std::string>&   fens) {
+static double evaluate_objective(Engine&                                engine,
+                                 std::vector<std::unique_ptr<Engine>>&  workers,
+                                 const std::vector<std::string>&        fens) {
     const int numPositions = static_cast<int>(fens.size());
     if (numPositions == 0)
         return 0.0;
 
-    // --- Phase 1: parallel raw NN evals ---
-    const int numThreads =
-      std::max(1, static_cast<int>(std::thread::hardware_concurrency()));
+    const int numWorkers = static_cast<int>(workers.size());
 
+    // --- Phase 1: parallel raw NN evals ---
     std::vector<Value> rawEvals(numPositions, VALUE_ZERO);
     std::vector<bool>  valid(numPositions, false);
 
     {
-        std::vector<std::thread> workers;
-        for (int t = 0; t < numThreads; ++t) {
-            workers.emplace_back([&, t]() {
-                for (int i = t; i < numPositions; i += numThreads) {
+        std::vector<std::thread> evalThreads;
+        for (int t = 0; t < numWorkers; ++t) {
+            evalThreads.emplace_back([&, t]() {
+                for (int i = t; i < numPositions; i += numWorkers) {
                     Position     pos;
                     StateListPtr states(new std::deque<StateInfo>(1));
                     pos.set(fens[i], false, &states->back());
@@ -138,32 +138,43 @@ static double evaluate_objective(Engine&                           engine,
                 }
             });
         }
-        for (auto& w : workers)
+        for (auto& w : evalThreads)
             w.join();
     }
 
-    // --- Phase 2: serial depth-5 searches through the single engine ---
+    // --- Phase 2: parallel depth-5 searches across worker engines ---
     std::vector<Value> searchEvals(numPositions, VALUE_ZERO);
-    for (int i = 0; i < numPositions; ++i) {
-        if (!valid[i])
-            continue;
 
-        engine.set_position(fens[i], {});
+    {
+        std::vector<std::thread> searchThreads;
+        for (int t = 0; t < numWorkers; ++t) {
+            searchThreads.emplace_back([&, t]() {
+                Engine& eng = *workers[t];
+                for (int i = t; i < numPositions; i += numWorkers) {
+                    if (!valid[i])
+                        continue;
 
-        Search::LimitsType limits;
-        limits.depth     = SEARCH_DEPTH;
-        limits.startTime = 0;
+                    eng.set_position(fens[i], {});
 
-        Value searchVal = VALUE_ZERO;
-        engine.set_on_update_full([&](const Engine::InfoFull& info) {
-            searchVal = info.rawScore;
-        });
-        engine.set_on_bestmove([](std::string_view, std::string_view) {});
+                    Search::LimitsType limits;
+                    limits.depth     = SEARCH_DEPTH;
+                    limits.startTime = 0;
 
-        engine.go(limits);
-        engine.wait_for_search_finished();
+                    Value searchVal = VALUE_ZERO;
+                    eng.set_on_update_full([&](const Engine::InfoFull& info) {
+                        searchVal = info.rawScore;
+                    });
+                    eng.set_on_bestmove([](std::string_view, std::string_view) {});
 
-        searchEvals[i] = searchVal;
+                    eng.go(limits);
+                    eng.wait_for_search_finished();
+
+                    searchEvals[i] = searchVal;
+                }
+            });
+        }
+        for (auto& w : searchThreads)
+            w.join();
     }
 
     // --- Compute average error ---
@@ -188,11 +199,28 @@ int main(int argc, char* argv[]) {
     Bitboards::init();
     Position::init();
 
-    // Single engine with one network copy, kept alive for the entire run.
+    const int numWorkers =
+      std::max(1, static_cast<int>(std::thread::hardware_concurrency()));
+
+    // Primary engine owns the single network copy.
     Engine engine(argc > 0 ? std::optional<std::string>(argv[0]) : std::nullopt);
     engine.set_on_verify_networks(
       [](std::string_view msg) { std::cout << msg << std::endl; });
     engine.load_networks();
+
+    // Worker engines share the primary engine's network (no copy).
+    std::cout << "Creating " << numWorkers
+              << " worker engine(s) sharing one network copy..." << std::endl;
+
+    std::vector<std::unique_ptr<Engine>> workers;
+    for (int i = 0; i < numWorkers; ++i) {
+        auto w = std::make_unique<Engine>(
+          argc > 0 ? std::optional<std::string>(argv[0]) : std::nullopt,
+          engine.get_networks());
+        w->set_on_verify_networks(
+          [](std::string_view msg) { std::cout << msg << std::endl; });
+        workers.push_back(std::move(w));
+    }
 
     // Load positions from file (one FEN per line)
     std::vector<std::string> fens;
@@ -230,7 +258,8 @@ int main(int argc, char* argv[]) {
     std::bernoulli_distribution coin(0.5);
 
     std::cout << "Starting SPSA optimisation (" << TOTAL_PARAMS << " parameters, "
-              << fens.size() << " positions, " << maxIter << " iterations)" << std::endl;
+              << fens.size() << " positions, " << maxIter << " iterations, "
+              << numWorkers << " worker(s))" << std::endl;
 
     for (int k = 0; k < maxIter; ++k) {
         double ak = a0 / std::pow(k + 1 + A, alpha);
@@ -251,12 +280,12 @@ int main(int argc, char* argv[]) {
         // Evaluate f(theta+)
         engine.get_networks().modify_and_replicate(
           [&](Eval::NNUE::Networks& nets) { scatter_params(nets.big, thetaPlus); });
-        double fPlus = evaluate_objective(engine, fens);
+        double fPlus = evaluate_objective(engine, workers, fens);
 
         // Evaluate f(theta-)
         engine.get_networks().modify_and_replicate(
           [&](Eval::NNUE::Networks& nets) { scatter_params(nets.big, thetaMinus); });
-        double fMinus = evaluate_objective(engine, fens);
+        double fMinus = evaluate_objective(engine, workers, fens);
 
         // Gradient estimate and update
         for (int i = 0; i < TOTAL_PARAMS; ++i) {
@@ -267,7 +296,7 @@ int main(int argc, char* argv[]) {
         // Set current theta and print progress
         engine.get_networks().modify_and_replicate(
           [&](Eval::NNUE::Networks& nets) { scatter_params(nets.big, theta); });
-        double curError = evaluate_objective(engine, fens);
+        double curError = evaluate_objective(engine, workers, fens);
         std::cout << "SPSA iter " << (k + 1) << "/" << maxIter
                   << "  avg_error=" << curError
                   << "  f+=" << fPlus << "  f-=" << fMinus

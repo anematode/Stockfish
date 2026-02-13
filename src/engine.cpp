@@ -151,6 +151,57 @@ Engine::Engine(std::optional<std::string> path) :
     resize_threads();
 }
 
+// Shared-network constructor: uses an external network reference instead of
+// loading its own.  The external network must outlive this Engine.
+Engine::Engine(std::optional<std::string>                                    path,
+               const LazyNumaReplicatedSystemWide<Eval::NNUE::Networks>& sharedNets) :
+    binaryDirectory(path ? CommandLine::get_binary_directory(*path) : ""),
+    numaContext(NumaConfig::from_system(DefaultNumaPolicy)),
+    states(new std::deque<StateInfo>(1)),
+    threads(),
+    networks(numaContext,
+             std::make_unique<NN::Networks>(NN::EvalFile{EvalFileDefaultNameBig, "None", ""},
+                                            NN::EvalFile{EvalFileDefaultNameSmall, "None", ""})),
+    externalNetworks(&sharedNets) {
+
+    pos.set(StartFEN, false, &states->back());
+
+    // Minimal options needed for search
+    options.add("Threads", Option(1, 1, MaxThreads, [this](const Option&) {
+        resize_threads();
+        return thread_allocation_information_as_string();
+    }));
+    options.add("Hash", Option(16, 1, MaxHashMB, [this](const Option& o) {
+        set_tt_size(o);
+        return std::nullopt;
+    }));
+    options.add("MultiPV", Option(1, 1, MAX_MOVES));
+    options.add("Skill Level", Option(20, 0, 20));
+    options.add("Move Overhead", Option(10, 0, 5000));
+    options.add("nodestime", Option(0, 0, 10000));
+    options.add("UCI_Chess960", Option(false));
+    options.add("UCI_LimitStrength", Option(false));
+    options.add("UCI_Elo",
+                Option(Stockfish::Search::Skill::LowestElo, Stockfish::Search::Skill::LowestElo,
+                       Stockfish::Search::Skill::HighestElo));
+    options.add("UCI_ShowWDL", Option(false));
+    options.add("SyzygyProbeDepth", Option(1, 1, 100));
+    options.add("Syzygy50MoveRule", Option(true));
+    options.add("SyzygyProbeLimit", Option(7, 0, 7));
+    options.add("Ponder", Option(false));
+    options.add("EvalFile", Option(EvalFileDefaultNameBig, [this](const Option& o) {
+        load_big_network(o);
+        return std::nullopt;
+    }));
+    options.add("EvalFileSmall", Option(EvalFileDefaultNameSmall, [this](const Option& o) {
+        load_small_network(o);
+        return std::nullopt;
+    }));
+
+    // Don't load networks (shared), just set up threads using the external ref.
+    resize_threads();
+}
+
 std::uint64_t Engine::perft(const std::string& fen, Depth depth, bool isChess960) {
     verify_networks();
 
@@ -242,7 +293,7 @@ void Engine::set_numa_config_from_option(const std::string& o) {
 
 void Engine::resize_threads() {
     threads.wait_for_search_finished();
-    threads.set(numaContext.get_numa_config(), {options, threads, tt, sharedHists, networks},
+    threads.set(numaContext.get_numa_config(), {options, threads, tt, sharedHists, get_networks()},
                 updateContext);
 
     // Reallocate the hash with the new threadpool size
@@ -260,10 +311,10 @@ void Engine::set_ponderhit(bool b) { threads.main_manager()->ponder = b; }
 // network related
 
 void Engine::verify_networks() const {
-    networks->big.verify(options["EvalFile"], onVerifyNetworks);
-    networks->small.verify(options["EvalFileSmall"], onVerifyNetworks);
+    get_networks()->big.verify(options["EvalFile"], onVerifyNetworks);
+    get_networks()->small.verify(options["EvalFileSmall"], onVerifyNetworks);
 
-    auto statuses = networks.get_status_and_errors();
+    auto statuses = get_networks().get_status_and_errors();
     for (size_t i = 0; i < statuses.size(); ++i)
     {
         const auto [status, error] = statuses[i];
@@ -333,7 +384,7 @@ void Engine::trace_eval() const {
 
     verify_networks();
 
-    sync_cout << "\n" << Eval::trace(p, *networks) << sync_endl;
+    sync_cout << "\n" << Eval::trace(p, *get_networks()) << sync_endl;
 }
 
 const OptionsMap& Engine::get_options() const { return options; }

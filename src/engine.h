@@ -49,6 +49,11 @@ class Engine {
 
     Engine(std::optional<std::string> path = std::nullopt);
 
+    // Construct an Engine that shares another Engine's network (no copy).
+    // The external network must outlive this Engine.
+    Engine(std::optional<std::string>                                    path,
+           const LazyNumaReplicatedSystemWide<Eval::NNUE::Networks>& sharedNets);
+
     // Cannot be movable due to components holding backreferences to fields
     Engine(const Engine&)            = delete;
     Engine(Engine&&)                 = delete;
@@ -109,10 +114,15 @@ class Engine {
     std::string                            thread_allocation_information_as_string() const;
     std::string                            thread_binding_information_as_string() const;
 
-    // Public accessor for SPSA perturbation
-    LazyNumaReplicatedSystemWide<Eval::NNUE::Networks>&       get_networks() { return networks; }
+    // Public accessor for SPSA perturbation.
+    // Returns the external (shared) networks if present, otherwise the internal ones.
+    LazyNumaReplicatedSystemWide<Eval::NNUE::Networks>& get_networks() {
+        return externalNetworks ? const_cast<LazyNumaReplicatedSystemWide<Eval::NNUE::Networks>&>(
+                                   *externalNetworks)
+                               : networks;
+    }
     const LazyNumaReplicatedSystemWide<Eval::NNUE::Networks>& get_networks() const {
-        return networks;
+        return externalNetworks ? *externalNetworks : networks;
     }
 
    private:
@@ -127,6 +137,10 @@ class Engine {
     ThreadPool                                         threads;
     TranspositionTable                                 tt;
     LazyNumaReplicatedSystemWide<Eval::NNUE::Networks> networks;
+
+    // When non-null, this engine shares another engine's network instead of
+    // using its own `networks` member.  Set by the shared-network constructor.
+    const LazyNumaReplicatedSystemWide<Eval::NNUE::Networks>* externalNetworks = nullptr;
 
     Search::SearchManager::UpdateContext  updateContext;
     std::function<void(std::string_view)> onVerifyNetworks;
