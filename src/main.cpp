@@ -160,7 +160,7 @@ static double evaluate_objective(Engine&                                engine,
 
                     Search::LimitsType limits;
                     limits.depth     = SEARCH_DEPTH;
-                    limits.startTime = 0;
+                    limits.startTime = now();
 
                     Value searchVal = VALUE_ZERO;
                     eng.set_on_update_full([&](const Engine::InfoFull& info) {
@@ -250,12 +250,15 @@ int main(int argc, char* argv[]) {
     }
 
     // ---- SPSA hyper-parameters ----
-    const int    maxIter = 200;
-    const double a0      = 0.5;
+    // a0 should be small enough that ak*ghat is a fraction of a weight unit.
+    // With 264 int8 weights + int32 biases, typical gradients in the 10–100 range,
+    // a0=0.01 keeps updates < 1 weight unit per parameter per iteration.
+    const int    maxIter = 20000;
+    const double a0      = 0.01;
     const double c0      = 1.0;
     const double alpha   = 0.602;
     const double gamma   = 0.101;
-    const double A       = 10.0;
+    const double A       = 100.0;  // warm-up phase — suppresses early step sizes
 
     // Current parameters (doubles, will be rounded when scattered)
     std::vector<double> theta = gather_params((*engine.get_networks()).big);
@@ -284,12 +287,12 @@ int main(int argc, char* argv[]) {
         }
 
         // Evaluate f(theta+)
-        engine.get_networks().modify_and_replicate(
+        engine.get_networks().modify_in_place(
           [&](Eval::NNUE::Networks& nets) { scatter_params(nets.big, thetaPlus); });
         double fPlus = evaluate_objective(engine, workers, fens);
 
         // Evaluate f(theta-)
-        engine.get_networks().modify_and_replicate(
+        engine.get_networks().modify_in_place(
           [&](Eval::NNUE::Networks& nets) { scatter_params(nets.big, thetaMinus); });
         double fMinus = evaluate_objective(engine, workers, fens);
 
@@ -299,17 +302,16 @@ int main(int argc, char* argv[]) {
             theta[i] -= ak * ghat;
         }
 
-        // Set current theta and print progress
-        engine.get_networks().modify_and_replicate(
-          [&](Eval::NNUE::Networks& nets) { scatter_params(nets.big, theta); });
-        double curError = evaluate_objective(engine, workers, fens);
+        // Print progress.  (f+ + f-)/2 approximates f(theta) without an extra
+        // evaluation pass, saving one full position scan per iteration.
         std::cout << "SPSA iter " << (k + 1) << "/" << maxIter
-                  << "  avg_error=" << curError
+                  << "  est_error=" << (fPlus + fMinus) / 2.0
                   << "  f+=" << fPlus << "  f-=" << fMinus
                   << "  ak=" << ak << "  ck=" << ck << std::endl;
     }
 
-    // Final scatter & save
+    // Final scatter & save (use modify_and_replicate once for the final save
+    // to ensure the shared memory is properly set up for write_parameters).
     engine.get_networks().modify_and_replicate(
       [&](Eval::NNUE::Networks& nets) { scatter_params(nets.big, theta); });
 

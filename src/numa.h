@@ -1568,6 +1568,17 @@ class LazyNumaReplicatedSystemWide: public NumaReplicatedBase {
         prepare_replicate_from(std::move(source));
     }
 
+    // Modify the network in-place without the expensive replicate step.
+    // Only safe when the modification is small (e.g. a few weights) and all
+    // NUMA replicas are identical or there is only one.
+    template<typename FuncT>
+    void modify_in_place(FuncT&& f) {
+        // const_cast is intentional: we modify shared-memory data directly to
+        // avoid the O(network_size) copy+hash that modify_and_replicate does.
+        T& mutable_ref = const_cast<T&>(*instances[0]);
+        std::forward<FuncT>(f)(mutable_ref);
+    }
+
     void on_numa_config_changed() override {
         // Use the first one as the source. It doesn't matter which one we use,
         // because they all must be identical, but the first one is guaranteed to exist.
