@@ -63,10 +63,11 @@ Engine::Engine(std::optional<std::string> path) :
     numaContext(NumaConfig::from_system(DefaultNumaPolicy)),
     states(new std::deque<StateInfo>(1)),
     threads(),
-    networks(numaContext,
-             // Heap-allocate because sizeof(NN::Networks) is large
-             std::make_unique<NN::Networks>(NN::EvalFile{EvalFileDefaultNameBig, "None", ""},
-                                            NN::EvalFile{EvalFileDefaultNameSmall, "None", ""})) {
+    networks(std::make_unique<LazyNumaReplicatedSystemWide<NN::Networks>>(
+      numaContext,
+      // Heap-allocate because sizeof(NN::Networks) is large
+      std::make_unique<NN::Networks>(NN::EvalFile{EvalFileDefaultNameBig, "None", ""},
+                                     NN::EvalFile{EvalFileDefaultNameSmall, "None", ""}))) {
 
     pos.set(StartFEN, false, &states->back());
 
@@ -152,16 +153,14 @@ Engine::Engine(std::optional<std::string> path) :
 }
 
 // Shared-network constructor: uses an external network reference instead of
-// loading its own.  The external network must outlive this Engine.
-Engine::Engine(std::optional<std::string>                                    path,
-               const LazyNumaReplicatedSystemWide<Eval::NNUE::Networks>& sharedNets) :
+// loading its own.  No network allocation happens here.
+Engine::Engine(std::optional<std::string>                                 path,
+               LazyNumaReplicatedSystemWide<Eval::NNUE::Networks>& sharedNets) :
     binaryDirectory(path ? CommandLine::get_binary_directory(*path) : ""),
     numaContext(NumaConfig::from_system(DefaultNumaPolicy)),
     states(new std::deque<StateInfo>(1)),
     threads(),
-    networks(numaContext,
-             std::make_unique<NN::Networks>(NN::EvalFile{EvalFileDefaultNameBig, "None", ""},
-                                            NN::EvalFile{EvalFileDefaultNameSmall, "None", ""})),
+    networks(nullptr),
     externalNetworks(&sharedNets) {
 
     pos.set(StartFEN, false, &states->back());
@@ -346,7 +345,7 @@ void Engine::verify_networks() const {
 }
 
 void Engine::load_networks() {
-    networks.modify_and_replicate([this](NN::Networks& networks_) {
+    networks->modify_and_replicate([this](NN::Networks& networks_) {
         networks_.big.load(binaryDirectory, options["EvalFile"]);
         networks_.small.load(binaryDirectory, options["EvalFileSmall"]);
     });
@@ -355,21 +354,21 @@ void Engine::load_networks() {
 }
 
 void Engine::load_big_network(const std::string& file) {
-    networks.modify_and_replicate(
+    networks->modify_and_replicate(
       [this, &file](NN::Networks& networks_) { networks_.big.load(binaryDirectory, file); });
     threads.clear();
     threads.ensure_network_replicated();
 }
 
 void Engine::load_small_network(const std::string& file) {
-    networks.modify_and_replicate(
+    networks->modify_and_replicate(
       [this, &file](NN::Networks& networks_) { networks_.small.load(binaryDirectory, file); });
     threads.clear();
     threads.ensure_network_replicated();
 }
 
 void Engine::save_network(const std::pair<std::optional<std::string>, std::string> files[2]) {
-    networks.modify_and_replicate([&files](NN::Networks& networks_) {
+    networks->modify_and_replicate([&files](NN::Networks& networks_) {
         networks_.big.save(files[0].first);
         networks_.small.save(files[1].first);
     });

@@ -51,8 +51,8 @@ class Engine {
 
     // Construct an Engine that shares another Engine's network (no copy).
     // The external network must outlive this Engine.
-    Engine(std::optional<std::string>                                    path,
-           const LazyNumaReplicatedSystemWide<Eval::NNUE::Networks>& sharedNets);
+    Engine(std::optional<std::string>                                 path,
+           LazyNumaReplicatedSystemWide<Eval::NNUE::Networks>& sharedNets);
 
     // Cannot be movable due to components holding backreferences to fields
     Engine(const Engine&)            = delete;
@@ -115,12 +115,13 @@ class Engine {
     std::string                            thread_binding_information_as_string() const;
 
     // Public accessor for SPSA perturbation.
-    // The non-const overload always returns this engine's own networks member
-    // (use the owning engine to mutate shared networks).
-    // The const overload returns external networks if present.
-    LazyNumaReplicatedSystemWide<Eval::NNUE::Networks>& get_networks() { return networks; }
+    // Returns the owned networks for the primary engine, or the external
+    // (shared) networks for worker engines.
+    LazyNumaReplicatedSystemWide<Eval::NNUE::Networks>& get_networks() {
+        return externalNetworks ? *externalNetworks : *networks;
+    }
     const LazyNumaReplicatedSystemWide<Eval::NNUE::Networks>& get_networks() const {
-        return externalNetworks ? *externalNetworks : networks;
+        return externalNetworks ? *externalNetworks : *networks;
     }
 
    private:
@@ -134,11 +135,14 @@ class Engine {
     OptionsMap                                         options;
     ThreadPool                                         threads;
     TranspositionTable                                 tt;
-    LazyNumaReplicatedSystemWide<Eval::NNUE::Networks> networks;
 
-    // When non-null, this engine shares another engine's network instead of
-    // using its own `networks` member.  Set by the shared-network constructor.
-    const LazyNumaReplicatedSystemWide<Eval::NNUE::Networks>* externalNetworks = nullptr;
+    // Owned network – only allocated for the primary engine.
+    // Worker engines that share a network leave this null.
+    std::unique_ptr<LazyNumaReplicatedSystemWide<Eval::NNUE::Networks>> networks;
+
+    // When non-null, this engine shares another engine's network.
+    // Points to the primary engine's owned network.
+    LazyNumaReplicatedSystemWide<Eval::NNUE::Networks>* externalNetworks = nullptr;
 
     Search::SearchManager::UpdateContext  updateContext;
     std::function<void(std::string_view)> onVerifyNetworks;

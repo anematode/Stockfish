@@ -121,6 +121,10 @@ static double evaluate_objective(Engine&                                engine,
         std::vector<std::thread> evalThreads;
         for (int t = 0; t < numWorkers; ++t) {
             evalThreads.emplace_back([&, t]() {
+                // Heap-allocate once per thread, reuse across positions.
+                auto accumulators = std::make_unique<AccumulatorStack>();
+                auto caches = std::make_unique<AccumulatorCaches>(*engine.get_networks());
+
                 for (int i = t; i < numPositions; i += numWorkers) {
                     Position     pos;
                     StateListPtr states(new std::deque<StateInfo>(1));
@@ -129,9 +133,7 @@ static double evaluate_objective(Engine&                                engine,
                     if (pos.checkers())
                         continue;
 
-                    auto accumulators = std::make_unique<AccumulatorStack>();
-                    auto caches =
-                      std::make_unique<AccumulatorCaches>(*engine.get_networks());
+                    caches->clear(*engine.get_networks());
                     rawEvals[i] =
                       Eval::evaluate(*engine.get_networks(), pos, *accumulators, *caches, 0);
                     valid[i] = true;
