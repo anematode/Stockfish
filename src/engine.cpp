@@ -154,10 +154,11 @@ Engine::Engine(std::optional<std::string> path) :
 
 // Shared-network constructor: uses an external network reference instead of
 // loading its own.  No network allocation happens here.
+// Lightweight: no NUMA probing, 1 MB TT, 1 search thread.
 Engine::Engine(std::optional<std::string>                                 path,
                LazyNumaReplicatedSystemWide<Eval::NNUE::Networks>& sharedNets) :
     binaryDirectory(path ? CommandLine::get_binary_directory(*path) : ""),
-    numaContext(NumaConfig::from_system(DefaultNumaPolicy)),
+    numaContext(NumaConfig{}),
     states(new std::deque<StateInfo>(1)),
     threads(),
     networks(nullptr),
@@ -165,15 +166,9 @@ Engine::Engine(std::optional<std::string>                                 path,
 
     pos.set(StartFEN, false, &states->back());
 
-    // Minimal options needed for search
-    options.add("Threads", Option(1, 1, MaxThreads, [this](const Option&) {
-        resize_threads();
-        return thread_allocation_information_as_string();
-    }));
-    options.add("Hash", Option(16, 1, MaxHashMB, [this](const Option& o) {
-        set_tt_size(o);
-        return std::nullopt;
-    }));
+    // Minimal options needed for search — small TT, 1 thread, no syzygy.
+    options.add("Threads", Option(1, 1, 1));
+    options.add("Hash", Option(1, 1, 1));
     options.add("MultiPV", Option(1, 1, MAX_MOVES));
     options.add("Skill Level", Option(20, 0, 20));
     options.add("Move Overhead", Option(10, 0, 5000));
@@ -188,14 +183,8 @@ Engine::Engine(std::optional<std::string>                                 path,
     options.add("Syzygy50MoveRule", Option(true));
     options.add("SyzygyProbeLimit", Option(7, 0, 7));
     options.add("Ponder", Option(false));
-    options.add("EvalFile", Option(EvalFileDefaultNameBig, [this](const Option& o) {
-        load_big_network(o);
-        return std::nullopt;
-    }));
-    options.add("EvalFileSmall", Option(EvalFileDefaultNameSmall, [this](const Option& o) {
-        load_small_network(o);
-        return std::nullopt;
-    }));
+    options.add("EvalFile", Option(EvalFileDefaultNameBig));
+    options.add("EvalFileSmall", Option(EvalFileDefaultNameSmall));
 
     // Don't load networks (shared), just set up threads using the external ref.
     resize_threads();
