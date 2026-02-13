@@ -42,10 +42,8 @@
 
 #include "bitboard.h"
 #include "engine.h"
-#include "evaluate.h"
 #include "misc.h"
 #include "nnue/network.h"
-#include "nnue/nnue_accumulator.h"
 #include "nnue/nnue_architecture.h"
 #include "position.h"
 #include "search.h"
@@ -100,86 +98,66 @@ static void scatter_params(NetworkBig& net, const std::vector<double>& theta) {
 // positions.  Both values are in SF internal Value units (side-to-move
 // perspective).
 //
-// Raw NN evals are parallelised across std::threads sharing the primary
-// engine's network (read-only).  Depth-5 searches are parallelised across
-// the worker engine pool, each running a single-threaded search.
+// Each worker engine computes both the raw NN eval and the depth-5 search for
+// its share of positions, using the engine's own internal accumulators (no
+// external allocation needed).  Depth-5 searches run in parallel across the
+// worker engine pool, each running a single-threaded search.
 // ---------------------------------------------------------------------------
-static double evaluate_objective(Engine&                                engine,
-                                 std::vector<std::unique_ptr<Engine>>&  workers,
-                                 const std::vector<std::string>&        fens) {
+static double evaluate_objective(std::vector<std::unique_ptr<Engine>>& workers,
+                                 const std::vector<std::string>&       fens) {
     const int numPositions = static_cast<int>(fens.size());
     if (numPositions == 0)
         return 0.0;
 
     const int numWorkers = static_cast<int>(workers.size());
 
-    // --- Phase 1: parallel raw NN evals ---
     std::vector<Value> rawEvals(numPositions, VALUE_ZERO);
+    std::vector<Value> searchEvals(numPositions, VALUE_ZERO);
     std::vector<bool>  valid(numPositions, false);
 
-    {
-        std::vector<std::thread> evalThreads;
-        for (int t = 0; t < numWorkers; ++t) {
-            evalThreads.emplace_back([&, t]() {
-                // Heap-allocate once per thread, reuse across positions.
-                auto accumulators = std::make_unique<AccumulatorStack>();
-                auto caches = std::make_unique<AccumulatorCaches>(*engine.get_networks());
+    // Run all positions in parallel across worker engines.
+    // Each worker handles its stripe of positions.
+    std::vector<std::thread> workerThreads;
+    for (int t = 0; t < numWorkers; ++t) {
+        workerThreads.emplace_back([&, t]() {
+            Engine& eng = *workers[t];
+            for (int i = t; i < numPositions; i += numWorkers) {
+                eng.set_position(fens[i], {});
 
-                for (int i = t; i < numPositions; i += numWorkers) {
-                    Position     pos;
-                    StateListPtr states(new std::deque<StateInfo>(1));
-                    pos.set(fens[i], false, &states->back());
+                // Skip positions where the side to move is in check
+                // (raw eval is undefined for in-check positions).
+                Position     checkPos;
+                StateListPtr checkStates(new std::deque<StateInfo>(1));
+                checkPos.set(fens[i], false, &checkStates->back());
+                if (checkPos.checkers())
+                    continue;
 
-                    if (pos.checkers())
-                        continue;
+                // Raw NN eval using the engine's own accumulators.
+                rawEvals[i] = eng.raw_evaluate();
+                valid[i]    = true;
 
-                    caches->clear(*engine.get_networks());
-                    rawEvals[i] =
-                      Eval::evaluate(*engine.get_networks(), pos, *accumulators, *caches, 0);
-                    valid[i] = true;
-                }
-            });
-        }
-        for (auto& w : evalThreads)
-            w.join();
+                // Depth-5 search.
+                Search::LimitsType limits;
+                limits.depth     = SEARCH_DEPTH;
+                limits.startTime = now();
+
+                Value searchVal = VALUE_ZERO;
+                eng.set_on_update_full([&](const Engine::InfoFull& info) {
+                    searchVal = info.rawScore;
+                });
+                eng.set_on_bestmove([](std::string_view, std::string_view) {});
+
+                eng.go(limits);
+                eng.wait_for_search_finished();
+
+                searchEvals[i] = searchVal;
+            }
+        });
     }
+    for (auto& w : workerThreads)
+        w.join();
 
-    // --- Phase 2: parallel depth-5 searches across worker engines ---
-    std::vector<Value> searchEvals(numPositions, VALUE_ZERO);
-
-    {
-        std::vector<std::thread> searchThreads;
-        for (int t = 0; t < numWorkers; ++t) {
-            searchThreads.emplace_back([&, t]() {
-                Engine& eng = *workers[t];
-                for (int i = t; i < numPositions; i += numWorkers) {
-                    if (!valid[i])
-                        continue;
-
-                    eng.set_position(fens[i], {});
-
-                    Search::LimitsType limits;
-                    limits.depth     = SEARCH_DEPTH;
-                    limits.startTime = now();
-
-                    Value searchVal = VALUE_ZERO;
-                    eng.set_on_update_full([&](const Engine::InfoFull& info) {
-                        searchVal = info.rawScore;
-                    });
-                    eng.set_on_bestmove([](std::string_view, std::string_view) {});
-
-                    eng.go(limits);
-                    eng.wait_for_search_finished();
-
-                    searchEvals[i] = searchVal;
-                }
-            });
-        }
-        for (auto& w : searchThreads)
-            w.join();
-    }
-
-    // --- Compute average error ---
+    // Compute average error.
     double totalError = 0.0;
     int    count      = 0;
     for (int i = 0; i < numPositions; ++i) {
@@ -289,12 +267,12 @@ int main(int argc, char* argv[]) {
         // Evaluate f(theta+)
         engine.get_networks().modify_in_place(
           [&](Eval::NNUE::Networks& nets) { scatter_params(nets.big, thetaPlus); });
-        double fPlus = evaluate_objective(engine, workers, fens);
+        double fPlus = evaluate_objective(workers, fens);
 
         // Evaluate f(theta-)
         engine.get_networks().modify_in_place(
           [&](Eval::NNUE::Networks& nets) { scatter_params(nets.big, thetaMinus); });
-        double fMinus = evaluate_objective(engine, workers, fens);
+        double fMinus = evaluate_objective(workers, fens);
 
         // Gradient estimate and update
         for (int i = 0; i < TOTAL_PARAMS; ++i) {

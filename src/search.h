@@ -54,6 +54,7 @@ enum NodeType {
 
 class TranspositionTable;
 class ThreadPool;
+class Engine;
 class OptionsMap;
 
 namespace Search {
@@ -364,6 +365,7 @@ class Worker {
     Eval::NNUE::AccumulatorCaches refreshTable;
 
     friend class Stockfish::ThreadPool;
+    friend class Stockfish::Engine;
     friend class SearchManager;
 };
 

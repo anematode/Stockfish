@@ -364,6 +364,17 @@ void Engine::save_network(const std::pair<std::optional<std::string>, std::strin
     });
 }
 
+Value Engine::raw_evaluate() {
+    Value result = VALUE_ZERO;
+    threads.run_on_thread(0, [&]() {
+        auto& worker = *threads.main_thread()->worker;
+        worker.refreshTable.clear(*get_networks());
+        result = worker.evaluate(pos);
+    });
+    threads.wait_on_thread(0);
+    return result;
+}
+
 // utility functions
 
 void Engine::trace_eval() const {

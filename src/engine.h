@@ -96,6 +96,11 @@ class Engine {
     void load_small_network(const std::string& file);
     void save_network(const std::pair<std::optional<std::string>, std::string> files[2]);
 
+    // Evaluate the current position using the main thread's worker and
+    // accumulators.  Returns raw internal Value (side-to-move perspective).
+    // Blocking — runs on the engine's thread 0.
+    Value raw_evaluate();
+
     // utility functions
 
     void trace_eval() const;
