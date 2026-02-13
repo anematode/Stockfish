@@ -63,6 +63,7 @@ static constexpr int FC2_WEIGHTS   = L3Big;                        // 32
 static constexpr int FC2_BIASES    = 1;                            // 1
 static constexpr int FC2_PER_STACK = FC2_WEIGHTS + FC2_BIASES;     // 33
 static constexpr int TOTAL_PARAMS  = FC2_PER_STACK * LayerStacks;  // 33*8 = 264
+static constexpr int SEARCH_DEPTH  = 5;
 
 // Gather current fc_2 parameters into a flat vector of doubles.
 static std::vector<double> gather_params(const NetworkBig& net) {
@@ -146,7 +147,7 @@ static double evaluate_objective(std::vector<std::unique_ptr<Engine>>& engines,
                 eng.set_position(fens[i], {});
 
                 Search::LimitsType limits;
-                limits.depth     = 5;
+                limits.depth     = SEARCH_DEPTH;
                 limits.startTime = 0;
 
                 Value searchVal = VALUE_ZERO;
