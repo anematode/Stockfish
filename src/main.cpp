@@ -209,6 +209,10 @@ int main(int argc, char* argv[]) {
     engine.set_on_verify_networks(
       [](std::string_view msg) { std::cout << msg << std::endl; });
     engine.load_networks();
+    engine.verify_networks();
+
+    // Suppress further verification output — we only need it once at startup.
+    engine.set_on_verify_networks([](std::string_view) {});
 
     // Worker engines share the primary engine's network (no copy).
     std::cout << "Creating " << numWorkers
@@ -219,8 +223,8 @@ int main(int argc, char* argv[]) {
         auto w = std::make_unique<Engine>(
           argc > 0 ? std::optional<std::string>(argv[0]) : std::nullopt,
           engine.get_networks());
-        w->set_on_verify_networks(
-          [](std::string_view msg) { std::cout << msg << std::endl; });
+        // Suppress verification output — workers share the primary engine's already-verified network.
+        w->set_on_verify_networks([](std::string_view) {});
         workers.push_back(std::move(w));
     }
 
