@@ -299,7 +299,7 @@ class AffineTransform {
 #endif
     }
 
-   private:
+    // Made public for SPSA perturbation access
     using BiasType   = OutputType;
     using WeightType = std::int8_t;
 

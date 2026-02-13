@@ -16,28 +16,273 @@
   along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+// SPSA perturbation of NNUE fc_2 weights to minimize |rawEval - depth5Search|.
+// Replaces the normal UCI main loop.
+
+#include <algorithm>
+#include <atomic>
+#include <cmath>
+#include <cstdint>
+#include <fstream>
 #include <iostream>
 #include <memory>
+#include <mutex>
+#include <random>
+#include <string>
+#include <thread>
+#include <vector>
 
 #include "bitboard.h"
+#include "engine.h"
+#include "evaluate.h"
 #include "misc.h"
+#include "nnue/network.h"
+#include "nnue/nnue_accumulator.h"
+#include "nnue/nnue_architecture.h"
 #include "position.h"
-#include "tune.h"
+#include "score.h"
+#include "search.h"
+#include "types.h"
 #include "uci.h"
 
 using namespace Stockfish;
+using namespace Stockfish::Eval::NNUE;
 
+// ---------------------------------------------------------------------------
+// Collect all fc_2 parameters (weights + biases) across all LayerStacks into a
+// flat double vector.  fc_2 has OutputDimensions=1, InputDimensions=FC_1_OUTPUTS.
+// We perturb: 1 bias + FC_1_OUTPUTS weights per LayerStack.
+// ---------------------------------------------------------------------------
+
+static constexpr int FC2_WEIGHTS   = L3Big;                        // 32
+static constexpr int FC2_BIASES    = 1;                            // 1
+static constexpr int FC2_PER_STACK = FC2_WEIGHTS + FC2_BIASES;     // 33
+static constexpr int TOTAL_PARAMS  = FC2_PER_STACK * LayerStacks;  // 33*8 = 264
+
+// Gather current fc_2 parameters into a flat vector of doubles.
+static std::vector<double> gather_params(NetworkBig& net) {
+    std::vector<double> theta(TOTAL_PARAMS);
+    for (std::size_t s = 0; s < LayerStacks; ++s) {
+        auto& fc2 = net.get_network(s).get_fc_2();
+        // bias (int32)
+        theta[s * FC2_PER_STACK] = static_cast<double>(fc2.biases[0]);
+        // weights (int8)
+        for (int w = 0; w < FC2_WEIGHTS; ++w)
+            theta[s * FC2_PER_STACK + 1 + w] = static_cast<double>(fc2.weights[w]);
+    }
+    return theta;
+}
+
+// Scatter a flat vector of doubles back into fc_2 parameters, clamping to the
+// representable range of the underlying integer types.
+static void scatter_params(NetworkBig& net, const std::vector<double>& theta) {
+    for (std::size_t s = 0; s < LayerStacks; ++s) {
+        auto& fc2 = net.get_network(s).get_fc_2();
+        // bias (int32)
+        double b   = std::clamp(theta[s * FC2_PER_STACK],
+                                static_cast<double>(std::numeric_limits<std::int32_t>::min()),
+                                static_cast<double>(std::numeric_limits<std::int32_t>::max()));
+        fc2.biases[0] = static_cast<std::int32_t>(std::round(b));
+        // weights (int8)
+        for (int w = 0; w < FC2_WEIGHTS; ++w) {
+            double v = std::clamp(theta[s * FC2_PER_STACK + 1 + w], -128.0, 127.0);
+            fc2.weights[w] = static_cast<std::int8_t>(std::round(v));
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Evaluate the objective: average |rawEval(pos) - depth5Search(pos)| over all
+// positions.  Raw evals are parallelised; depth-5 searches are serialised
+// through the engine.
+// ---------------------------------------------------------------------------
+static double evaluate_objective(Engine& engine, const std::vector<std::string>& fens) {
+    const int numPositions = static_cast<int>(fens.size());
+    if (numPositions == 0)
+        return 0.0;
+
+    // --- Phase 1: compute raw NN evals in parallel ---
+    const int                numThreads = std::max(1, static_cast<int>(std::thread::hardware_concurrency()));
+    std::vector<Value>       rawEvals(numPositions, VALUE_ZERO);
+    std::vector<bool>        valid(numPositions, false);
+    std::vector<std::thread> workers;
+
+    for (int t = 0; t < numThreads; ++t) {
+        workers.emplace_back([&, t]() {
+            for (int i = t; i < numPositions; i += numThreads) {
+                Position     pos;
+                StateListPtr states(new std::deque<StateInfo>(1));
+                pos.set(fens[i], false, &states->back());
+
+                if (pos.checkers())
+                    continue;
+
+                auto accumulators = std::make_unique<AccumulatorStack>();
+                auto caches       = std::make_unique<AccumulatorCaches>(*engine.get_networks());
+
+                rawEvals[i] = Eval::evaluate(*engine.get_networks(), pos, *accumulators, *caches, 0);
+                valid[i]    = true;
+            }
+        });
+    }
+    for (auto& w : workers)
+        w.join();
+
+    // --- Phase 2: depth-5 searches (serialised through the engine) ---
+    std::vector<Value> searchEvals(numPositions, VALUE_ZERO);
+    for (int i = 0; i < numPositions; ++i) {
+        if (!valid[i])
+            continue;
+
+        engine.set_position(fens[i], {});
+
+        Search::LimitsType limits;
+        limits.depth     = 5;
+        limits.startTime = 0;
+
+        Value bestScore = VALUE_ZERO;
+        engine.set_on_update_full([&](const Engine::InfoFull& info) {
+            info.score.visit([&](auto&& s) {
+                using T = std::decay_t<decltype(s)>;
+                if constexpr (std::is_same_v<T, Score::InternalUnits>)
+                    bestScore = static_cast<Value>(s.value);
+            });
+        });
+        engine.set_on_bestmove([](std::string_view, std::string_view) {});
+
+        engine.go(limits);
+        engine.wait_for_search_finished();
+
+        searchEvals[i] = bestScore;
+    }
+
+    // --- Compute average error ---
+    double totalError = 0.0;
+    int    count      = 0;
+    for (int i = 0; i < numPositions; ++i) {
+        if (!valid[i])
+            continue;
+        totalError += std::abs(static_cast<double>(rawEvals[i]) - static_cast<double>(searchEvals[i]));
+        ++count;
+    }
+    return count > 0 ? totalError / count : 0.0;
+}
+
+// ---------------------------------------------------------------------------
+// main – SPSA loop
+// ---------------------------------------------------------------------------
 int main(int argc, char* argv[]) {
     std::cout << engine_info() << std::endl;
 
     Bitboards::init();
     Position::init();
 
-    auto uci = std::make_unique<UCIEngine>(argc, argv);
+    // Create engine (loads default big net)
+    Engine engine(argc > 0 ? std::optional<std::string>(argv[0]) : std::nullopt);
 
-    Tune::init(uci->engine_options());
+    // Set up verify callback so verify_networks() doesn't crash
+    engine.set_on_verify_networks([](std::string_view msg) {
+        std::cout << msg << std::endl;
+    });
 
-    uci->loop();
+    // Load positions from file (one FEN per line)
+    std::vector<std::string> fens;
+    {
+        std::ifstream fin("positions.pgn");
+        if (!fin.is_open()) {
+            std::cerr << "Error: could not open positions.pgn" << std::endl;
+            return 1;
+        }
+        std::string line;
+        while (std::getline(fin, line)) {
+            if (!line.empty())
+                fens.push_back(line);
+        }
+        std::cout << "Loaded " << fens.size() << " positions." << std::endl;
+    }
 
+    if (fens.empty()) {
+        std::cerr << "No positions loaded – nothing to do." << std::endl;
+        return 1;
+    }
+
+    // ---- SPSA hyper-parameters ----
+    const int    maxIter = 200;
+    const double a0      = 0.5;
+    const double c0      = 1.0;
+    const double alpha   = 0.602;
+    const double gamma   = 0.101;
+    const double A       = 10.0;
+
+    // Current parameters (doubles, will be rounded when scattered)
+    engine.load_networks();
+    std::vector<double> theta;
+    engine.get_networks().modify_and_replicate([&](Eval::NNUE::Networks& nets) {
+        theta = gather_params(nets.big);
+    });
+
+    std::mt19937                rng(42);
+    std::bernoulli_distribution coin(0.5);
+
+    std::cout << "Starting SPSA optimisation (" << TOTAL_PARAMS << " parameters, "
+              << fens.size() << " positions, " << maxIter << " iterations)" << std::endl;
+
+    for (int k = 0; k < maxIter; ++k) {
+        double ak = a0 / std::pow(k + 1 + A, alpha);
+        double ck = c0 / std::pow(k + 1, gamma);
+
+        // Generate random perturbation vector delta_k in {-1, +1}^p
+        std::vector<double> delta(TOTAL_PARAMS);
+        for (auto& d : delta)
+            d = coin(rng) ? 1.0 : -1.0;
+
+        // theta+ and theta-
+        std::vector<double> thetaPlus(TOTAL_PARAMS), thetaMinus(TOTAL_PARAMS);
+        for (int i = 0; i < TOTAL_PARAMS; ++i) {
+            thetaPlus[i]  = theta[i] + ck * delta[i];
+            thetaMinus[i] = theta[i] - ck * delta[i];
+        }
+
+        // Evaluate f(theta+)
+        engine.get_networks().modify_and_replicate([&](Eval::NNUE::Networks& nets) {
+            scatter_params(nets.big, thetaPlus);
+        });
+        double fPlus = evaluate_objective(engine, fens);
+
+        // Evaluate f(theta-)
+        engine.get_networks().modify_and_replicate([&](Eval::NNUE::Networks& nets) {
+            scatter_params(nets.big, thetaMinus);
+        });
+        double fMinus = evaluate_objective(engine, fens);
+
+        // Gradient estimate and update
+        for (int i = 0; i < TOTAL_PARAMS; ++i) {
+            double ghat = (fPlus - fMinus) / (2.0 * ck * delta[i]);
+            theta[i] -= ak * ghat;
+        }
+
+        // Set current theta and print progress
+        engine.get_networks().modify_and_replicate([&](Eval::NNUE::Networks& nets) {
+            scatter_params(nets.big, theta);
+        });
+        double curError = evaluate_objective(engine, fens);
+        std::cout << "SPSA iter " << (k + 1) << "/" << maxIter
+                  << "  avg_error=" << curError
+                  << "  f+=" << fPlus << "  f-=" << fMinus
+                  << "  ak=" << ak << "  ck=" << ck << std::endl;
+    }
+
+    // Final scatter & save
+    engine.get_networks().modify_and_replicate([&](Eval::NNUE::Networks& nets) {
+        scatter_params(nets.big, theta);
+    });
+
+    std::pair<std::optional<std::string>, std::string> files[2] = {
+        {std::optional<std::string>("perturbed.nnue"), ""},
+        {std::nullopt, ""}
+    };
+    engine.save_network(files);
+
+    std::cout << "Done. Perturbed network saved to perturbed.nnue" << std::endl;
     return 0;
 }

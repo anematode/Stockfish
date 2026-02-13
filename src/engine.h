@@ -109,6 +109,12 @@ class Engine {
     std::string                            thread_allocation_information_as_string() const;
     std::string                            thread_binding_information_as_string() const;
 
+    // Public accessor for SPSA perturbation
+    LazyNumaReplicatedSystemWide<Eval::NNUE::Networks>&       get_networks() { return networks; }
+    const LazyNumaReplicatedSystemWide<Eval::NNUE::Networks>& get_networks() const {
+        return networks;
+    }
+
    private:
     const std::string binaryDirectory;
 

@@ -139,6 +139,10 @@ struct NetworkArchitecture {
         return outputValue;
     }
 
+    // Accessors for fc_2 weights and biases (for perturbation)
+    auto& get_fc_2() { return fc_2; }
+    const auto& get_fc_2() const { return fc_2; }
+
     std::size_t get_content_hash() const {
         std::size_t h = 0;
         hash_combine(h, fc_0.get_content_hash());

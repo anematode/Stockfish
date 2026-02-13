@@ -78,6 +78,10 @@ class Network {
                            AccumulatorCaches::Cache<FTDimensions>& cache) const;
 
 
+    // Accessors for SPSA perturbation
+    Arch&       get_network(std::size_t i) { return network[i]; }
+    const Arch& get_network(std::size_t i) const { return network[i]; }
+
     void verify(std::string evalfilePath, const std::function<void(std::string_view)>&) const;
     NnueEvalTrace trace_evaluate(const Position&                         pos,
                                  AccumulatorStack&                       accumulatorStack,
