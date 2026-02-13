@@ -60,10 +60,10 @@ static constexpr int FC2_PER_STACK = FC2_WEIGHTS + FC2_BIASES;     // 33
 static constexpr int TOTAL_PARAMS  = FC2_PER_STACK * LayerStacks;  // 33*8 = 264
 
 // Gather current fc_2 parameters into a flat vector of doubles.
-static std::vector<double> gather_params(NetworkBig& net) {
+static std::vector<double> gather_params(const NetworkBig& net) {
     std::vector<double> theta(TOTAL_PARAMS);
     for (std::size_t s = 0; s < LayerStacks; ++s) {
-        auto& fc2 = net.get_network(s).get_fc_2();
+        const auto& fc2 = net.get_network(s).get_fc_2();
         // bias (int32)
         theta[s * FC2_PER_STACK] = static_cast<double>(fc2.biases[0]);
         // weights (int8)
@@ -216,10 +216,7 @@ int main(int argc, char* argv[]) {
 
     // Current parameters (doubles, will be rounded when scattered)
     engine.load_networks();
-    std::vector<double> theta;
-    engine.get_networks().modify_and_replicate([&](Eval::NNUE::Networks& nets) {
-        theta = gather_params(nets.big);
-    });
+    std::vector<double> theta = gather_params((*engine.get_networks()).big);
 
     std::mt19937                rng(42);
     std::bernoulli_distribution coin(0.5);
