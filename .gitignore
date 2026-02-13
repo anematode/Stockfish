@@ -17,4 +17,7 @@ positions.pgn
 tsan.supp
 __pycache__/
 tests/syzygy
-tests/bench_tmp.epd_codeql_detected_source_root
+tests/bench_tmp.epd
+
+# CodeQL artifacts
+_codeql_detected_source_root
