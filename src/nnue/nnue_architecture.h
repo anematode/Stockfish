@@ -67,8 +67,8 @@ struct NetworkArchitecture {
     Layers::SqrClippedReLU<FC_0_OUTPUTS + 1>                                           ac_sqr_0;
     Layers::ClippedReLU<FC_0_OUTPUTS + 1>                                              ac_0;
     Layers::AffineTransform<FC_0_OUTPUTS * 2, FC_1_OUTPUTS>                            fc_1;
-    Layers::ClippedReLU<FC_1_OUTPUTS>                                                  ac_1;
-    Layers::AffineTransform<FC_1_OUTPUTS, 1>                                           fc_2;
+    Layers::ClippedReLU<FC_1_OUTPUTS>                                                ac_1;
+    Layers::AffineTransform<FC_1_OUTPUTS, 1, true>                                     fc_2;
 
     // Hash value embedded in the evaluation file
     static constexpr std::uint32_t get_hash_value() {
@@ -99,14 +99,34 @@ struct NetworkArchitecture {
             && fc_2.write_parameters(stream);
     }
 
-    std::int32_t propagate(const TransformedFeatureType* transformedFeatures) const {
+    class FinalLayer {
+        alignas(CacheLineSize) decltype(fc_2) liveWeights;
+        alignas(CacheLineSize) decltype(fc_2) originalWeights;
+    };
+
+    FinalLayer get_final_layer() const {
+        return { fc_2, fc_2 };
+    }
+
+    class BackpropToken {
+        alignas(CacheLineSize) typename decltype(ac_1)::OutputBuffer ac_1_out;
+    
+    public:
+        void correct_final_layer(int searchValue, FinalLayer& layer) {
+
+        }
+
+        bool valid = false;
+    };
+
+    std::int32_t propagate(const TransformedFeatureType* transformedFeatures, const FinalLayer& fc_2, BackpropToken* backpropToken) const {
         struct alignas(CacheLineSize) Buffer {
             alignas(CacheLineSize) typename decltype(fc_0)::OutputBuffer fc_0_out;
             alignas(CacheLineSize) typename decltype(ac_sqr_0)::OutputType
               ac_sqr_0_out[ceil_to_multiple<IndexType>(FC_0_OUTPUTS * 2, 32)];
             alignas(CacheLineSize) typename decltype(ac_0)::OutputBuffer ac_0_out;
             alignas(CacheLineSize) typename decltype(fc_1)::OutputBuffer fc_1_out;
-            alignas(CacheLineSize) typename decltype(ac_1)::OutputBuffer ac_1_out;
+            // ac_1_out is in the backprop token
             alignas(CacheLineSize) typename decltype(fc_2)::OutputBuffer fc_2_out;
 
             Buffer() { std::memset(this, 0, sizeof(*this)); }
@@ -127,8 +147,8 @@ struct NetworkArchitecture {
         std::memcpy(buffer.ac_sqr_0_out + FC_0_OUTPUTS, buffer.ac_0_out,
                     FC_0_OUTPUTS * sizeof(typename decltype(ac_0)::OutputType));
         fc_1.propagate(buffer.ac_sqr_0_out, buffer.fc_1_out);
-        ac_1.propagate(buffer.fc_1_out, buffer.ac_1_out);
-        fc_2.propagate(buffer.ac_1_out, buffer.fc_2_out);
+        ac_1.propagate(buffer.fc_1_out, backpropToken->ac_1_out);
+        fc_2.liveWeights.propagate(backpropToken->ac_1_out, buffer.fc_2_out);
 
         // buffer.fc_0_out[FC_0_OUTPUTS] is such that 1.0 is equal to 127*(1<<WeightScaleBits) in
         // quantized form, but we want 1.0 to be equal to 600*OutputScale

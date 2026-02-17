@@ -168,11 +168,15 @@ bool Network<Arch, Transformer>::save(const std::optional<std::string>& filename
 }
 
 
+
 template<typename Arch, typename Transformer>
 NetworkOutput
 Network<Arch, Transformer>::evaluate(const Position&                         pos,
                                      AccumulatorStack&                       accumulatorStack,
-                                     AccumulatorCaches::Cache<FTDimensions>& cache) const {
+                                     AccumulatorCaches::Cache<FTDimensions>& cache,
+                                     const Arch::FinalLayer* finalLayers,
+                                     Arch::BackpropToken* token) const {
+    static thread_local DummyToken token;
 
     constexpr uint64_t alignment = CacheLineSize;
 
@@ -184,7 +188,7 @@ Network<Arch, Transformer>::evaluate(const Position&                         pos
     const int  bucket = (pos.count<ALL_PIECES>() - 1) / 4;
     const auto psqt =
       featureTransformer.transform(pos, accumulatorStack, cache, transformedFeatures, bucket);
-    const auto positional = network[bucket].propagate(transformedFeatures);
+    const auto positional = network[bucket].propagate(transformedFeatures, finalLayers[bucket], token);
     return {static_cast<Value>(psqt / OutputScale), static_cast<Value>(positional / OutputScale)};
 }
 

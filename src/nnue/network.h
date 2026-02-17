@@ -75,7 +75,9 @@ class Network {
 
     NetworkOutput evaluate(const Position&                         pos,
                            AccumulatorStack&                       accumulatorStack,
-                           AccumulatorCaches::Cache<FTDimensions>& cache) const;
+                           AccumulatorCaches::Cache<FTDimensions>& cache,
+                           const Arch::FinalLayer* finalLayers,
+                           Arch::BackpropToken* token) const;
 
 
     void verify(std::string evalfilePath, const std::function<void(std::string_view)>&) const;
@@ -123,6 +125,8 @@ using SmallNetworkArchitecture =
 
 using BigFeatureTransformer  = FeatureTransformer<TransformedFeatureDimensionsBig>;
 using BigNetworkArchitecture = NetworkArchitecture<TransformedFeatureDimensionsBig, L2Big, L3Big>;
+using BigNetworkBackpropToken = BigNetworkArchitecture::BackpropToken;
+using BigNetworkFinalLayer = BigNetworkArchitecture::FinalLayer;
 
 using NetworkBig   = Network<BigNetworkArchitecture, BigFeatureTransformer>;
 using NetworkSmall = Network<SmallNetworkArchitecture, SmallFeatureTransformer>;

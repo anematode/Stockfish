@@ -124,7 +124,7 @@ static void affine_transform_non_ssse3(std::int32_t*       output,
 
 #endif  // !ENABLE_SEQ_OPT
 
-template<IndexType InDims, IndexType OutDims>
+template<IndexType InDims, IndexType OutDims, bool Weights16=false>
 class AffineTransform {
    public:
     // Input/output type
@@ -168,7 +168,7 @@ class AffineTransform {
     bool read_parameters(std::istream& stream) {
         read_little_endian<BiasType>(stream, biases, OutputDimensions);
         for (IndexType i = 0; i < OutputDimensions * PaddedInputDimensions; ++i)
-            weights[get_weight_index(i)] = read_little_endian<WeightType>(stream);
+            weights[get_weight_index(i)] = read_little_endian<int8_t>(stream) * (Weights16 ? 128 : 1);
 
         return !stream.fail();
     }
@@ -178,7 +178,7 @@ class AffineTransform {
         write_little_endian<BiasType>(stream, biases, OutputDimensions);
 
         for (IndexType i = 0; i < OutputDimensions * PaddedInputDimensions; ++i)
-            write_little_endian<WeightType>(stream, weights[get_weight_index(i)]);
+            write_little_endian<int8_t>(stream, weights[get_weight_index(i)] / (Weights16 ? 128 : 1));
 
         return !stream.fail();
     }
@@ -186,6 +186,8 @@ class AffineTransform {
     std::size_t get_content_hash() const {
         std::size_t h = 0;
         hash_combine(h, get_raw_data_hash(biases));
+        std::array<int8_t, OutputDimensions * PaddedInputDimensions> copy;
+        for (size_t i = 0; i < copy.size(); ++i) copy[i] = weights[i] / (Weights16 ? 128 : 1);
         hash_combine(h, get_raw_data_hash(weights));
         hash_combine(h, get_hash_value(0));
         return h;
@@ -217,6 +219,7 @@ class AffineTransform {
             SIMD::dotprod_m128_add_dpbusd_epi32(acc, vreinterpretq_s8_s32(a), \
                                                 vreinterpretq_s8_s32(b))
     #endif
+            static_assert(!Weights16 && "Unimplemented");
 
             static constexpr IndexType OutputSimdWidth = sizeof(vec_t) / sizeof(OutputType);
 
@@ -271,22 +274,13 @@ class AffineTransform {
         #define vec_hadd SIMD::neon_m128_hadd
     #endif
 
-            const auto inputVector = reinterpret_cast<const vec_t*>(input);
+            static_assert(Weights16 && "Unimplemented");
 
-            static constexpr IndexType InputSimdWidth = sizeof(vec_t) / sizeof(InputType);
+            __m512i wv = _mm512_loadu_si512(&weights[0]);
+            __m512i iv = _mm512_cvtepu8_epi16(_mm256_loadu_si256((const vec_t*)input));
+            __m512i zero = _mm512_setzero_si512();
 
-            static_assert(PaddedInputDimensions % InputSimdWidth == 0);
-
-            constexpr IndexType NumChunks = PaddedInputDimensions / InputSimdWidth;
-            vec_t               sum0      = vec_setzero();
-            const auto          row0      = reinterpret_cast<const vec_t*>(&weights[0]);
-
-            for (int j = 0; j < int(NumChunks); ++j)
-            {
-                const vec_t in = inputVector[j];
-                vec_add_dpbusd_32(sum0, in, row0[j]);
-            }
-            output[0] = vec_hadd(sum0, biases[0]);
+            output[0] = biases[0] + _mm512_reduce_add_epi32(_mm512_dpwssd_epi32(zero, wv, iv)) / 128;
 
     #undef vec_setzero
     #undef vec_add_dpbusd_32
@@ -301,7 +295,7 @@ class AffineTransform {
 
    private:
     using BiasType   = OutputType;
-    using WeightType = std::int8_t;
+    using WeightType = std::conditional_t<Weights16, std::int16_t, std::int8_t>;
 
     alignas(CacheLineSize) BiasType biases[OutputDimensions];
     alignas(CacheLineSize) WeightType weights[OutputDimensions * PaddedInputDimensions];

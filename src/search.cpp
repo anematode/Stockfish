@@ -582,6 +582,7 @@ void Search::Worker::undo_null_move(Position& pos) { pos.undo_null_move(); }
 
 // Reset histories, usually before a new game
 void Search::Worker::clear() {
+    finalLayer = networks[numaAccessToken].get_final_layer();
     mainHistory.fill(0);
     captureHistory.fill(-689);
 
@@ -648,6 +649,7 @@ Value Search::Worker::search(
     bool  capture, ttCapture;
     int   priorReduction;
     Piece movedPiece;
+    Eval::NNUE::BigNetworkBackpropToken backpropToken;
 
     SearchedList capturesSearched;
     SearchedList quietsSearched;
@@ -720,7 +722,7 @@ Value Search::Worker::search(
         // Never assume anything about values stored in TT
         unadjustedStaticEval = ttData.eval;
         if (!is_valid(unadjustedStaticEval))
-            unadjustedStaticEval = evaluate(pos);
+            unadjustedStaticEval = evaluate(pos, &backpropToken);
 
         ss->staticEval = eval = to_corrected_static_eval(unadjustedStaticEval, correctionValue);
 
@@ -731,7 +733,7 @@ Value Search::Worker::search(
     }
     else
     {
-        unadjustedStaticEval = evaluate(pos);
+        unadjustedStaticEval = evaluate(pos, &backpropToken);
         ss->staticEval = eval = to_corrected_static_eval(unadjustedStaticEval, correctionValue);
 
         // Static evaluation is saved as it was before adjustment by correction history
@@ -1476,6 +1478,10 @@ moves_loop:  // When in check, search starts here
         auto bonus = std::clamp(int(bestValue - ss->staticEval) * depth / (bestMove ? 10 : 8),
                                 -CORRECTION_HISTORY_LIMIT / 4, CORRECTION_HISTORY_LIMIT / 4);
         update_correction_history(pos, ss, *this, bonus);
+
+        if (backpropToken.valid) {
+            backpropToken.correct_final_layer(finalLayer);
+        }
     }
 
     assert(bestValue > -VALUE_INFINITE && bestValue < VALUE_INFINITE);
@@ -1749,9 +1755,9 @@ TimePoint Search::Worker::elapsed() const {
 
 TimePoint Search::Worker::elapsed_time() const { return main_manager()->tm.elapsed_time(); }
 
-Value Search::Worker::evaluate(const Position& pos) {
+Value Search::Worker::evaluate(const Position& pos, Eval::NNUE::BigNetworkBackpropToken* backpropToken = nullptr) {
     return Eval::evaluate(networks[numaAccessToken], pos, accumulatorStack, refreshTable,
-                          optimism[pos.side_to_move()]);
+                          optimism[pos.side_to_move()], backpropToken);
 }
 
 namespace {
