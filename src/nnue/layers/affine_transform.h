@@ -293,7 +293,7 @@ class AffineTransform {
 #endif
     }
 
-   private:
+   public:
     using BiasType   = OutputType;
     using WeightType = std::conditional_t<Weights16, std::int16_t, std::int8_t>;
 

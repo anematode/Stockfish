@@ -174,10 +174,8 @@ NetworkOutput
 Network<Arch, Transformer>::evaluate(const Position&                         pos,
                                      AccumulatorStack&                       accumulatorStack,
                                      AccumulatorCaches::Cache<FTDimensions>& cache,
-                                     const Arch::FinalLayer* finalLayers,
-                                     Arch::BackpropToken* token) const {
-    static thread_local DummyToken token;
-
+                                     const typename Arch::FinalLayer* finalLayers,
+                                     typename Arch::BackpropToken* token) const {
     constexpr uint64_t alignment = CacheLineSize;
 
     alignas(alignment)
@@ -188,7 +186,11 @@ Network<Arch, Transformer>::evaluate(const Position&                         pos
     const int  bucket = (pos.count<ALL_PIECES>() - 1) / 4;
     const auto psqt =
       featureTransformer.transform(pos, accumulatorStack, cache, transformedFeatures, bucket);
-    const auto positional = network[bucket].propagate(transformedFeatures, finalLayers[bucket], token);
+    const auto positional = network[bucket].propagate(transformedFeatures, finalLayers ? finalLayers[bucket] : network[bucket].get_final_layer(), token);
+    if (token) {
+        token->finalLayer = const_cast<typename Arch::FinalLayer*>(&finalLayers[bucket]);
+        token->valid = true;
+    }
     return {static_cast<Value>(psqt / OutputScale), static_cast<Value>(positional / OutputScale)};
 }
 
@@ -253,7 +255,7 @@ Network<Arch, Transformer>::trace_evaluate(const Position&                      
     {
         const auto materialist =
           featureTransformer.transform(pos, accumulatorStack, cache, transformedFeatures, bucket);
-        const auto positional = network[bucket].propagate(transformedFeatures);
+        const auto positional = network[bucket].propagate(transformedFeatures, network[bucket].get_final_layer(), nullptr);
 
         t.psqt[bucket]       = static_cast<Value>(materialist / OutputScale);
         t.positional[bucket] = static_cast<Value>(positional / OutputScale);

@@ -51,7 +51,8 @@ Value evaluate(const NNUE::Networks&          networks,
                Eval::NNUE::AccumulatorStack&  accumulators,
                Eval::NNUE::AccumulatorCaches& caches,
                int                            optimism,
-                Eval::NNUE::BigNetworkBackpropToken* backpropToken);
+                const void* finalLayers = nullptr,
+                void* backpropToken = nullptr);
 }  // namespace Eval
 
 }  // namespace Stockfish

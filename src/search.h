@@ -326,7 +326,7 @@ class Worker {
     TimePoint elapsed() const;
     TimePoint elapsed_time() const;
 
-    Value evaluate(const Position&, Eval::NNUE::BigNetworkBackpropToken*);
+    Value evaluate(const Position&, Eval::NNUE::BigNetworkBackpropToken* token=nullptr);
 
     LimitsType limits;
 
@@ -357,7 +357,7 @@ class Worker {
     ThreadPool&                                               threads;
     TranspositionTable&                                       tt;
     const LazyNumaReplicatedSystemWide<Eval::NNUE::Networks>& networks;
-    FinalLayer finalLayers[8];
+    std::vector<Eval::NNUE::BigNetworkFinalLayer> finalLayers;
 
     // Used by NNUE
     Eval::NNUE::AccumulatorStack  accumulatorStack;

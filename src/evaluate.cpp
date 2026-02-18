@@ -55,20 +55,24 @@ Value Eval::evaluate(const Eval::NNUE::Networks&    networks,
                      Eval::NNUE::AccumulatorStack&  accumulators,
                      Eval::NNUE::AccumulatorCaches& caches,
                      int                            optimism,
-                    Eval::NNUE::BigNetworkBackpropToken* backpropToken) {
+                    const void* finalLayers_,
+                    void* backpropToken_) {
+
+    const Eval::NNUE::BigNetworkFinalLayer* finalLayers = (const Eval::NNUE::BigNetworkFinalLayer*) finalLayers_;
+    Eval::NNUE::BigNetworkBackpropToken* backpropToken = (Eval::NNUE::BigNetworkBackpropToken*) backpropToken_;
 
     assert(!pos.checkers());
 
     bool smallNet           = use_smallnet(pos);
-    auto [psqt, positional] = smallNet ? networks.small.evaluate(pos, accumulators, caches.small)
-                                       : networks.big.evaluate(pos, accumulators, caches.big, backpropToken);
+    auto [psqt, positional] = smallNet ? networks.small.evaluate(pos, accumulators, caches.small, nullptr, nullptr)
+                                       : networks.big.evaluate(pos, accumulators, caches.big, finalLayers, backpropToken);
 
     Value nnue = (125 * psqt + 131 * positional) / 128;
 
     // Re-evaluate the position when higher eval accuracy is worth the time spent
     if (smallNet && (std::abs(nnue) < 277))
     {
-        std::tie(psqt, positional) = networks.big.evaluate(pos, accumulators, caches.big, backpropToken);
+        std::tie(psqt, positional) = networks.big.evaluate(pos, accumulators, caches.big, finalLayers, backpropToken);
         nnue                       = (125 * psqt + 131 * positional) / 128;
         smallNet                   = false;
     }
@@ -108,7 +112,7 @@ std::string Eval::trace(Position& pos, const Eval::NNUE::Networks& networks) {
 
     ss << std::showpoint << std::showpos << std::fixed << std::setprecision(2) << std::setw(15);
 
-    auto [psqt, positional] = networks.big.evaluate(pos, *accumulators, caches->big, nullptr);
+    auto [psqt, positional] = networks.big.evaluate(pos, *accumulators, caches->big, nullptr, nullptr);
     Value v                 = psqt + positional;
     v                       = pos.side_to_move() == WHITE ? v : -v;
     ss << "NNUE evaluation        " << 0.01 * UCIEngine::to_cp(v, pos) << " (white side)\n";

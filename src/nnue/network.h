@@ -70,14 +70,20 @@ class Network {
 
     void load(const std::string& rootDirectory, std::string evalfilePath);
     bool save(const std::optional<std::string>& filename) const;
+    void init_final_layers(std::vector<typename Arch::FinalLayer>& dest) const {
+        dest.clear();
+        int i = 0;
+        for (const auto& arch : network)
+            dest.emplace_back(arch.get_final_layer());
+    }
 
     std::size_t get_content_hash() const;
 
     NetworkOutput evaluate(const Position&                         pos,
                            AccumulatorStack&                       accumulatorStack,
                            AccumulatorCaches::Cache<FTDimensions>& cache,
-                           const Arch::FinalLayer* finalLayers,
-                           Arch::BackpropToken* token) const;
+                           const typename Arch::FinalLayer* finalLayers,
+                           typename Arch::BackpropToken* token) const;
 
 
     void verify(std::string evalfilePath, const std::function<void(std::string_view)>&) const;

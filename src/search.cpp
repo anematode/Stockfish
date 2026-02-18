@@ -582,7 +582,7 @@ void Search::Worker::undo_null_move(Position& pos) { pos.undo_null_move(); }
 
 // Reset histories, usually before a new game
 void Search::Worker::clear() {
-    finalLayer = networks[numaAccessToken].get_final_layer();
+    networks[numaAccessToken].big.init_final_layers(finalLayers);
     mainHistory.fill(0);
     captureHistory.fill(-689);
 
@@ -1480,7 +1480,7 @@ moves_loop:  // When in check, search starts here
         update_correction_history(pos, ss, *this, bonus);
 
         if (backpropToken.valid) {
-            backpropToken.correct_final_layer(finalLayer);
+            backpropToken.correct_final_layer(bonus);
         }
     }
 
@@ -1755,9 +1755,9 @@ TimePoint Search::Worker::elapsed() const {
 
 TimePoint Search::Worker::elapsed_time() const { return main_manager()->tm.elapsed_time(); }
 
-Value Search::Worker::evaluate(const Position& pos, Eval::NNUE::BigNetworkBackpropToken* backpropToken = nullptr) {
+Value Search::Worker::evaluate(const Position& pos, Eval::NNUE::BigNetworkBackpropToken* backpropToken) {
     return Eval::evaluate(networks[numaAccessToken], pos, accumulatorStack, refreshTable,
-                          optimism[pos.side_to_move()], backpropToken);
+                          optimism[pos.side_to_move()], (const void*)finalLayers.data(), backpropToken);
 }
 
 namespace {
