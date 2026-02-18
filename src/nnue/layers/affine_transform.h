@@ -278,9 +278,8 @@ class AffineTransform {
 
             __m512i wv = _mm512_loadu_si512(&weights[0]);
             __m512i iv = _mm512_cvtepu8_epi16(_mm256_loadu_si256((const vec_t*)input));
-            __m512i zero = _mm512_setzero_si512();
 
-            output[0] = biases[0] + _mm512_reduce_add_epi32(_mm512_dpwssd_epi32(zero, wv, iv)) / 128;
+            output[0] = biases[0] + _mm512_reduce_add_epi32(_mm512_madd_epi16(wv, iv)) / 128;
 
     #undef vec_setzero
     #undef vec_add_dpbusd_32
