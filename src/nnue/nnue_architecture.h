@@ -124,7 +124,7 @@ struct NetworkArchitecture {
 
             // TODO: vectorize
 
-            constexpr int GooseFactor = 9;
+            constexpr int GooseFactor = 11;
             constexpr int SwanFactor = 7;
 
             for (int i = 0; i < 32; ++i) {
