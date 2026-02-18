@@ -168,7 +168,7 @@ class AffineTransform {
     bool read_parameters(std::istream& stream) {
         read_little_endian<BiasType>(stream, biases, OutputDimensions);
         for (IndexType i = 0; i < OutputDimensions * PaddedInputDimensions; ++i)
-            weights[get_weight_index(i)] = read_little_endian<int8_t>(stream) * (Weights16 ? 128 : 1);
+            weights[get_weight_index(i)] = read_little_endian<int8_t>(stream) * (Weights16 ? 256 : 1);
 
         return !stream.fail();
     }
@@ -178,7 +178,7 @@ class AffineTransform {
         write_little_endian<BiasType>(stream, biases, OutputDimensions);
 
         for (IndexType i = 0; i < OutputDimensions * PaddedInputDimensions; ++i)
-            write_little_endian<int8_t>(stream, weights[get_weight_index(i)] / (Weights16 ? 128 : 1));
+            write_little_endian<int8_t>(stream, weights[get_weight_index(i)] / (Weights16 ? 256 : 1));
 
         return !stream.fail();
     }
@@ -187,7 +187,7 @@ class AffineTransform {
         std::size_t h = 0;
         hash_combine(h, get_raw_data_hash(biases));
         std::array<int8_t, OutputDimensions * PaddedInputDimensions> copy;
-        for (size_t i = 0; i < copy.size(); ++i) copy[i] = weights[i] / (Weights16 ? 128 : 1);
+        for (size_t i = 0; i < copy.size(); ++i) copy[i] = weights[i] / (Weights16 ? 256 : 1);
         hash_combine(h, get_raw_data_hash(weights));
         hash_combine(h, get_hash_value(0));
         return h;
@@ -279,7 +279,7 @@ class AffineTransform {
             __m512i wv = _mm512_loadu_si512(&weights[0]);
             __m512i iv = _mm512_cvtepu8_epi16(_mm256_loadu_si256((const vec_t*)input));
 
-            output[0] = biases[0] + _mm512_reduce_add_epi32(_mm512_madd_epi16(wv, iv)) / 128;
+            output[0] = biases[0] + _mm512_reduce_add_epi32(_mm512_madd_epi16(wv, iv)) / 256;
 
     #undef vec_setzero
     #undef vec_add_dpbusd_32
