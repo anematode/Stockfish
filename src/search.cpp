@@ -582,7 +582,11 @@ void Search::Worker::undo_null_move(Position& pos) { pos.undo_null_move(); }
 
 // Reset histories, usually before a new game
 void Search::Worker::clear() {
-    networks[numaAccessToken].big.init_final_layers(finalLayers);
+    finalLayers.resize(COLOR_NB);
+
+    for (auto& s : finalLayers)
+        networks[numaAccessToken].big.init_final_layers(s);
+
     mainHistory.fill(0);
     captureHistory.fill(-689);
 
@@ -1470,6 +1474,7 @@ moves_loop:  // When in check, search starts here
                        moveCount != 0 ? depth : std::min(MAX_PLY - 1, depth + 6), bestMove,
                        unadjustedStaticEval, tt.generation());
 
+
     // Adjust correction history if the best move is not a capture
     // and the error direction matches whether we are above/below bounds.
     if (!ss->inCheck && !(bestMove && pos.capture(bestMove))
@@ -1756,8 +1761,9 @@ TimePoint Search::Worker::elapsed() const {
 TimePoint Search::Worker::elapsed_time() const { return main_manager()->tm.elapsed_time(); }
 
 Value Search::Worker::evaluate(const Position& pos, Eval::NNUE::BigNetworkBackpropToken* backpropToken) {
+    const auto& fl = finalLayers[pos.side_to_move()];
     return Eval::evaluate(networks[numaAccessToken], pos, accumulatorStack, refreshTable,
-                          optimism[pos.side_to_move()], (const void*)finalLayers.data(), backpropToken);
+                          optimism[pos.side_to_move()], (const void*)fl.data(), backpropToken);
 }
 
 namespace {

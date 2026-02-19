@@ -102,9 +102,13 @@ struct NetworkArchitecture {
     class FinalLayer {
 
     public:
-        FinalLayer(const decltype(fc_2)& layer) : liveWeights(layer), originalWeights(layer) {}
+        FinalLayer(const decltype(fc_2)& layer) : liveWeights(layer), originalWeights(&layer) {
+            std::copy_n(layer.weights, 32, liveWeightsF32);
+        }
         alignas(CacheLineSize) decltype(fc_2) liveWeights;
-        alignas(CacheLineSize) decltype(fc_2) originalWeights;
+        const decltype(fc_2)* originalWeights;
+
+        float liveWeightsF32[32];
     };
 
     const auto& get_final_layer() const {
@@ -124,15 +128,16 @@ struct NetworkArchitecture {
 
             // TODO: vectorize
 
-            constexpr int GooseFactor = 7;
-            constexpr int SwanFactor = 7;
+            constexpr int GooseFactor = 10;
+            constexpr int SwanFactor = 8;
 
             for (int i = 0; i < 32; ++i) {
-                auto& live = finalLayer->liveWeights.weights[i];
-                int original = finalLayer->originalWeights.weights[i];
+                auto& live = finalLayer->liveWeightsF32[i];
+                float original = finalLayer->originalWeights->weights[i];
 
-                int new_weight = live + bonus * ac_1_out[i] / (1 << GooseFactor);
-                live = new_weight + (original - new_weight) / (1 << SwanFactor);
+                float new_weight = live + float(bonus) / float(1 << GooseFactor) * ac_1_out[i];
+                live = new_weight + (original - new_weight) / float(1 << SwanFactor);
+                finalLayer->liveWeights.weights[i] = int16_t(live);
             }
         }
 

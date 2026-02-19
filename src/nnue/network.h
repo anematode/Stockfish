@@ -72,7 +72,6 @@ class Network {
     bool save(const std::optional<std::string>& filename) const;
     void init_final_layers(std::vector<typename Arch::FinalLayer>& dest) const {
         dest.clear();
-        int i = 0;
         for (const auto& arch : network)
             dest.emplace_back(arch.get_final_layer());
     }

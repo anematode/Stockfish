@@ -357,7 +357,7 @@ class Worker {
     ThreadPool&                                               threads;
     TranspositionTable&                                       tt;
     const LazyNumaReplicatedSystemWide<Eval::NNUE::Networks>& networks;
-    std::vector<Eval::NNUE::BigNetworkFinalLayer> finalLayers;
+    std::vector<std::vector<Eval::NNUE::BigNetworkFinalLayer>> finalLayers;
 
     // Used by NNUE
     Eval::NNUE::AccumulatorStack  accumulatorStack;
