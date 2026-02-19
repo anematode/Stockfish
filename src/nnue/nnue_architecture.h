@@ -129,7 +129,7 @@ struct NetworkArchitecture {
             // TODO: vectorize
 
             constexpr int GooseFactor = 10;
-            constexpr int SwanFactor = 8;
+            constexpr int SwanFactor = 7;
 
             for (int i = 0; i < 32; ++i) {
                 auto& live = finalLayer->liveWeightsF32[i];
