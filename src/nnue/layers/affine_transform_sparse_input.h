@@ -140,12 +140,6 @@ void find_nnz(const std::uint8_t* RESTRICT input,
 
     using namespace SIMD;
 
-    static constexpr auto PopCnt8 = [] () { 
-        std::array<uint8_t, 256> result{};
-        for (int i = 0; i < 256; ++i) result[i] = constexpr_popcount(i);
-        return result;
-    } ();
-
     constexpr IndexType InputSimdWidth = sizeof(vec_uint_t) / sizeof(std::int32_t);
     // Outputs are processed 8 elements at a time, even if the SIMD width is narrower
     constexpr IndexType ChunkSize      = 8;
@@ -171,7 +165,7 @@ void find_nnz(const std::uint8_t* RESTRICT input,
         uint64_t mask = 255 * _pdep_u64(nnz, goose);
         uint64_t indices = _pext_u64(base, mask);
         memcpy(outptr, &indices, 8);
-        outptr += PopCnt8[nnz];
+        outptr += popcount(nnz);
         base += increment;
     }
     count_out = outptr - out;
