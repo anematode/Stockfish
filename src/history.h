@@ -36,7 +36,7 @@
 namespace Stockfish {
 
 constexpr int PAWN_HISTORY_BASE_SIZE   = 8192;  // has to be a power of 2
-constexpr int NMP_HISTORY_BASE_SIZE    = 32768;
+constexpr int NMP_HISTORY_BASE_SIZE    = 8192;
 constexpr int UINT_16_HISTORY_SIZE     = std::numeric_limits<uint16_t>::max() + 1;
 constexpr int CORRHIST_BASE_SIZE       = UINT_16_HISTORY_SIZE;
 constexpr int CORRECTION_HISTORY_LIMIT = 1024;
@@ -50,10 +50,6 @@ static_assert((NMP_HISTORY_BASE_SIZE & (NMP_HISTORY_BASE_SIZE - 1)) == 0,
 
 static_assert((CORRHIST_BASE_SIZE & (CORRHIST_BASE_SIZE - 1)) == 0,
               "CORRHIST_BASE_SIZE has to be a power of 2");
-
-inline int nmp_history_index(const Position& pos) {
-    return pos.pawn_key() & (NMP_HISTORY_BASE_SIZE - 1);
-}
 
 // StatsEntry is the container of various numerical statistics. We use a class
 // instead of a naked value to directly call history update operator<<() on
@@ -161,7 +157,7 @@ using ContinuationHistory = MultiArray<PieceToHistory, PIECE_NB, SQUARE_NB>;
 using PawnHistory =
   DynStats<AtomicStats<std::int16_t, 8192, PIECE_NB, SQUARE_NB>, PAWN_HISTORY_BASE_SIZE>;
 
-using NullMoveHistory = Stats<std::int16_t, 8192, NMP_HISTORY_BASE_SIZE, COLOR_NB>;
+using NullMoveHistory = DynStats<AtomicStats<std::int16_t, 8192, COLOR_NB>, NMP_HISTORY_BASE_SIZE>;
 
 // Correction histories record differences between the static evaluation of
 // positions and their search score. It is used to improve the static evaluation
@@ -232,10 +228,12 @@ using TTMoveHistory = StatsEntry<std::int16_t, 8192>;
 struct SharedHistories {
     SharedHistories(size_t threadCount) :
         correctionHistory(threadCount),
-        pawnHistory(threadCount) {
+        pawnHistory(threadCount),
+        nullMoveHistory(threadCount) {
         assert((threadCount & (threadCount - 1)) == 0 && threadCount != 0);
         sizeMinus1         = correctionHistory.get_size() - 1;
         pawnHistSizeMinus1 = pawnHistory.get_size() - 1;
+        nmpHistSizeMinus1 = nullMoveHistory.get_size() - 1;
     }
 
     size_t get_size() const { return sizeMinus1 + 1; }
@@ -245,6 +243,13 @@ struct SharedHistories {
     }
     const auto& pawn_entry(const Position& pos) const {
         return pawnHistory[pos.pawn_key() & pawnHistSizeMinus1];
+    }
+
+    auto& nmp_entry(const Position& pos) {
+        return nullMoveHistory[pos.pawn_key() & nmpHistSizeMinus1];
+    }
+    const auto& nmp_entry(const Position& pos) const {
+        return nullMoveHistory[pos.pawn_key() & nmpHistSizeMinus1];
     }
 
     auto& pawn_correction_entry(const Position& pos) {
@@ -272,10 +277,11 @@ struct SharedHistories {
 
     UnifiedCorrectionHistory correctionHistory;
     PawnHistory              pawnHistory;
+    NullMoveHistory          nullMoveHistory;
 
 
    private:
-    size_t sizeMinus1, pawnHistSizeMinus1;
+    size_t sizeMinus1, pawnHistSizeMinus1, nmpHistSizeMinus1;
 };
 
 }  // namespace Stockfish

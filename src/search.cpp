@@ -588,10 +588,9 @@ void Search::Worker::clear() {
     // Each thread is responsible for clearing their part of shared history
     sharedHistory.correctionHistory.clear_range(0, numaThreadIdx, numaTotal);
     sharedHistory.pawnHistory.clear_range(-1238, numaThreadIdx, numaTotal);
+    sharedHistory.nullMoveHistory.clear_range(0, numaThreadIdx, numaTotal);
 
     ttMoveHistory = 0;
-
-    nullMoveHistory.fill(0);
 
     for (auto& to : continuationCorrectionHistory)
         for (auto& h : to)
@@ -890,7 +889,7 @@ Value Search::Worker::search(
     }
 
     // Step 9. Null move search with verification search
-    if (cutNode && ss->staticEval >= beta - 17 * depth + 359 - nullMoveHistory[nmp_history_index(pos)][us] / 64
+    if (cutNode && ss->staticEval >= beta - 17 * depth + 359 - sharedHistory.nmp_entry(pos)[us] / 64
         && !excludedMove && pos.non_pawn_material(us) && ss->ply >= nmpMinPly && !is_loss(beta))
     {
         assert((ss - 1)->currentMove != Move::null());
@@ -903,7 +902,7 @@ Value Search::Worker::search(
 
         undo_null_move(pos);
 
-        nullMoveHistory[nmp_history_index(pos)][us] << (nullValue >= beta ? 700 : -700);
+        sharedHistory.nmp_entry(pos)[us] << (nullValue >= beta ? 700 : -700);
 
         // Do not return unproven mate or TB scores
         if (nullValue >= beta && !is_win(nullValue))
