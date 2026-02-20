@@ -83,7 +83,7 @@ alignas(CacheLineSize) static constexpr struct OffsetIndices {
 // std::uint8_t array.
 template<const IndexType InputDimensions>
 void find_nnz(const std::uint8_t* RESTRICT input,
-              std::uint16_t* RESTRICT      out,
+              std::uint8_t* RESTRICT      out,
               IndexType&                   count_out) {
 
     #if defined(USE_AVX512ICL)
@@ -140,6 +140,12 @@ void find_nnz(const std::uint8_t* RESTRICT input,
 
     using namespace SIMD;
 
+    static constexpr auto PopCnt8 = [] () { 
+        std::array<uint8_t, 256> result{};
+        for (int i = 0; i < 256; ++i) result[i] = constexpr_popcount(i);
+        return result;
+    } ();
+
     constexpr IndexType InputSimdWidth = sizeof(vec_uint_t) / sizeof(std::int32_t);
     // Outputs are processed 8 elements at a time, even if the SIMD width is narrower
     constexpr IndexType ChunkSize      = 8;
@@ -149,9 +155,10 @@ void find_nnz(const std::uint8_t* RESTRICT input,
     static_assert(InputsPerChunk > 0 && "SIMD width too wide");
 
     const auto     inputVector = reinterpret_cast<const vec_uint_t*>(input);
-    IndexType      count       = 0;
-    vec128_t       base        = vec128_zero;
-    const vec128_t increment   = vec128_set_16(8);
+    uint8_t* outptr = out;
+    uint64_t       base        = 0x0706050403020100ULL;
+    uint64_t       goose   = 0x0101010101010101ULL;
+    uint64_t       increment   = goose * 8;
     for (IndexType i = 0; i < NumChunks; ++i)
     {
         // bitmask of nonzero values in this chunk
@@ -161,13 +168,13 @@ void find_nnz(const std::uint8_t* RESTRICT input,
             const vec_uint_t inputChunk = inputVector[i * InputsPerChunk + j];
             nnz |= unsigned(vec_nnz(inputChunk)) << (j * InputSimdWidth);
         }
-        const vec128_t offsets =
-          vec128_load(reinterpret_cast<const vec128_t*>(&Lookup.offset_indices[nnz]));
-        vec128_storeu(reinterpret_cast<vec128_t*>(out + count), vec128_add(base, offsets));
-        count += popcount(nnz);
-        base = vec128_add(base, increment);
+        uint64_t mask = 255 * _pdep_u64(nnz, goose);
+        uint64_t indices = _pext_u64(base, mask);
+        memcpy(outptr, &indices, 8);
+        outptr += PopCnt8[nnz];
+        base += increment;
     }
-    count_out = count;
+    count_out = outptr - out;
     #endif
 }
 
@@ -293,7 +300,7 @@ class AffineTransformSparseInput {
     #else
           NumAccums;
     #endif
-        std::uint16_t nnz[NumChunks];
+        std::uint8_t nnz[NumChunks];
         IndexType     count;
 
         // Find indices of nonzero 32-bit blocks
