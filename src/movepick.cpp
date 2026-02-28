@@ -132,11 +132,11 @@ ExtMove* MovePicker::score(MoveList<Type>& ml) {
     if constexpr (Type == QUIETS)
     {
         threatByLesser[PAWN]   = 0;
-        threatByLesser[KNIGHT] = threatByLesser[BISHOP] = pos.attacks_by<PAWN>(~us);
+        threatByLesser[KNIGHT] = threatByLesser[BISHOP] = pos.nonpinned_attacks_by<PAWN>(~us);
         threatByLesser[ROOK] =
-          pos.attacks_by<KNIGHT>(~us) | pos.attacks_by<BISHOP>(~us) | threatByLesser[KNIGHT];
-        threatByLesser[QUEEN] = pos.attacks_by<ROOK>(~us) | threatByLesser[ROOK];
-        threatByLesser[KING]  = pos.attacks_by<QUEEN>(~us) | threatByLesser[QUEEN];
+          pos.nonpinned_attacks_by<KNIGHT>(~us) | pos.nonpinned_attacks_by<BISHOP>(~us) | threatByLesser[KNIGHT];
+        threatByLesser[QUEEN] = pos.nonpinned_attacks_by<ROOK>(~us) | threatByLesser[ROOK];
+        threatByLesser[KING]  = 0;
     }
 
     ExtMove* it = cur;

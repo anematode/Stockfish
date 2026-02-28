@@ -123,6 +123,8 @@ class Position {
     void     update_slider_blockers(Color c) const;
     template<PieceType Pt>
     Bitboard attacks_by(Color c) const;
+    template<PieceType Pt>
+    Bitboard nonpinned_attacks_by(Color c) const;
 
     // Properties of moves
     bool  legal(Move m) const;
@@ -295,6 +297,47 @@ inline Bitboard Position::attacks_by(Color c) const {
             threats |= attacks_bb<Pt>(pop_lsb(attackers), pieces());
         return threats;
     }
+}
+
+// n.b.: this function is not exact due to en passant pins
+template<PieceType Pt>
+inline Bitboard Position::nonpinned_attacks_by(Color c) const {
+    Bitboard attackers = pieces(c, Pt);
+    Bitboard threats = 0;
+    Bitboard pinnedAttackers = attackers & st->blockersForKing[c];
+    Bitboard nonpinnedAttackers = attackers ^ pinnedAttackers;
+
+    if constexpr (Pt == PAWN) {
+        threats = (c == WHITE) ? pawn_attacks_bb<WHITE>(nonpinnedAttackers)
+                                : pawn_attacks_bb<BLACK>(nonpinnedAttackers);
+    }
+    else {
+        while (nonpinnedAttackers)
+            threats |= attacks_bb<Pt>(pop_lsb(nonpinnedAttackers), pieces());
+    }
+
+    if constexpr (Pt != KNIGHT) {
+        Square ksq = square<KING>(c);
+
+        while (pinnedAttackers) {
+            Bitboard bb = pinnedAttackers;
+            Square sq = pop_lsb(pinnedAttackers);
+
+            if constexpr (Pt == PAWN) {
+                Bitboard b_sq = bb ^ pinnedAttackers;
+                bb = (c == WHITE) ? pawn_attacks_bb<WHITE>(b_sq)
+                                  : pawn_attacks_bb<BLACK>(b_sq);
+            } else {
+                bb = attacks_bb<Pt>(sq, pieces());
+            }
+
+            // A pinned piece can only attack if the attack is on the pin ray
+            bb &= LineBB[sq][ksq];
+            threats |= bb;
+        }
+    }
+
+    return threats;
 }
 
 inline Bitboard Position::checkers() const { return st->checkersBB; }
