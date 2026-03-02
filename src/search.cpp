@@ -89,7 +89,7 @@ int correction_value(const Worker& w, const Position& pos, const Stack* const ss
                     + (*(ss - 4)->continuationCorrectionHistory)[pos.piece_on(m.to_sq())][m.to_sq()]
                   : 8;
 
-    *corrplexity = 11433 * std::abs(pcv) + 8823 *std::abs(micv) + 12749 * std::abs(wnpcv) + 12749 * std::abs(bnpcv) + 8022 * cntcv;
+    *corrplexity = 11433 * std::abs(pcv) + 8823 *std::abs(micv) + 12749 * std::abs(wnpcv) + 12749 * std::abs(bnpcv) + 8022 * std::abs(cntcv);
 
     return 11433 * pcv + 8823 * micv + 12749 * (wnpcv + bnpcv) + 8022 * cntcv;
 }
@@ -1141,7 +1141,7 @@ moves_loop:  // When in check, search starts here
 
             if (value < singularBeta)
             {
-                int corrValAdj   = std::abs(corrplexity) / 235900;
+                int corrValAdj   = corrplexity / 260879;
                 int doubleMargin = -4 + 213 * PvNode - 196 * !ttCapture - corrValAdj
                                  - 943 * ttMoveHistory / 123477 - (ss->ply > rootDepth) * 45;
                 int tripleMargin = 73 + 324 * PvNode - 229 * !ttCapture + 87 * ss->ttPv - corrValAdj
