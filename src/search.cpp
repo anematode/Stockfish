@@ -89,7 +89,7 @@ int correction_value(const Worker& w, const Position& pos, const Stack* const ss
                     + (*(ss - 4)->continuationCorrectionHistory)[pos.piece_on(m.to_sq())][m.to_sq()]
                   : 8;
 
-    *corrplexity = 11433 * std::abs(pcv) + 8823 *std::abs(micv) + 12749 * std::abs(wnpcv) + 12749 * std::abs(bnpcv) + 8022 * std::abs(cntcv);
+    *corrplexity = std::abs(11433 * pcv) + std::abs(8823 * micv) + std::abs(12749 * wnpcv) + std::abs(12749 * bnpcv) + std::abs(8022 * cntcv);
 
     return 11433 * pcv + 8823 * micv + 12749 * (wnpcv + bnpcv) + 8022 * cntcv;
 }
