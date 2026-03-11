@@ -106,18 +106,23 @@ inline Move* splat_moves(Move* moveList, Square from, Bitboard to_bb) {
 #endif
 
 template<GenType Type, Direction D, bool Enemy>
-Move* make_promotions(Move* moveList, [[maybe_unused]] Square to) {
+Move* make_promotions(Move* moveList, Square to, Bitboard knightChecks) {
 
     constexpr bool all = Type == EVASIONS || Type == NON_EVASIONS;
+    [[maybe_unused]] bool knightCheck = knightChecks & to;
 
-    if constexpr (Type == CAPTURES || all)
+    if constexpr (Type == CAPTURES || all) {
         *moveList++ = Move::make<PROMOTION>(to - D, to, QUEEN);
+        if (knightCheck)
+            *moveList++ = Move::make<PROMOTION>(to - D, to, KNIGHT);
+    }
 
     if constexpr ((Type == CAPTURES && Enemy) || (Type == QUIETS && !Enemy) || all)
     {
         *moveList++ = Move::make<PROMOTION>(to - D, to, ROOK);
         *moveList++ = Move::make<PROMOTION>(to - D, to, BISHOP);
-        *moveList++ = Move::make<PROMOTION>(to - D, to, KNIGHT);
+        *moveList = Move::make<PROMOTION>(to - D, to, KNIGHT);
+        moveList += !knightCheck;
     }
 
     return moveList;
@@ -162,18 +167,19 @@ Move* generate_pawn_moves(const Position& pos, Move* moveList, Bitboard target) 
         Bitboard b1 = shift<UpRight>(pawnsOn7) & enemies;
         Bitboard b2 = shift<UpLeft>(pawnsOn7) & enemies;
         Bitboard b3 = shift<Up>(pawnsOn7) & emptySquares;
+        Bitboard knightChecks = attacks_bb<KNIGHT>(pos.square<KING>(Them));
 
         if constexpr (Type == EVASIONS)
             b3 &= target;
 
         while (b1)
-            moveList = make_promotions<Type, UpRight, true>(moveList, pop_lsb(b1));
+            moveList = make_promotions<Type, UpRight, true>(moveList, pop_lsb(b1), knightChecks);
 
         while (b2)
-            moveList = make_promotions<Type, UpLeft, true>(moveList, pop_lsb(b2));
+            moveList = make_promotions<Type, UpLeft, true>(moveList, pop_lsb(b2), knightChecks);
 
         while (b3)
-            moveList = make_promotions<Type, Up, false>(moveList, pop_lsb(b3));
+            moveList = make_promotions<Type, Up, false>(moveList, pop_lsb(b3), knightChecks);
     }
 
     // Standard and en passant captures
@@ -263,7 +269,7 @@ Move* generate_all(const Position& pos, Move* moveList) {
 }  // namespace
 
 
-// <CAPTURES>     Generates all pseudo-legal captures plus queen promotions
+// <CAPTURES>     Generates all pseudo-legal captures plus queen promotions and knight promotions if they deliver check
 // <QUIETS>       Generates all pseudo-legal non-captures and underpromotions
 // <EVASIONS>     Generates all pseudo-legal check evasions
 // <NON_EVASIONS> Generates all pseudo-legal captures and non-captures
