@@ -328,9 +328,11 @@ void FullThreats::append_changed_indices(Color                   perspective,
 
         if (index < Dimensions)
         {
-            if (prefetchBase)
-                prefetch<PrefetchRw::READ, PrefetchLoc::LOW>(
-                  prefetchBase + static_cast<std::ptrdiff_t>(index) * prefetchStride);
+            if (prefetchBase) {
+                for (size_t j = 0; j < 4; ++j)
+                    prefetch<PrefetchRw::READ, PrefetchLoc::LOW>(
+                      prefetchBase + static_cast<std::ptrdiff_t>(index) * prefetchStride + j * CacheLineSize);
+            }
             insert.push_back(index);
         }
     }
