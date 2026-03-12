@@ -106,23 +106,19 @@ inline Move* splat_moves(Move* moveList, Square from, Bitboard to_bb) {
 #endif
 
 template<GenType Type, Direction D, bool Enemy>
-Move* make_promotions(Move* moveList, Square to, Bitboard knightChecks) {
+Move* make_promotions(Move* moveList, Square to) {
 
     constexpr bool all = Type == EVASIONS || Type == NON_EVASIONS;
-    [[maybe_unused]] bool knightCheck = knightChecks & to;
 
     if constexpr (Type == CAPTURES || all) {
         *moveList++ = Move::make<PROMOTION>(to - D, to, QUEEN);
-        if (knightCheck)
-            *moveList++ = Move::make<PROMOTION>(to - D, to, KNIGHT);
+        *moveList++ = Move::make<PROMOTION>(to - D, to, KNIGHT);
     }
 
     if constexpr ((Type == CAPTURES && Enemy) || (Type == QUIETS && !Enemy) || all)
     {
         *moveList++ = Move::make<PROMOTION>(to - D, to, ROOK);
         *moveList++ = Move::make<PROMOTION>(to - D, to, BISHOP);
-        *moveList = Move::make<PROMOTION>(to - D, to, KNIGHT);
-        moveList += !knightCheck;
     }
 
     return moveList;
@@ -167,19 +163,18 @@ Move* generate_pawn_moves(const Position& pos, Move* moveList, Bitboard target) 
         Bitboard b1 = shift<UpRight>(pawnsOn7) & enemies;
         Bitboard b2 = shift<UpLeft>(pawnsOn7) & enemies;
         Bitboard b3 = shift<Up>(pawnsOn7) & emptySquares;
-        Bitboard knightChecks = attacks_bb<KNIGHT>(pos.square<KING>(Them));
 
         if constexpr (Type == EVASIONS)
             b3 &= target;
 
         while (b1)
-            moveList = make_promotions<Type, UpRight, true>(moveList, pop_lsb(b1), knightChecks);
+            moveList = make_promotions<Type, UpRight, true>(moveList, pop_lsb(b1));
 
         while (b2)
-            moveList = make_promotions<Type, UpLeft, true>(moveList, pop_lsb(b2), knightChecks);
+            moveList = make_promotions<Type, UpLeft, true>(moveList, pop_lsb(b2));
 
         while (b3)
-            moveList = make_promotions<Type, Up, false>(moveList, pop_lsb(b3), knightChecks);
+            moveList = make_promotions<Type, Up, false>(moveList, pop_lsb(b3));
     }
 
     // Standard and en passant captures
