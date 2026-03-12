@@ -51,7 +51,7 @@ constexpr int constexpr_lsb(uint64_t bb) {
 
 alignas(CacheLineSize) static constexpr struct OffsetIndices {
 
-    std::uint16_t offset_indices[256][8];
+    std::uint8_t offset_indices[256][8];
 
     constexpr OffsetIndices() :
         offset_indices() {
@@ -83,7 +83,7 @@ alignas(CacheLineSize) static constexpr struct OffsetIndices {
 // std::uint8_t array.
 template<const IndexType InputDimensions>
 void find_nnz(const std::uint8_t* RESTRICT input,
-              std::uint16_t* RESTRICT      out,
+              std::uint8_t* RESTRICT      out,
               IndexType&                   count_out) {
 
     #if defined(USE_AVX512ICL)
@@ -150,8 +150,8 @@ void find_nnz(const std::uint8_t* RESTRICT input,
 
     const auto     inputVector = reinterpret_cast<const vec_uint_t*>(input);
     IndexType      count       = 0;
-    vec128_t       base        = vec128_zero;
-    const vec128_t increment   = vec128_set_16(8);
+    uint64_t       base        = 0;
+    const uint64_t increment   = 0x0808080808080808ULL;
     for (IndexType i = 0; i < NumChunks; ++i)
     {
         // bitmask of nonzero values in this chunk
@@ -161,11 +161,12 @@ void find_nnz(const std::uint8_t* RESTRICT input,
             const vec_uint_t inputChunk = inputVector[i * InputsPerChunk + j];
             nnz |= unsigned(vec_nnz(inputChunk)) << (j * InputSimdWidth);
         }
-        const vec128_t offsets =
-          vec128_load(reinterpret_cast<const vec128_t*>(&Lookup.offset_indices[nnz]));
-        vec128_storeu(reinterpret_cast<vec128_t*>(out + count), vec128_add(base, offsets));
+        uint64_t d;
+        memcpy(&d, &Lookup.offset_indices[nnz], 8);
+        d += base;
+        memcpy(out + count, &d, 8);
         count += popcount(nnz);
-        base = vec128_add(base, increment);
+        base += increment;
     }
     count_out = count;
     #endif
@@ -293,7 +294,7 @@ class AffineTransformSparseInput {
     #else
           NumAccums;
     #endif
-        std::uint16_t nnz[NumChunks];
+        std::uint8_t nnz[NumChunks];
         IndexType     count;
 
         // Find indices of nonzero 32-bit blocks
