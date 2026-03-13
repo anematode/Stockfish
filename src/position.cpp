@@ -164,7 +164,7 @@ void Position::init() {
 // Initializes the position object with the given FEN string.
 // This function is not very robust - make sure that input FENs are correct,
 // this is assumed to be the responsibility of the GUI.
-Position& Position::set(const string& fenStr, bool isChess960, StateInfo* si) {
+std::optional<PositionSetError> Position::set(const string& fenStr, bool isChess960, StateInfo* si) {
     /*
    A FEN string defines a particular position using only the ASCII character set.
 
@@ -200,9 +200,7 @@ Position& Position::set(const string& fenStr, bool isChess960, StateInfo* si) {
       incremented after Black's move.
 */
 
-    unsigned char      col, row, token;
-    size_t             idx;
-    Square             sq = SQ_A8;
+    unsigned char      token;
     std::istringstream ss(fenStr);
 
     std::memset(reinterpret_cast<char*>(this), 0, sizeof(Position));
@@ -211,24 +209,86 @@ Position& Position::set(const string& fenStr, bool isChess960, StateInfo* si) {
 
     ss >> std::noskipws;
 
+    int numPieces = 0;
+    File file = FILE_A;
+    Rank rank = RANK_8;
+
     // 1. Piece placement
-    while ((ss >> token) && !isspace(token))
+    for (;;)
     {
-        if (isdigit(token))
-            sq += (token - '0') * EAST;  // Advance the given number of files
+        if (!(ss >> token))
+            return PositionSetError("Invalid FEN. Unexpected end of stream.");
 
-        else if (token == '/')
-            sq += 2 * SOUTH;
+        if (isspace(token))
+            break;
 
-        else if ((idx = PieceToChar.find(token)) != string::npos)
+        if (isdigit(token)) 
         {
+            const int diff = (token - '0');
+            if (diff < 1 || diff > 8)
+                return PositionSetError("Invalid FEN. Invalid number of squares to skip.");
+
+            file = File(file + diff);
+            if (file > FILE_NB)
+                return PositionSetError("Invalid FEN. Invalid file reached.");
+        }
+        else if (token == '/')
+        {
+            if (file != FILE_NB)
+                return PositionSetError("Invalid FEN. Trying to end rank when not at the end of it.");
+
+            --rank;
+            file = FILE_A;
+
+            if (rank < RANK_1)
+                return PositionSetError("Invalid FEN. Invalid rank reached.");
+        }
+        else
+        {
+            const size_t idx = PieceToChar.find(token);
+            if (idx == string::npos)
+                return PositionSetError(std::string("Invalid FEN. Invalid piece: ") + std::string(1, token));
+                
+            if (++numPieces > 32)
+                return PositionSetError("Invalid FEN. More than 32 pieces on the board.");
+
+            const Square sq = make_square(file, rank);
             put_piece(Piece(idx), sq);
-            ++sq;
+
+            ++file;
+            if (file > FILE_NB)
+                return PositionSetError("Invalid FEN. Invalid file reached.");
         }
     }
 
+    if (rank != RANK_1 || file != FILE_NB)
+        return PositionSetError("Invalid FEN. Board state encoding ended but cursor not at end.");
+
+    const int wPawns = count<PAWN>(WHITE);
+    const int bPawns = count<PAWN>(BLACK);
+    if (wPawns > 8)
+        return PositionSetError("Unsupported position. WHITE has more than 8 pawns.");
+    if (bPawns > 8)
+        return PositionSetError("Unsupported position. BLACK has more than 8 pawns.");
+
+    const int wAdditionalKnights = std::max((int)count<KNIGHT>(WHITE) - 2, 0);
+    const int bAdditionalKnights = std::max((int)count<KNIGHT>(BLACK) - 2, 0);
+    const int wAdditionalBishops = std::max((int)count<BISHOP>(WHITE) - 2, 0);
+    const int bAdditionalBishops = std::max((int)count<BISHOP>(BLACK) - 2, 0);
+    const int wAdditionalRooks = std::max((int)count<ROOK>(WHITE) - 2, 0);
+    const int bAdditionalRooks = std::max((int)count<ROOK>(BLACK) - 2, 0);
+    const int wAdditionalQueens = std::max((int)count<QUEEN>(WHITE) - 1, 0);
+    const int bAdditionalQueens = std::max((int)count<QUEEN>(BLACK) - 1, 0);
+    if (wAdditionalKnights + wAdditionalBishops + wAdditionalRooks + wAdditionalQueens > 8 - wPawns)
+        return PositionSetError("Unsupported position. Too many major pieces for WHITE.");
+    if (bAdditionalKnights + bAdditionalBishops + bAdditionalRooks + bAdditionalQueens > 8 - bPawns)
+        return PositionSetError("Unsupported position. Too many major pieces for BLACK.");
+
     // 2. Active color
-    ss >> token;
+    if (!(ss >> token))
+        return PositionSetError("Invalid FEN. Unexpected end of stream.");
+    if (token != 'w' && token != 'b')
+        return PositionSetError(std::string("Invalid FEN. Invalid side to move: ") + std::string(1, token));
     sideToMove = (token == 'w' ? WHITE : BLACK);
     ss >> token;
 
@@ -237,8 +297,21 @@ Position& Position::set(const string& fenStr, bool isChess960, StateInfo* si) {
     // the game instead of KQkq and also X-FEN standard that, in case of Chess960,
     // if an inner rook is associated with the castling right, the castling tag is
     // replaced by the file letter of the involved rook, as for the Shredder-FEN.
-    while ((ss >> token) && !isspace(token))
+    int num_castling_rights = 0;
+    for (;;)
     {
+        if (!(ss >> token))
+            return PositionSetError("Invalid FEN. Unexpected end of stream.");
+
+        if (isspace(token))
+            break;
+
+        if (num_castling_rights == 0 && token == '-')
+            break;
+
+        if (++num_castling_rights > 4)
+            return PositionSetError("Invalid FEN. Maximum of 4 castling rights can be specified.");
+
         Square rsq;
         Color  c    = islower(token) ? BLACK : WHITE;
         Piece  rook = make_piece(c, ROOK);
@@ -246,46 +319,60 @@ Position& Position::set(const string& fenStr, bool isChess960, StateInfo* si) {
         token = char(toupper(token));
 
         if (token == 'K')
-            for (rsq = relative_square(c, SQ_H1); piece_on(rsq) != rook; --rsq)
+            for (rsq = relative_square(c, SQ_H1); piece_on(rsq) != rook && file_of(rsq) >= FILE_A; --rsq)
             {}
 
         else if (token == 'Q')
-            for (rsq = relative_square(c, SQ_A1); piece_on(rsq) != rook; ++rsq)
+            for (rsq = relative_square(c, SQ_A1); piece_on(rsq) != rook && file_of(rsq) <= FILE_H; ++rsq)
             {}
 
         else if (token >= 'A' && token <= 'H')
             rsq = make_square(File(token - 'A'), relative_rank(c, RANK_1));
 
         else
-            continue;
+            return PositionSetError(std::string("Invalid FEN. Expected castling rights. Got: ") + std::string(1, token));
+
+        if (piece_on(rsq) != rook)
+            return PositionSetError("Invalid FEN. Trying to set castling rights without required rook.");
 
         set_castling_right(c, rsq);
     }
 
+    ss >> std::ws;
+
     // 4. En passant square.
     // Ignore if square is invalid or not on side to move relative rank 6.
     bool enpassant = false, legalEP = false;
-
-    if (((ss >> col) && (col >= 'a' && col <= 'h'))
-        && ((ss >> row) && (row == (sideToMove == WHITE ? '6' : '3'))))
+    unsigned char col, row;
+    if (!(ss >> col))
+        return PositionSetError("Invalid FEN. Unexpected end of stream.");
+    if (col != '-')
     {
-        st->epSquare = make_square(File(col - 'a'), Rank(row - '1'));
+        if (!(ss >> row))
+            return PositionSetError("Invalid FEN. Unexpected end of stream.");
 
-        Bitboard pawns  = attacks_bb<PAWN>(st->epSquare, ~sideToMove) & pieces(sideToMove, PAWN);
-        Bitboard target = (pieces(~sideToMove, PAWN) & (st->epSquare + pawn_push(~sideToMove)));
-        Bitboard occ    = pieces() ^ target ^ st->epSquare;
+        if (   (col >= 'a' && col <= 'h')
+            && (row == (sideToMove == WHITE ? '6' : '3')))
+        {
+            st->epSquare = make_square(File(col - 'a'), Rank(row - '1'));
 
-        // En passant square will be considered only if
-        // a) side to move have a pawn threatening epSquare
-        // b) there is an enemy pawn in front of epSquare
-        // c) there is no piece on epSquare or behind epSquare
-        enpassant =
-          pawns && target && !(pieces() & (st->epSquare | (st->epSquare + pawn_push(sideToMove))));
+            Bitboard pawns  = attacks_bb<PAWN>(st->epSquare, ~sideToMove) & pieces(sideToMove, PAWN);
+            Bitboard target = (pieces(~sideToMove, PAWN) & (st->epSquare + pawn_push(~sideToMove)));
+            Bitboard occ    = pieces() ^ target ^ st->epSquare;
 
-        // If no pawn can execute the en passant capture without leaving the king in check, don't record the epSquare
-        while (pawns)
-            legalEP |= !(attackers_to(square<KING>(sideToMove), occ ^ pop_lsb(pawns))
-                         & pieces(~sideToMove) & ~target);
+            // En passant square will be considered only if
+            // a) side to move have a pawn threatening epSquare
+            // b) there is an enemy pawn in front of epSquare
+            // c) there is no piece on epSquare or behind epSquare
+            enpassant = pawns && target && !(pieces() & (st->epSquare | (st->epSquare + pawn_push(sideToMove))));
+
+            // If no pawn can execute the en passant capture without leaving the king in check, don't record the epSquare
+            while (pawns)
+                legalEP |= !(attackers_to(square<KING>(sideToMove), occ ^ pop_lsb(pawns))
+                            & pieces(~sideToMove) & ~target);
+        }
+        else
+            return PositionSetError("Invalid FEN. Invalid en-passant square.");
     }
 
     if (!enpassant || !legalEP)
@@ -301,9 +388,10 @@ Position& Position::set(const string& fenStr, bool isChess960, StateInfo* si) {
     chess960 = isChess960;
     set_state();
 
-    assert(pos_is_ok());
+    if (!pos_is_ok())
+        return PositionSetError("Unsupported position. Extended position validity check failed.");
 
-    return *this;
+    return std::nullopt;
 }
 
 
@@ -401,7 +489,7 @@ Key Position::compute_material_key() const {
 
 // Overload to initialize the position object with the given endgame code string
 // like "KBPKN". It's mainly a helper to get the material key out of an endgame code.
-Position& Position::set(const string& code, Color c, StateInfo* si) {
+std::optional<PositionSetError> Position::set(const string& code, Color c, StateInfo* si) {
 
     assert(code[0] == 'K');
 
