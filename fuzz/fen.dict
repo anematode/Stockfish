@@ -1,0 +1,91 @@
+# AFL++ dictionary for FEN strings
+
+# Piece characters
+"K"
+"Q"
+"R"
+"B"
+"N"
+"P"
+"k"
+"q"
+"r"
+"b"
+"n"
+"p"
+
+# Rank separator
+"/"
+
+# Empty square counts
+"1"
+"2"
+"3"
+"4"
+"5"
+"6"
+"7"
+"8"
+
+# Side to move
+" w "
+" b "
+
+# Castling tokens
+"KQkq"
+"KQ"
+"kq"
+"Kk"
+"Qq"
+"K"
+"Q"
+"k"
+"q"
+"-"
+
+# En passant squares
+"a3"
+"b3"
+"c3"
+"d3"
+"e3"
+"f3"
+"g3"
+"h3"
+"a6"
+"b6"
+"c6"
+"d6"
+"e6"
+"f6"
+"g6"
+"h6"
+
+# Common halfmove/fullmove values
+" 0 1"
+" 0 "
+" 50 "
+
+# Common FEN fragments
+"8/8/8/8/8/8/8/8"
+"PPPPPPPP"
+"pppppppp"
+"rnbqkbnr"
+"RNBQKBNR"
+"4k3"
+"4K3"
+
+# Chess960 castling file letters
+"A"
+"B"
+"C"
+"D"
+"E"
+"F"
+"G"
+"H"
+
+# Interesting boundary tokens
+"9"
+"0"
+" "
