@@ -52,7 +52,9 @@ int main() {
         // Parse the FEN — this is the primary fuzz target
         StateInfo st;
         Position  pos;
-        pos.set(std::string(fen), false, &st);
+        auto fail = pos.set(std::string(fen), false, &st);
+
+        if (fail.has_value()) continue;
 
         // Depth-2 perft: exercises move generation on the (possibly corrupt) position
         StateInfo st1, st2;

@@ -245,6 +245,9 @@ std::optional<PositionSetError> Position::set(const string& fenStr, bool isChess
         }
         else
         {
+            if (file >= FILE_NB)
+                return PositionSetError("Invalid FEN. Invalid file reached.");
+
             const size_t idx = PieceToChar.find(token);
             if (idx == string::npos)
                 return PositionSetError(std::string("Invalid FEN. Invalid piece: ") + std::string(1, token));
@@ -256,8 +259,6 @@ std::optional<PositionSetError> Position::set(const string& fenStr, bool isChess
             put_piece(Piece(idx), sq);
 
             ++file;
-            if (file > FILE_NB)
-                return PositionSetError("Invalid FEN. Invalid file reached.");
         }
     }
 
@@ -270,6 +271,11 @@ std::optional<PositionSetError> Position::set(const string& fenStr, bool isChess
         return PositionSetError("Unsupported position. WHITE has more than 8 pawns.");
     if (bPawns > 8)
         return PositionSetError("Unsupported position. BLACK has more than 8 pawns.");
+
+    if (pieces(PAWN) & (RANK_1 | RANK_8))
+        return PositionSetError("Unsupported position. Pawns on the first or eighth rank.");
+    if (count<KING>(WHITE) != 1 || count<KING>(BLACK) != 1)
+        return PositionSetError("Unsupported position. Incorrect number of kings.");
 
     const int wAdditionalKnights = std::max((int)count<KNIGHT>(WHITE) - 2, 0);
     const int bAdditionalKnights = std::max((int)count<KNIGHT>(BLACK) - 2, 0);
@@ -388,8 +394,8 @@ std::optional<PositionSetError> Position::set(const string& fenStr, bool isChess
     chess960 = isChess960;
     set_state();
 
-    if (!pos_is_ok())
-        return PositionSetError("Unsupported position. Extended position validity check failed.");
+    if (attackers_to_exist(square<KING>(~sideToMove), pieces(), sideToMove))
+        return PositionSetError("Unsupported position. King can be captured.");
 
     return std::nullopt;
 }
