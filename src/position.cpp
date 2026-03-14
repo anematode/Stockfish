@@ -164,7 +164,8 @@ void Position::init() {
 // Initializes the position object with the given FEN string.
 // This function is not very robust - make sure that input FENs are correct,
 // this is assumed to be the responsibility of the GUI.
-std::optional<PositionSetError> Position::set(const string& fenStr, bool isChess960, StateInfo* si) {
+std::optional<PositionSetError>
+Position::set(const string& fenStr, bool isChess960, StateInfo* si) {
     /*
    A FEN string defines a particular position using only the ASCII character set.
 
@@ -210,8 +211,8 @@ std::optional<PositionSetError> Position::set(const string& fenStr, bool isChess
     ss >> std::noskipws;
 
     int numPieces = 0;
-    File file = FILE_A;
-    Rank rank = RANK_8;
+    int file      = FILE_A;
+    int rank      = RANK_8;
 
     // 1. Piece placement
     for (;;)
@@ -222,20 +223,21 @@ std::optional<PositionSetError> Position::set(const string& fenStr, bool isChess
         if (isspace(token))
             break;
 
-        if (isdigit(token)) 
+        if (isdigit(token))
         {
             const int diff = (token - '0');
             if (diff < 1 || diff > 8)
                 return PositionSetError("Invalid FEN. Invalid number of squares to skip.");
 
-            file = File(file + diff);
+            file += diff;
             if (file > FILE_NB)
                 return PositionSetError("Invalid FEN. Invalid file reached.");
         }
         else if (token == '/')
         {
             if (file != FILE_NB)
-                return PositionSetError("Invalid FEN. Trying to end rank when not at the end of it.");
+                return PositionSetError(
+                  "Invalid FEN. Trying to end rank when not at the end of it.");
 
             --rank;
             file = FILE_A;
@@ -245,19 +247,21 @@ std::optional<PositionSetError> Position::set(const string& fenStr, bool isChess
         }
         else
         {
+            if (file >= FILE_NB)
+                return PositionSetError("Invalid FEN. Invalid file reached.");
+
             const size_t idx = PieceToChar.find(token);
             if (idx == string::npos)
-                return PositionSetError(std::string("Invalid FEN. Invalid piece: ") + std::string(1, token));
-                
+                return PositionSetError(std::string("Invalid FEN. Invalid piece: ")
+                                        + std::string(1, token));
+
             if (++numPieces > 32)
                 return PositionSetError("Invalid FEN. More than 32 pieces on the board.");
 
-            const Square sq = make_square(file, rank);
+            const Square sq = make_square(File(file), Rank(rank));
             put_piece(Piece(idx), sq);
 
             ++file;
-            if (file > FILE_NB)
-                return PositionSetError("Invalid FEN. Invalid file reached.");
         }
     }
 
@@ -271,14 +275,19 @@ std::optional<PositionSetError> Position::set(const string& fenStr, bool isChess
     if (bPawns > 8)
         return PositionSetError("Unsupported position. BLACK has more than 8 pawns.");
 
-    const int wAdditionalKnights = std::max((int)count<KNIGHT>(WHITE) - 2, 0);
-    const int bAdditionalKnights = std::max((int)count<KNIGHT>(BLACK) - 2, 0);
-    const int wAdditionalBishops = std::max((int)count<BISHOP>(WHITE) - 2, 0);
-    const int bAdditionalBishops = std::max((int)count<BISHOP>(BLACK) - 2, 0);
-    const int wAdditionalRooks = std::max((int)count<ROOK>(WHITE) - 2, 0);
-    const int bAdditionalRooks = std::max((int)count<ROOK>(BLACK) - 2, 0);
-    const int wAdditionalQueens = std::max((int)count<QUEEN>(WHITE) - 1, 0);
-    const int bAdditionalQueens = std::max((int)count<QUEEN>(BLACK) - 1, 0);
+    if (pieces(PAWN) & (RANK_1 | RANK_8))
+        return PositionSetError("Unsupported position. Pawns on the first or eighth rank.");
+    if (count<KING>(WHITE) != 1 || count<KING>(BLACK) != 1)
+        return PositionSetError("Unsupported position. Incorrect number of kings.");
+
+    const int wAdditionalKnights = std::max((int) count<KNIGHT>(WHITE) - 2, 0);
+    const int bAdditionalKnights = std::max((int) count<KNIGHT>(BLACK) - 2, 0);
+    const int wAdditionalBishops = std::max((int) count<BISHOP>(WHITE) - 2, 0);
+    const int bAdditionalBishops = std::max((int) count<BISHOP>(BLACK) - 2, 0);
+    const int wAdditionalRooks   = std::max((int) count<ROOK>(WHITE) - 2, 0);
+    const int bAdditionalRooks   = std::max((int) count<ROOK>(BLACK) - 2, 0);
+    const int wAdditionalQueens  = std::max((int) count<QUEEN>(WHITE) - 1, 0);
+    const int bAdditionalQueens  = std::max((int) count<QUEEN>(BLACK) - 1, 0);
     if (wAdditionalKnights + wAdditionalBishops + wAdditionalRooks + wAdditionalQueens > 8 - wPawns)
         return PositionSetError("Unsupported position. Too many major pieces for WHITE.");
     if (bAdditionalKnights + bAdditionalBishops + bAdditionalRooks + bAdditionalQueens > 8 - bPawns)
@@ -288,7 +297,8 @@ std::optional<PositionSetError> Position::set(const string& fenStr, bool isChess
     if (!(ss >> token))
         return PositionSetError("Invalid FEN. Unexpected end of stream.");
     if (token != 'w' && token != 'b')
-        return PositionSetError(std::string("Invalid FEN. Invalid side to move: ") + std::string(1, token));
+        return PositionSetError(std::string("Invalid FEN. Invalid side to move: ")
+                                + std::string(1, token));
     sideToMove = (token == 'w' ? WHITE : BLACK);
     ss >> token;
 
@@ -319,21 +329,23 @@ std::optional<PositionSetError> Position::set(const string& fenStr, bool isChess
         token = char(toupper(token));
 
         if (token == 'K')
-            for (rsq = relative_square(c, SQ_H1); piece_on(rsq) != rook && file_of(rsq) >= FILE_A; --rsq)
+            for (rsq = relative_square(c, SQ_H1); is_ok(rsq) && piece_on(rsq) != rook; --rsq)
             {}
 
         else if (token == 'Q')
-            for (rsq = relative_square(c, SQ_A1); piece_on(rsq) != rook && file_of(rsq) <= FILE_H; ++rsq)
+            for (rsq = relative_square(c, SQ_A1); is_ok(rsq) && piece_on(rsq) != rook; ++rsq)
             {}
 
         else if (token >= 'A' && token <= 'H')
             rsq = make_square(File(token - 'A'), relative_rank(c, RANK_1));
 
         else
-            return PositionSetError(std::string("Invalid FEN. Expected castling rights. Got: ") + std::string(1, token));
+            return PositionSetError(std::string("Invalid FEN. Expected castling rights. Got: ")
+                                    + std::string(1, token));
 
-        if (piece_on(rsq) != rook)
-            return PositionSetError("Invalid FEN. Trying to set castling rights without required rook.");
+        if (!is_ok(rsq) || piece_on(rsq) != rook)
+            return PositionSetError(
+              "Invalid FEN. Trying to set castling rights without required rook.");
 
         set_castling_right(c, rsq);
     }
@@ -342,7 +354,7 @@ std::optional<PositionSetError> Position::set(const string& fenStr, bool isChess
 
     // 4. En passant square.
     // Ignore if square is invalid or not on side to move relative rank 6.
-    bool enpassant = false, legalEP = false;
+    bool          enpassant = false, legalEP = false;
     unsigned char col, row;
     if (!(ss >> col))
         return PositionSetError("Invalid FEN. Unexpected end of stream.");
@@ -351,12 +363,11 @@ std::optional<PositionSetError> Position::set(const string& fenStr, bool isChess
         if (!(ss >> row))
             return PositionSetError("Invalid FEN. Unexpected end of stream.");
 
-        if (   (col >= 'a' && col <= 'h')
-            && (row == (sideToMove == WHITE ? '6' : '3')))
+        if ((col >= 'a' && col <= 'h') && (row == (sideToMove == WHITE ? '6' : '3')))
         {
             st->epSquare = make_square(File(col - 'a'), Rank(row - '1'));
 
-            Bitboard pawns  = attacks_bb<PAWN>(st->epSquare, ~sideToMove) & pieces(sideToMove, PAWN);
+            Bitboard pawns = attacks_bb<PAWN>(st->epSquare, ~sideToMove) & pieces(sideToMove, PAWN);
             Bitboard target = (pieces(~sideToMove, PAWN) & (st->epSquare + pawn_push(~sideToMove)));
             Bitboard occ    = pieces() ^ target ^ st->epSquare;
 
@@ -364,12 +375,13 @@ std::optional<PositionSetError> Position::set(const string& fenStr, bool isChess
             // a) side to move have a pawn threatening epSquare
             // b) there is an enemy pawn in front of epSquare
             // c) there is no piece on epSquare or behind epSquare
-            enpassant = pawns && target && !(pieces() & (st->epSquare | (st->epSquare + pawn_push(sideToMove))));
+            enpassant = pawns && target
+                     && !(pieces() & (st->epSquare | (st->epSquare + pawn_push(sideToMove))));
 
             // If no pawn can execute the en passant capture without leaving the king in check, don't record the epSquare
             while (pawns)
                 legalEP |= !(attackers_to(square<KING>(sideToMove), occ ^ pop_lsb(pawns))
-                            & pieces(~sideToMove) & ~target);
+                             & pieces(~sideToMove) & ~target);
         }
         else
             return PositionSetError("Invalid FEN. Invalid en-passant square.");
@@ -378,8 +390,13 @@ std::optional<PositionSetError> Position::set(const string& fenStr, bool isChess
     if (!enpassant || !legalEP)
         st->epSquare = SQ_NONE;
 
+
     // 5-6. Halfmove clock and fullmove number
     ss >> std::skipws >> st->rule50 >> gamePly;
+
+    // Clamp values to a reasonable range
+    st->rule50 = std::clamp(st->rule50, 0, 99);
+    gamePly    = std::clamp(gamePly, 0, 100000);
 
     // Convert from fullmove starting from 1 to gamePly starting from 0,
     // handle also common incorrect FEN with fullmove = 0.
@@ -388,8 +405,27 @@ std::optional<PositionSetError> Position::set(const string& fenStr, bool isChess
     chess960 = isChess960;
     set_state();
 
-    if (!pos_is_ok())
-        return PositionSetError("Unsupported position. Extended position validity check failed.");
+    if (attackers_to_exist(square<KING>(~sideToMove), pieces(), sideToMove))
+        return PositionSetError("Unsupported position. King can be captured.");
+
+    Bitboard our_checkers = attackers_to_exist(square<KING>(sideToMove), pieces(), ~sideToMove);
+    switch (popcount(our_checkers))
+    {
+    case 0 :
+    case 1 :
+        break;
+    case 2 : {
+        Square a = pop_lsb(our_checkers);
+        Square b = pop_lsb(our_checkers);
+
+        // The king cannot be collinear with the checkers
+        if (!(between_bb(a, b) & pieces(KING, sideToMove)))
+            break;
+        [[fallthrough]];
+    }
+    default :
+        return PositionSetError("Unsupported position. Too many checkers.");
+    }
 
     return std::nullopt;
 }
