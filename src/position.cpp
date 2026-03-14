@@ -325,11 +325,11 @@ std::optional<PositionSetError> Position::set(const string& fenStr, bool isChess
         token = char(toupper(token));
 
         if (token == 'K')
-            for (rsq = relative_square(c, SQ_H1); piece_on(rsq) != rook && file_of(rsq) >= FILE_A; --rsq)
+            for (rsq = relative_square(c, SQ_H1); is_ok(rsq) && piece_on(rsq) != rook; --rsq)
             {}
 
         else if (token == 'Q')
-            for (rsq = relative_square(c, SQ_A1); piece_on(rsq) != rook && file_of(rsq) <= FILE_H; ++rsq)
+            for (rsq = relative_square(c, SQ_A1); is_ok(rsq) && piece_on(rsq) != rook; ++rsq)
             {}
 
         else if (token >= 'A' && token <= 'H')
@@ -338,7 +338,7 @@ std::optional<PositionSetError> Position::set(const string& fenStr, bool isChess
         else
             return PositionSetError(std::string("Invalid FEN. Expected castling rights. Got: ") + std::string(1, token));
 
-        if (piece_on(rsq) != rook)
+        if (is_ok(rsq) && piece_on(rsq) != rook)
             return PositionSetError("Invalid FEN. Trying to set castling rights without required rook.");
 
         set_castling_right(c, rsq);
