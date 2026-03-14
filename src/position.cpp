@@ -384,8 +384,13 @@ std::optional<PositionSetError> Position::set(const string& fenStr, bool isChess
     if (!enpassant || !legalEP)
         st->epSquare = SQ_NONE;
 
+
     // 5-6. Halfmove clock and fullmove number
     ss >> std::skipws >> st->rule50 >> gamePly;
+
+    // Clamp values to a reasonable range
+    st->rule50 = std::clamp(st->rule50, 0, 99);
+    gamePly = std::clamp(gamePly, 0, 100000);
 
     // Convert from fullmove starting from 1 to gamePly starting from 0,
     // handle also common incorrect FEN with fullmove = 0.
