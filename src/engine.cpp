@@ -211,6 +211,8 @@ std::optional<PositionSetError> Engine::set_position(const std::string&         
             break;
 
         states->emplace_back();
+        if (!pos.pseudo_legal(m) || !pos.legal(m))
+            return PositionSetError("Illegal move: " + move);
         pos.do_move(m, states->back());
     }
 
