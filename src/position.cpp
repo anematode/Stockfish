@@ -210,8 +210,8 @@ std::optional<PositionSetError> Position::set(const string& fenStr, bool isChess
     ss >> std::noskipws;
 
     int numPieces = 0;
-    File file = FILE_A;
-    Rank rank = RANK_8;
+    int file = FILE_A;
+    int rank = RANK_8;
 
     // 1. Piece placement
     for (;;)
@@ -228,7 +228,7 @@ std::optional<PositionSetError> Position::set(const string& fenStr, bool isChess
             if (diff < 1 || diff > 8)
                 return PositionSetError("Invalid FEN. Invalid number of squares to skip.");
 
-            file = File(file + diff);
+            file += diff;
             if (file > FILE_NB)
                 return PositionSetError("Invalid FEN. Invalid file reached.");
         }
@@ -255,7 +255,7 @@ std::optional<PositionSetError> Position::set(const string& fenStr, bool isChess
             if (++numPieces > 32)
                 return PositionSetError("Invalid FEN. More than 32 pieces on the board.");
 
-            const Square sq = make_square(file, rank);
+            const Square sq = make_square(File(file), Rank(rank));
             put_piece(Piece(idx), sq);
 
             ++file;
