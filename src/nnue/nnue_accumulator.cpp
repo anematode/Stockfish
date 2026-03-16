@@ -706,22 +706,24 @@ void update_accumulator_refresh_cache(Color                                 pers
     const Bitboard           occ   = pos.pieces();
     auto&                    ways  = cache(ksq, perspective);
     auto*                    entry = &ways[0];
+
     PSQFeatureSet::IndexList removed, added;
 
-    int bestDiff = SQUARE_NB + 1;
-    for (auto& candidate : ways)
+    Bitboard changedBB = get_changed_pieces(entry->pieces, pos.piece_array());
+    int bestDiff = popcount(changedBB);
+    for (size_t i = 1; i < ways.size(); ++i)
     {
-        const int diff = popcount(candidate.pieceBB ^ occ);
+        auto& candidate = ways[i];
+        Bitboard candidateChanged = get_changed_pieces(candidate.pieces, pos.piece_array());
+        int diff = popcount(candidateChanged);
         if (diff < bestDiff)
         {
             bestDiff = diff;
+            changedBB = candidateChanged;
             entry    = &candidate;
-            if (diff <= 2)
-                break;
         }
     }
 
-    const Bitboard changedBB = get_changed_pieces(entry->pieces, pos.piece_array());
     Bitboard       removedBB = changedBB & entry->pieceBB;
     Bitboard       addedBB   = changedBB & occ;
 
