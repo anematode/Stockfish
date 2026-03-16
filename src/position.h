@@ -96,6 +96,7 @@ class Position {
     Bitboard                            pieces(Color c, PieceTypes... pts) const;
     Piece                               piece_on(Square s) const;
     const std::array<Piece, SQUARE_NB>& piece_array() const;
+    const Bitboard*                     piece_type_bbs() const;
     Square                              ep_square() const;
     bool                                empty(Square s) const;
     template<PieceType Pt>
@@ -230,6 +231,8 @@ inline Piece Position::piece_on(Square s) const {
 }
 
 inline const std::array<Piece, SQUARE_NB>& Position::piece_array() const { return board; }
+
+inline const Bitboard* Position::piece_type_bbs() const { return byTypeBB.data(); }
 
 inline bool Position::empty(Square s) const { return piece_on(s) == NO_PIECE; }
 

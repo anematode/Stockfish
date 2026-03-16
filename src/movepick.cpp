@@ -118,6 +118,65 @@ MovePicker::MovePicker(const Position& p, Move ttm, int th, const CapturePieceTo
     stage = PROBCUT_TT + !(ttm && pos.capture_stage(ttm) && pos.pseudo_legal(ttm));
 }
 
+#ifdef USE_AVX512ICL
+
+// RankToSection[us][pt][r] tells us that a piece of color us and type pt, present on rank r,
+// may move to sections given by the bitset. A section (in [0,3]) is a consecutive pair of rows.
+alignas(64) static constexpr auto RankToSection = [] () {
+    std::array<std::array<std::array<uint8_t, RANK_NB>, 8 /* >= PIECE_TYPE_NB */>, COLOR_NB> arr{};
+    
+    for (Color c = WHITE; c < 2; c = Color(c + 1)) {
+        for (Rank r = RANK_1; r < 8; r = Rank(r + 1)) {
+            for (PieceType pt = PAWN; pt < PIECE_TYPE_NB; pt = PieceType(pt + 1)) {
+                uint8_t& result = arr[c][pt][r];
+                int section = r / 2;
+                result = 1 << section;
+
+                switch (pt) {
+                // sliders can go to any section
+                case QUEEN: case ROOK: case BISHOP:
+                    result = 0b1111;
+                    break;
+                // Pawns can sometimes cross a section in the direction of a pawn push
+                case PAWN:
+                    if (r % 2 == (c == WHITE))
+                        result |= c == WHITE ? result << 1 : result >> 1;
+                    break;
+                // Kings can go down a section if on an even row, or else up a section
+                case KING:
+                    result |= r % 2 == 0 ? result >> 1 : result << 1;
+                    break;
+                // Knights can go up or down a section
+                case KNIGHT:
+                    result |= result >> 1 | result << 1;
+                    break;
+                default:;
+                    result = 0;
+                }
+            }
+        }
+    }
+
+    return arr;
+} ();
+
+unsigned pc_and_index_info(Color us, const Bitboard* bbs, Bitboard our_pieces) {
+    __mmask64 rank_nonempty = _mm512_test_epi8_mask( _mm512_loadu_si512(bbs), _mm512_set1_epi64(our_pieces));
+    __m512i bits = _mm512_maskz_loadu_epi8(rank_nonempty, &RankToSection[us]);
+
+    // Sequentially test bits, then interleave them
+    unsigned mask = 0;
+    for (int sect = 0; sect < 4; ++sect) {
+        __mmask8 m = _mm512_test_epi64_mask(bits, _mm512_set1_epi8(1 << sect));
+        mask += _pdep_u32(m, 0x01111111) << sect;
+    }
+
+    return mask;
+}
+
+
+#endif
+
 // Assigns a numerical value to each move in a list, used for sorting.
 // Captures are ordered by Most Valuable Victim (MVV), preferring captures
 // with a good history. Quiets moves are ordered using the history tables.
@@ -141,7 +200,36 @@ ExtMove* MovePicker::score(MoveList<Type>& ml) {
           pos.attacks_by<KNIGHT>(~us) | pos.attacks_by<BISHOP>(~us) | threatByLesser[KNIGHT];
         threatByLesser[QUEEN] = pos.attacks_by<ROOK>(~us) | threatByLesser[ROOK];
         threatByLesser[KING]  = 0;
+
         #if defined(USE_AVX512)
+        // Each set bit is i + pt * 4
+        unsigned mask = pc_and_index_info(us, pos.piece_type_bbs(), pos.pieces(us));
+        sf_assume(mask != 0);
+
+        __m512i* hist = (__m512i*)histBuffer;
+        const __m256i* conthistBase[5];
+
+        size_t p = (us == BLACK) * PIECE_TYPE_NB * SQUARE_NB * 2 / sizeof(__m256i);
+        int idx = 0;
+        for (int j: {0,1,2,3,5}) {
+            conthistBase[idx++] = (const __m256i*)continuationHistory[j] + p;
+        }
+
+        const __m256i* pawn_base = (const __m256i*)&sharedHistory->pawn_entry(pos) + p;
+
+        for (; mask != 0; mask &= mask - 1) {
+            unsigned j = lsb(mask);
+
+            __m512i* buff = hist + j - 4;
+            __m512i  curHist =  _mm512_cvtepi16_epi32(_mm256_slli_epi16(_mm256_load_si256(pawn_base + j), 1));
+            for (auto base : conthistBase)
+            {
+                curHist = _mm512_add_epi32(curHist,_mm512_cvtepi16_epi32(_mm256_load_si256(base + j)));
+            }
+            _mm512_store_epi32(buff,curHist);
+        }
+
+#if 0
         for (PieceType pt = PAWN; pt <= KING; ++pt)
         {
             Piece pc = make_piece(us,pt);
@@ -158,6 +246,8 @@ ExtMove* MovePicker::score(MoveList<Type>& ml) {
 
             }
         }
+        for (auto& c : histBuffer) for (auto& d : c) dbg_extremes_of(d);
+#endif
         #endif // defined
     }
 
