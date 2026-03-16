@@ -1270,12 +1270,20 @@ void Position::undo_null_move() {
 Bitboard first_on_ray(Square to, Square sq, Bitboard pieces) {
     Bitboard bb = RayPassBB[to][sq] & pieces;
 
-    if (!bb) return 0;
-    if (to < sq) {
-        return least_significant_square_bb(bb);
-    } else {
-        return square_bb(msb(bb));
-    }
+    uint64_t tmp1, tmp2, tmp3=0;
+    asm (
+        "bsrq %[bb], %[tmp1]\n"
+        "bsfq %[bb], %[tmp2]\n"
+        "setnz %b[tmp3]\n"
+        "cmpb %[to], %[sq]\n"
+        "cmovg %[tmp2], %[tmp1]\n"
+        "shlxq %[tmp1], %[tmp3], %[bb]\n"
+        : [bb]"+r"(bb), [tmp3]"+r"(tmp3), [tmp1]"=r"(tmp1), [tmp2]"=r"(tmp2)
+        : [sq]"r"(sq), [to]"r"(to)
+        : "cc"
+    );
+
+    return bb;
 }
 
 // Tests if the SEE (Static Exchange Evaluation)
