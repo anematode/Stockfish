@@ -17,6 +17,7 @@
 */
 
 #include "movegen.h"
+#include "misc.h"
 
 #include <cassert>
 #include <initializer_list>
@@ -123,6 +124,11 @@ Move* make_promotions(Move* moveList, [[maybe_unused]] Square to) {
     return moveList;
 }
 
+static uint64_t rotl64(uint64_t n, unsigned int c)
+{
+  c &= 63;
+  return (n<<c) | (n>>(-c&63));
+}
 
 template<Color Us, GenType Type>
 Move* generate_pawn_moves(const Position& pos, Move* moveList, Bitboard target) {
@@ -143,7 +149,8 @@ Move* generate_pawn_moves(const Position& pos, Move* moveList, Bitboard target) 
     // Single and double pawn pushes, no promotions
     if constexpr (Type != CAPTURES)
     {
-        Bitboard b1 = shift<Up>(pawnsNotOn7) & emptySquares;
+        Bitboard mobilePawns = Type == EVASIONS ? -1ULL : ~pos.blockers_for_king(Us) | rotl64(0x0101010101010101, pos.square<KING>(Us));
+        Bitboard b1 = shift<Up>(pawnsNotOn7 & mobilePawns) & emptySquares;
         Bitboard b2 = shift<Up>(b1 & TRank3BB) & emptySquares;
 
         if constexpr (Type == EVASIONS)  // Consider only blocking squares
@@ -206,17 +213,27 @@ Move* generate_pawn_moves(const Position& pos, Move* moveList, Bitboard target) 
 }
 
 
-template<Color Us, PieceType Pt>
-Move* generate_moves(const Position& pos, Move* moveList, Bitboard target) {
+template<Color Us, PieceType Pt, GenType Type>
+Move* generate_moves([[maybe_unused]] Square ksq, const Position& pos, Move* moveList, Bitboard target) {
 
     static_assert(Pt != KING && Pt != PAWN, "Unsupported piece type in generate_moves()");
 
     Bitboard bb = pos.pieces(Us, Pt);
+    [[maybe_unused]] const auto* rp = RayPassBB[ksq];
+    [[maybe_unused]] Bitboard pinned = pos.blockers_for_king(Us);
 
     while (bb)
     {
         Square   from = pop_lsb(bb);
         Bitboard b    = attacks_bb<Pt>(from, pos.pieces()) & target;
+        if constexpr (Type != EVASIONS) {
+            if (from & pinned) {
+                if (Pt == KNIGHT)  // pinned knights can never move
+                    continue;
+                // sliders can only move along the pin mask
+                b &= rp[from];
+            }
+        }
 
         moveList = splat_moves(moveList, from, b);
     }
@@ -242,10 +259,10 @@ Move* generate_all(const Position& pos, Move* moveList) {
                                       : ~pos.pieces();  // QUIETS
 
         moveList = generate_pawn_moves<Us, Type>(pos, moveList, target);
-        moveList = generate_moves<Us, KNIGHT>(pos, moveList, target);
-        moveList = generate_moves<Us, BISHOP>(pos, moveList, target);
-        moveList = generate_moves<Us, ROOK>(pos, moveList, target);
-        moveList = generate_moves<Us, QUEEN>(pos, moveList, target);
+        moveList = generate_moves<Us, KNIGHT, Type>(ksq, pos, moveList, target);
+        moveList = generate_moves<Us, BISHOP, Type>(ksq, pos, moveList, target);
+        moveList = generate_moves<Us, ROOK, Type>(ksq, pos, moveList, target);
+        moveList = generate_moves<Us, QUEEN, Type>(ksq, pos, moveList, target);
     }
 
     Bitboard b = attacks_bb<KING>(ksq) & (Type == EVASIONS ? ~pos.pieces(Us) : target);
