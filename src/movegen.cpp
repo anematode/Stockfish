@@ -58,14 +58,14 @@ inline Move* splat_pawn_moves(Move* moveList, Bitboard to_bb) {
 }
 
 inline Move* splat_moves(Move* moveList, Square from, Bitboard to_bb) {
-    assert(popcount(to_bb) <= 32);  // Q can attack up to 27 squares
+    assert(popcount(to_bb) <= 16);  // R/B can attack up to 14 squares
 
-    const __m512i fromVec = _mm512_set1_epi16(Move(from, SQUARE_ZERO).raw());
-    const __m512i toSquares =
-      _mm512_cvtepi8_epi16(_mm512_castsi512_si256(_mm512_maskz_compress_epi8(to_bb, AllSquares)));
-    const __m512i moves = _mm512_or_si512(fromVec, _mm512_slli_epi16(toSquares, Move::ToSqShift));
+    const __m256i fromVec = _mm256_set1_epi16(Move(from, SQUARE_ZERO).raw());
+    const __m256i toSquares =
+      _mm256_cvtepi8_epi16(_mm512_castsi512_si128(_mm512_maskz_compress_epi8(to_bb, AllSquares)));
+    const __m256i moves = _mm256_or_si256(fromVec, _mm256_slli_epi16(toSquares, Move::ToSqShift));
 
-    _mm512_storeu_si512(moveList, moves);
+    _mm256_storeu_si256(reinterpret_cast<__m256i*>(moveList), moves);
     return moveList + popcount(to_bb);
 }
 
@@ -196,6 +196,7 @@ Move* generate_moves(const Position& pos, Move* moveList, Bitboard target) {
     static_assert(Pt != KING && Pt != PAWN, "Unsupported piece type in generate_moves()");
 
     Bitboard bb = pos.pieces(Us, Pt);
+    if constexpr (Pt == BISHOP || Pt == ROOK) bb |= pos.pieces(Us, QUEEN);
 
     while (bb)
     {
@@ -229,7 +230,6 @@ Move* generate_all(const Position& pos, Move* moveList) {
         moveList = generate_moves<Us, KNIGHT>(pos, moveList, target);
         moveList = generate_moves<Us, BISHOP>(pos, moveList, target);
         moveList = generate_moves<Us, ROOK>(pos, moveList, target);
-        moveList = generate_moves<Us, QUEEN>(pos, moveList, target);
     }
 
     Bitboard b = attacks_bb<KING>(ksq) & (Type == EVASIONS ? ~pos.pieces(Us) : target);
