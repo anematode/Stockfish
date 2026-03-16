@@ -118,62 +118,13 @@ MovePicker::MovePicker(const Position& p, Move ttm, int th, const CapturePieceTo
     stage = PROBCUT_TT + !(ttm && pos.capture_stage(ttm) && pos.pseudo_legal(ttm));
 }
 
-#ifdef USE_AVX512ICL
+#ifdef USE_AVX512
 
-// RankToSection[us][pt][r] tells us that a piece of color us and type pt, present on rank r,
-// may move to sections given by the bitset. A section (in [0,3]) is a consecutive pair of rows.
-alignas(64) static constexpr auto RankToSection = [] () {
-    std::array<std::array<std::array<uint8_t, RANK_NB>, 8 /* >= PIECE_TYPE_NB */>, COLOR_NB> arr{};
-    
-    for (Color c = WHITE; c < 2; c = Color(c + 1)) {
-        for (Rank r = RANK_1; r < 8; r = Rank(r + 1)) {
-            for (PieceType pt = PAWN; pt < PIECE_TYPE_NB; pt = PieceType(pt + 1)) {
-                uint8_t& result = arr[c][pt][r];
-                int section = r / 2;
-                result = 1 << section;
-
-                switch (pt) {
-                // sliders can go to any section
-                case QUEEN: case ROOK: case BISHOP:
-                    result = 0b1111;
-                    break;
-                // Pawns can sometimes cross a section in the direction of a pawn push
-                case PAWN:
-                    if (r % 2 == (c == WHITE))
-                        result |= c == WHITE ? result << 1 : result >> 1;
-                    break;
-                // Kings can go down a section if on an even row, or else up a section
-                case KING:
-                    result |= r % 2 == 0 ? result >> 1 : result << 1;
-                    break;
-                // Knights can go up or down a section
-                case KNIGHT:
-                    result |= result >> 1 | result << 1;
-                    break;
-                default:;
-                    result = 0;
-                }
-            }
-        }
-    }
-
-    return arr;
-} ();
-
-unsigned pc_and_index_info(Color us, const Bitboard* bbs, Bitboard our_pieces) {
-    __mmask64 rank_nonempty = _mm512_test_epi8_mask( _mm512_loadu_si512(bbs), _mm512_set1_epi64(our_pieces));
-    __m512i bits = _mm512_maskz_loadu_epi8(rank_nonempty, &RankToSection[us]);
-
-    // Sequentially test bits, then interleave them
-    unsigned mask = 0;
-    for (int sect = 0; sect < 4; ++sect) {
-        __mmask8 m = _mm512_test_epi64_mask(bits, _mm512_set1_epi8(1 << sect));
-        mask += _pdep_u32(m, 0x01111111) << sect;
-    }
-
-    return mask;
+static unsigned nonzero_sections(Bitboard val) {
+    const Bitboard M = 0x7FFF7FFF7FFF7FFFULL;
+    Bitboard msb_set = ((val & M) + M) | val;
+    return _pext_u64(msb_set, ~M);
 }
-
 
 #endif
 
@@ -202,8 +153,33 @@ ExtMove* MovePicker::score(MoveList<Type>& ml) {
         threatByLesser[KING]  = 0;
 
         #if defined(USE_AVX512)
-        // Each set bit is i + pt * 4
-        unsigned mask = pc_and_index_info(us, pos.piece_type_bbs(), pos.pieces(us));
+        // Sliders can go to any section
+        unsigned mask = pos.count<BISHOP>(us) != 0 ? (0xf << 4 * BISHOP) : 0;
+        mask |= pos.count<QUEEN>(us) != 0 ? (0xf << 4 * QUEEN) : 0;
+        mask |= pos.count<ROOK>(us) != 0 ? (0xf << 4 * ROOK) : 0;
+
+        // There's at most one king, so we can simply index by his rank
+        constexpr uint8_t KingRankToSections[8] = { 0b0001, 0b0011, 0b0011, 0b0110, 0b0110, 0b1100, 0b1100, 0b1000 };
+        Square ksq = pos.square<KING>(us);
+        mask |= KingRankToSections[rank_of(ksq)] << 4 * KING;
+
+        // For pawns, we need different behavior depending on color
+        Bitboard pawns = pos.pieces(us, PAWN);
+
+        constexpr Bitboard EvenRanks = 0x00ff00ff00ff00ff;
+        constexpr Bitboard OddRanks  = 0xff00ff00ff00ff00;
+
+        if (us == WHITE) {
+            pawns |= (pawns & OddRanks) << 8;  // Only white pawns on odd ranks can cross sections
+        } else {
+            pawns |= (pawns & EvenRanks) >> 8; // etc.
+        }
+        mask |= nonzero_sections(pawns) << 4 * PAWN;
+
+        Bitboard knights = pos.pieces(us, KNIGHT);
+        knights |= knights << 16 | knights >> 16;  // knights can go two ranks up or down
+        mask |= nonzero_sections(knights) << 4 * KNIGHT;
+
         sf_assume(mask != 0);
 
         __m512i* hist = (__m512i*)histBuffer;
@@ -228,26 +204,6 @@ ExtMove* MovePicker::score(MoveList<Type>& ml) {
             }
             _mm512_store_epi32(buff,curHist);
         }
-
-#if 0
-        for (PieceType pt = PAWN; pt <= KING; ++pt)
-        {
-            Piece pc = make_piece(us,pt);
-            for (int i=0; i<64; i+=16)
-            {
-                __m512i* buff = reinterpret_cast<__m512i*>(&(histBuffer[pt-1][i]));
-                __m512i  curHist =  _mm512_cvtepi16_epi32(_mm256_slli_epi16(_mm256_load_si256(reinterpret_cast<const __m256i*>(&(sharedHistory->pawn_entry(pos)[pc][i]))),1));
-                for (int j: {0,1,2,3,5})
-                {
-                    const __m256i* curConthist = reinterpret_cast<const __m256i*>(&(*continuationHistory[j])[pc][i]);
-                    curHist = _mm512_add_epi32(curHist,_mm512_cvtepi16_epi32(_mm256_load_si256(curConthist)));
-                }
-                _mm512_store_epi32(buff,curHist);
-
-            }
-        }
-        for (auto& c : histBuffer) for (auto& d : c) dbg_extremes_of(d);
-#endif
         #endif // defined
     }
 
