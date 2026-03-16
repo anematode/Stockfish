@@ -1267,6 +1267,17 @@ void Position::undo_null_move() {
 }
 
 
+Bitboard first_on_ray(Square to, Square sq, Bitboard pieces) {
+    Bitboard bb = RayPassBB[to][sq] & pieces;
+
+    if (!bb) return 0;
+    if (to < sq) {
+        return least_significant_square_bb(bb);
+    } else {
+        return square_bb(msb(bb));
+    }
+}
+
 // Tests if the SEE (Static Exchange Evaluation)
 // value of move is greater or equal to the given threshold. We'll use an
 // algorithm similar to alpha-beta pruning with a null window.
@@ -1293,6 +1304,9 @@ bool Position::see_ge(Move m, int threshold) const {
     assert(color_of(piece_on(from)) == sideToMove);
     Bitboard occupied  = pieces() ^ from ^ to;  // xoring to is important for pinned piece logic
     Color    stm       = sideToMove;
+    Bitboard candidateSliders = (attacks_bb<ROOK>(to) & pieces(ROOK, QUEEN)) |
+        (attacks_bb<BISHOP>(to) & pieces(BISHOP, QUEEN));
+
     Bitboard attackers = attackers_to(to, occupied);
     Bitboard stmAttackers, bb;
     int      res = 1;
@@ -1324,9 +1338,6 @@ bool Position::see_ge(Move m, int threshold) const {
         {
             if ((swap = PawnValue - swap) < res)
                 break;
-            occupied ^= least_significant_square_bb(bb);
-
-            attackers |= attacks_bb<BISHOP>(to, occupied) & pieces(BISHOP, QUEEN);
         }
 
         else if ((bb = stmAttackers & pieces(KNIGHT)))
@@ -1334,24 +1345,19 @@ bool Position::see_ge(Move m, int threshold) const {
             if ((swap = KnightValue - swap) < res)
                 break;
             occupied ^= least_significant_square_bb(bb);
+            continue;
         }
 
         else if ((bb = stmAttackers & pieces(BISHOP)))
         {
             if ((swap = BishopValue - swap) < res)
                 break;
-            occupied ^= least_significant_square_bb(bb);
-
-            attackers |= attacks_bb<BISHOP>(to, occupied) & pieces(BISHOP, QUEEN);
         }
 
         else if ((bb = stmAttackers & pieces(ROOK)))
         {
             if ((swap = RookValue - swap) < res)
                 break;
-            occupied ^= least_significant_square_bb(bb);
-
-            attackers |= attacks_bb<ROOK>(to, occupied) & pieces(ROOK, QUEEN);
         }
 
         else if ((bb = stmAttackers & pieces(QUEEN)))
@@ -1359,16 +1365,16 @@ bool Position::see_ge(Move m, int threshold) const {
             swap = QueenValue - swap;
             //  implies that the previous recapture was done by a higher rated piece than a Queen (King is excluded)
             assert(swap >= res);
-            occupied ^= least_significant_square_bb(bb);
-
-            attackers |= (attacks_bb<BISHOP>(to, occupied) & pieces(BISHOP, QUEEN))
-                       | (attacks_bb<ROOK>(to, occupied) & pieces(ROOK, QUEEN));
         }
 
         else  // KING
               // If we "capture" with the king but the opponent still has attackers,
               // reverse the result.
             return (attackers & ~pieces(stm)) ? res ^ 1 : res;
+
+        Square sq = lsb(bb);
+        occupied ^= sq;
+        attackers |= first_on_ray(to, sq, occupied) & candidateSliders;
     }
 
     return bool(res);
