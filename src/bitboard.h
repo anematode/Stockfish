@@ -438,9 +438,8 @@ inline Bitboard attacks_bb(PieceType pt, Square s, Bitboard occupied) {
     switch (pt)
     {
     case BISHOP :
-        return attacks_bb<BISHOP>(s, occupied);
     case ROOK :
-        return attacks_bb<ROOK>(s, occupied);
+        return Magics[s][pt - BISHOP].attacks_bb(occupied);
     case QUEEN :
         return attacks_bb<BISHOP>(s, occupied) | attacks_bb<ROOK>(s, occupied);
     default :
