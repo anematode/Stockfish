@@ -126,6 +126,30 @@ static unsigned nonzero_sections(Bitboard val) {
     return _pext_u64(msb_set, ~M);
 }
 
+static unsigned nonzero_ranks(Bitboard val) {
+    const Bitboard M = 0x7F7F7F7F7F7F7F7FULL;
+    Bitboard msb_set = ((val & M) + M) | val;
+    return _pext_u64(msb_set, 0x80808080808000);
+}
+
+// bit 0 = RANK_B, bit 5 = RANK_G
+static constexpr auto PawnRanksToSections = [] () {
+    std::array<std::array<uint8_t, 64>, COLOR_NB> arr{};
+    for (Color c : {WHITE, BLACK}) {
+        for (int rank = 1; rank < 7; ++rank) {
+            for (uint8_t m = 0; m < 64; ++m) {
+                auto& entry = arr[c][m];
+                int push = c == WHITE ? 1 : -1;
+                entry |= 1 << rank / 2;
+                entry |= 1 << (rank + push) / 2;
+                if ((rank == 1 && c == WHITE) || (rank == 6 && c == BLACK))
+                    entry |= 1 << (rank + 2 * push) / 2;
+            }
+        }
+    }
+    return arr;
+} ();
+
 #endif
 
 // Assigns a numerical value to each move in a list, used for sorting.
@@ -165,19 +189,11 @@ ExtMove* MovePicker::score(MoveList<Type>& ml) {
 
         // For pawns, we need different behavior depending on color
         Bitboard pawns = pos.pieces(us, PAWN);
+        mask |= PawnRanksToSections[us][nonzero_ranks(pawns)] << 4 * PAWN;
 
-        constexpr Bitboard EvenRanks = 0x00ff00ff00ff00ff;
-        constexpr Bitboard OddRanks  = 0xff00ff00ff00ff00;
-
-        if (us == WHITE) {
-            pawns |= (pawns & OddRanks) << 8;  // Only white pawns on odd ranks can cross sections
-        } else {
-            pawns |= (pawns & EvenRanks) >> 8; // etc.
-        }
-        mask |= nonzero_sections(pawns) << 4 * PAWN;
-
+        // knights can go two ranks up or down
         Bitboard knights = pos.pieces(us, KNIGHT);
-        knights |= knights << 16 | knights >> 16;  // knights can go two ranks up or down
+        knights |= knights << 16 | knights >> 16;
         mask |= nonzero_sections(knights) << 4 * KNIGHT;
 
         sf_assume(mask != 0);
