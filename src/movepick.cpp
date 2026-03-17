@@ -118,7 +118,7 @@ MovePicker::MovePicker(const Position& p, Move ttm, int th, const CapturePieceTo
     stage = PROBCUT_TT + !(ttm && pos.capture_stage(ttm) && pos.pseudo_legal(ttm));
 }
 
-#ifdef USE_AVX512
+#ifdef USE_AVX2
 
 static unsigned nonzero_sections(Bitboard val) {
     const Bitboard M = 0x7FFF7FFF7FFF7FFFULL;
@@ -163,7 +163,7 @@ ExtMove* MovePicker::score(MoveList<Type>& ml) {
     Color us = pos.side_to_move();
 
     [[maybe_unused]] Bitboard threatByLesser[KING + 1];
-    #if defined(USE_AVX512)
+    #if defined(USE_AVX2)
     alignas(64) int histBuffer[KING][SQUARE_NB];
     #endif // defined
 
@@ -176,7 +176,7 @@ ExtMove* MovePicker::score(MoveList<Type>& ml) {
         threatByLesser[QUEEN] = pos.attacks_by<ROOK>(~us) | threatByLesser[ROOK];
         threatByLesser[KING]  = 0;
 
-        #if defined(USE_AVX512)
+        #if defined(USE_AVX2)
         // Sliders can go to any section
         unsigned mask = pos.count<BISHOP>(us) != 0 ? (0xf << 4 * BISHOP) : 0;
         mask |= pos.count<QUEEN>(us) != 0 ? (0xf << 4 * QUEEN) : 0;
@@ -198,27 +198,29 @@ ExtMove* MovePicker::score(MoveList<Type>& ml) {
 
         sf_assume(mask != 0);
 
-        __m512i* hist = (__m512i*)histBuffer;
-        const __m256i* conthistBase[5];
+        __m256i* hist = (__m256i*)histBuffer;
+        const __m128i* conthistBase[5];
 
-        size_t p = (us == BLACK) * PIECE_TYPE_NB * SQUARE_NB * 2 / sizeof(__m256i);
+        size_t p = (us == BLACK) * PIECE_TYPE_NB * SQUARE_NB * 2 / sizeof(__m128i);
         int idx = 0;
         for (int j: {0,1,2,3,5}) {
-            conthistBase[idx++] = (const __m256i*)continuationHistory[j] + p;
+            conthistBase[idx++] = (const __m128i*)continuationHistory[j] + p;
         }
 
-        const __m256i* pawn_base = (const __m256i*)&sharedHistory->pawn_entry(pos) + p;
+        const __m128i* pawn_base = (const __m128i*)&sharedHistory->pawn_entry(pos) + p;
 
         for (; mask != 0; mask &= mask - 1) {
             unsigned j = lsb(mask);
 
-            __m512i* buff = hist + j - 4;
-            __m512i  curHist =  _mm512_cvtepi16_epi32(_mm256_slli_epi16(_mm256_load_si256(pawn_base + j), 1));
-            for (auto base : conthistBase)
-            {
-                curHist = _mm512_add_epi32(curHist,_mm512_cvtepi16_epi32(_mm256_load_si256(base + j)));
+            for (unsigned l = 2 * j; l < 2 * j + 2; ++l) {
+                __m256i* buff = hist + l - 8;
+                __m256i  curHist =  _mm256_cvtepi16_epi32(_mm_slli_epi16(_mm_load_si128(pawn_base + l), 1));
+                for (auto base : conthistBase)
+                {
+                    curHist = _mm256_add_epi32(curHist,_mm256_cvtepi16_epi32(_mm_load_si128(base + l)));
+                }
+                _mm256_store_si256(buff,curHist);
             }
-            _mm512_store_epi32(buff,curHist);
         }
         #endif // defined
     }
@@ -244,7 +246,7 @@ ExtMove* MovePicker::score(MoveList<Type>& ml) {
             // histories
             m.value = 2 * (*mainHistory)[us][m.raw()];
 
-            #if defined(USE_AVX512)
+            #if defined(USE_AVX2)
             m.value += histBuffer[pt-1][to];
             #else
 
