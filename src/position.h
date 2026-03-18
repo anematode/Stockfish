@@ -211,6 +211,7 @@ class Position {
     int          pieceCount[PIECE_NB];
     int          castlingRightsMask[SQUARE_NB];
     Square       castlingRookSquare[CASTLING_RIGHT_NB];
+    Square       kingSquares[COLOR_NB];
     Bitboard     castlingPath[CASTLING_RIGHT_NB];
     StateInfo*   st;
     int          gamePly;
@@ -262,6 +263,8 @@ inline int Position::count() const {
 template<PieceType Pt>
 inline Square Position::square(Color c) const {
     assert(count<Pt>(c) == 1);
+    if constexpr (Pt == KING)
+        return kingSquares[c];
     return lsb(pieces(c, Pt));
 }
 
@@ -353,6 +356,9 @@ inline void Position::put_piece(Piece pc, Square s, DirtyThreats* const dts) {
     pieceCount[pc]++;
     pieceCount[make_piece(color_of(pc), ALL_PIECES)]++;
 
+    if (type_of(pc) == KING)
+        kingSquares[color_of(pc)] = s;
+
     if (dts)
         update_piece_threats<true>(pc, s, dts);
 }
@@ -383,6 +389,9 @@ inline void Position::move_piece(Square from, Square to, DirtyThreats* const dts
     byColorBB[color_of(pc)] ^= fromTo;
     board[from] = NO_PIECE;
     board[to]   = pc;
+
+    if (type_of(pc) == KING)
+        kingSquares[color_of(pc)] = to;
 
     if (dts)
         update_piece_threats<true>(pc, to, dts, fromTo);
