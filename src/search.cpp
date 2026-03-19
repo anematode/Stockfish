@@ -182,7 +182,9 @@ void Search::Worker::ensure_network_replicated() {
 void Search::Worker::start_searching() {
 
     accumulatorStack.reset();
-    lastIterationPV.clear();
+
+    // TODO: probably a better place to put lastSearchPV
+    lastIterationPV = threads.main_thread()->worker->lastSearchPV;
 
     // Non-main threads go directly to iterative_deepening()
     if (!is_mainthread())
@@ -194,6 +196,11 @@ void Search::Worker::start_searching() {
     main_manager()->tm.init(limits, rootPos.side_to_move(), rootPos.game_ply(), options,
                             main_manager()->originalTimeAdjust);
     tt.new_search();
+
+    if (rootPos.key() != lastSearchPVKey) {
+        lastSearchPV.clear();
+        lastIterationPV.clear();
+    }
 
     if (rootMoves.empty())
     {
@@ -251,6 +258,24 @@ void Search::Worker::start_searching() {
 
     auto bestmove = UCIEngine::move(bestThread->rootMoves[0].pv[0], rootPos.is_chess960());
     main_manager()->updates.onBestmove(bestmove, ponder);
+
+    // Save the best PV as well as the position key after two plies
+    // TODO: Consider saving multiple PVs and choosing the one that the opponent took?
+    lastSearchPV = bestThread->rootMoves[0].pv;
+    lastSearchPVKey = 0;
+
+    if (lastSearchPV.size() > 2) {
+        StateInfo st1, st2;
+        rootPos.do_move(lastSearchPV[0], st1, nullptr);
+        rootPos.do_move(lastSearchPV[1], st2, nullptr);
+
+        lastSearchPVKey = rootPos.key();
+
+        rootPos.undo_move(lastSearchPV[1]);
+        rootPos.undo_move(lastSearchPV[0]);
+
+        lastSearchPV.erase(lastSearchPV.begin(), lastSearchPV.begin() + 2);
+    }
 }
 
 // Main iterative deepening loop. It calls search()

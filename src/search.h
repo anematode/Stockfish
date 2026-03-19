@@ -343,7 +343,8 @@ class Worker {
     Depth     rootDepth, completedDepth;
     Value     rootDelta;
 
-    std::vector<Move> lastIterationPV;
+    std::vector<Move> lastIterationPV, lastSearchPV;
+    Key lastSearchPVKey{};
 
     size_t                    threadIdx, numaThreadIdx, numaTotal;
     NumaReplicatedAccessToken numaAccessToken;
