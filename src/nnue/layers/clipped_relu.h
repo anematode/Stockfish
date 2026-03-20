@@ -66,7 +66,19 @@ class ClippedReLU {
 
     // Forward propagation
     void propagate(const InputType* input, OutputType* output) const {
+#if defined(USE_AVX512)
+        if constexpr (InputDimensions == 32) {
+            const __m256i       Offsets   = _mm256_set_epi32(7, 3, 5, 1, 6, 2, 4, 0);
 
+            const __m512i a = _mm512_load_si512(input);
+            const __m512i b = _mm512_load_si512(input + 16);
+
+            const __m512i c = _mm512_srli_epi16(_mm512_packus_epi32(a, b), WeightScaleBits);
+            const __m256i packed = _mm256_packs_epi16(_mm512_castsi512_si256(c), _mm512_extracti64x4_epi64(c, 1));
+            _mm256_store_si256((__m256i*)output, _mm256_permutevar8x32_epi32(packed, Offsets));
+            return;
+        }
+#endif
 #if defined(USE_AVX2)
         if constexpr (InputDimensions % SimdWidth == 0)
         {
