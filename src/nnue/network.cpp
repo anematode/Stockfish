@@ -175,9 +175,11 @@ Network<Arch, Transformer>::evaluate(const Position&                         pos
                                      AccumulatorCaches::Cache<FTDimensions>& cache) const {
 
     constexpr uint64_t alignment = CacheLineSize;
+    constexpr size_t TFSize = FeatureTransformer<FTDimensions>::BufferSize;
 
     alignas(alignment)
-      TransformedFeatureType transformedFeatures[FeatureTransformer<FTDimensions>::BufferSize];
+      TransformedFeatureType transformedFeatures[TFSize + 4];
+    memset(&transformedFeatures[TFSize], 0, 4);
 
     ASSERT_ALIGNED(transformedFeatures, alignment);
 

@@ -226,7 +226,8 @@ class AffineTransformSparseInput {
     // Read network parameters
     bool read_parameters(std::istream& stream) {
         read_little_endian<BiasType>(stream, biases, OutputDimensions);
-        for (IndexType i = 0; i < OutputDimensions * PaddedInputDimensions; ++i)
+        IndexType i = 0;
+        for (; i < OutputDimensions * PaddedInputDimensions; ++i)
             weights[get_weight_index(i)] = read_little_endian<WeightType>(stream);
 
         return !stream.fail();
@@ -287,13 +288,13 @@ class AffineTransformSparseInput {
         constexpr IndexType NumAccums = OutputDimensions / OutputSimdWidth;
         // If we're using high-latency dot product instructions, split the accumulators
         // to create 3 separate dependency chains and merge at the end
-        constexpr IndexType NumRegs =
     #if defined(USE_VNNI)
+        constexpr IndexType NumRegs =
           3 * NumAccums;
     #else
           NumAccums;
     #endif
-        std::uint16_t nnz[NumChunks];
+        std::uint16_t nnz[NumChunks + 2];
         IndexType     count;
 
         // Find indices of nonzero 32-bit blocks
@@ -310,10 +311,12 @@ class AffineTransformSparseInput {
         // convince GCC to not do weird pointer arithmetic in the following loop
         const std::int8_t* weights_cp = weights;
     #if defined(USE_VNNI)
+        nnz[count] = nnz[count + 1] = InputDimensions / 4;  // prevent UB when we overread 
+
         for (IndexType k = NumAccums; k < NumRegs; ++k)
             acc[k] = vec_zero();
 
-        while (start < end - 2)
+        while (start < end)
         {
             const std::ptrdiff_t i0 = *start++;
             const std::ptrdiff_t i1 = *start++;
@@ -339,7 +342,7 @@ class AffineTransformSparseInput {
         }
         for (IndexType k = 0; k < NumAccums; ++k)
             acc[k] = vec_add_32(vec_add_32(acc[k], acc[k + NumAccums]), acc[k + 2 * NumAccums]);
-    #endif
+    #else
         while (start < end)
         {
             const std::ptrdiff_t i = *start++;
@@ -349,6 +352,7 @@ class AffineTransformSparseInput {
             for (IndexType k = 0; k < NumAccums; ++k)
                 vec_add_dpbusd_32(acc[k], in, col[k]);
         }
+    #endif
 
         outvec_t* outptr = reinterpret_cast<outvec_t*>(output);
         for (IndexType k = 0; k < NumAccums; ++k)
@@ -370,8 +374,8 @@ class AffineTransformSparseInput {
     using BiasType   = OutputType;
     using WeightType = std::int8_t;
 
-    alignas(CacheLineSize) BiasType biases[OutputDimensions];
     alignas(CacheLineSize) WeightType weights[OutputDimensions * PaddedInputDimensions];
+    alignas(CacheLineSize) BiasType biases[OutputDimensions];
 };
 
 }  // namespace Stockfish::Eval::NNUE::Layers
