@@ -50,6 +50,9 @@
 #include "uci.h"
 #include "ucioption.h"
 
+#undef assert
+#define assert(x) sf_assume(x)
+
 namespace Stockfish {
 
 namespace TB = Tablebases;

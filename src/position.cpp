@@ -39,6 +39,9 @@
 #include "tt.h"
 #include "uci.h"
 
+#undef assert
+#define assert(x) sf_assume(x)
+
 using std::string;
 
 namespace Stockfish {
