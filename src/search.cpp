@@ -1215,8 +1215,8 @@ moves_loop:  // When in check, search starts here
         r += 691;  // Base reduction offset to compensate for other tweaks
         r -= moveCount * 65;
         int sccv = correctionValue / 1024;
-        r -= std::max(sccv, 0) * 1040 / 25600;
-        r -= std::max(-sccv, 0) * 980 / 25600;
+        r -= std::max(sccv, 0) * 1080 / 25600;
+        r -= std::max(-sccv, 0) * 940 / 25600;
 
         // Increase reduction for cut nodes
         if (cutNode)
