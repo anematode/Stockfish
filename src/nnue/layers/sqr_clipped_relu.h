@@ -90,6 +90,33 @@ class SqrClippedReLU {
         }
         constexpr IndexType Start = NumChunks * 16;
 
+#elif defined(USE_NEON)
+	constexpr IndexType NumChunks = InputDimensions / 16;
+
+        static_assert(WeightScaleBits == 6);
+
+        for (IndexType i = 0; i < NumChunks; ++i)
+        {
+            const InputType* p = input + i * 16;
+
+            const int32x4_t a0 = vld1q_s32(p);
+            const int32x4_t a1 = vld1q_s32(p + 4);
+            const int32x4_t a2 = vld1q_s32(p + 8);
+            const int32x4_t a3 = vld1q_s32(p + 12);
+
+            int16x8_t words0 = vcombine_s16(vqmovn_s32(a0), vqmovn_s32(a1));
+            int16x8_t words1 = vcombine_s16(vqmovn_s32(a2), vqmovn_s32(a3));
+
+	    words0 = vqdmulhq_s16(words0, words0);
+	    words1 = vqdmulhq_s16(words1, words1);
+
+            words0 = vreinterpretq_s16_u16(vshrq_n_u16(vreinterpretq_u16_s16(words0), 4));
+            words1 = vreinterpretq_s16_u16(vshrq_n_u16(vreinterpretq_u16_s16(words1), 4));
+
+            const int8x16_t packed = vcombine_s8(vqmovn_s16(words0), vqmovn_s16(words1));
+            vst1q_s8(reinterpret_cast<std::int8_t*>(output + i * 16), packed);
+        }
+        constexpr IndexType Start = NumChunks * 16;
 #else
         constexpr IndexType Start = 0;
 #endif
