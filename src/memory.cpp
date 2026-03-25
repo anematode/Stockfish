@@ -131,30 +131,32 @@ void* aligned_large_pages_alloc_with_hint(size_t allocSize, bool) {
     #if defined(__linux__) && defined(MAP_HUGE_SHIFT)
         #define HAS_HUGE_PAGES
 
-#if defined(__x86_64__)
+        #if defined(__x86_64__)
 // Huge pages are always 2^30 bytes = 1GB on x86-64.
-static const int HugeSizes[] = { 30 };
-#elif defined(__aarch64__)
+static const int HugeSizes[] = {30};
+        #elif defined(__aarch64__)
 // The size of huge pages varies on arm64 depending on the system configuration.
 // For now we try 1GB and 512MB pages.
 // See https://docs.kernel.org/arch/arm64/hugetlbpage.html
-static const int HugeSizes[] = { 30, 29 };
-#else
+static const int HugeSizes[] = {30, 29};
+        #else
 static const int HugeSizes[] = {};
-#endif
+        #endif
 
 static std::map<void*, size_t> huge_pages;
 static std::mutex              huge_pages_mtx;
 
 static void* try_huge_pages_alloc(size_t allocSize) {
-    for (int hp_bits : HugeSizes) {
+    for (int hp_bits : HugeSizes)
+    {
         size_t hp_size = size_t(1) << hp_bits;
-        size_t size = ((allocSize + hp_size - 1) / hp_size) * hp_size;
-        void*  mem  = mmap(NULL, size, PROT_READ | PROT_WRITE,
-                           MAP_PRIVATE | MAP_ANONYMOUS | MAP_HUGETLB | (hp_bits << MAP_HUGE_SHIFT), -1, 0);
+        size_t size    = ((allocSize + hp_size - 1) / hp_size) * hp_size;
+        void*  mem =
+          mmap(NULL, size, PROT_READ | PROT_WRITE,
+               MAP_PRIVATE | MAP_ANONYMOUS | MAP_HUGETLB | (hp_bits << MAP_HUGE_SHIFT), -1, 0);
         if (mem == MAP_FAILED)
             continue;
-        
+
         std::lock_guard lg(huge_pages_mtx);
         huge_pages[mem] = size;
         return mem;
