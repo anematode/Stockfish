@@ -159,8 +159,8 @@ void TranspositionTable::resize(size_t mbSize, ThreadPool& threads) {
     clusterCount   = mbSize * 1024 * 1024 / sizeof(Cluster);
     size_t ttBytes = clusterCount * sizeof(Cluster);
 
-    // Request 1GB pages if we'd get at least one per NUMA node
-    bool hugePageHint = ttBytes >= threads.numa_nodes() * HugePageSize;
+    // Request huge pages if we'd get at least one per NUMA node
+    bool hugePageHint = ttBytes >= threads.numa_nodes() * MaxHugePageSize;
 
     table = static_cast<Cluster*>(aligned_large_pages_alloc_with_hint(ttBytes, hugePageHint));
 
@@ -185,8 +185,9 @@ void TranspositionTable::clear(ThreadPool& threads) {
     std::vector<size_t> order(threadCount);
     std::iota(order.begin(), order.end(), 0);
 
-    // To promote good interleaving between NUMA nodes, we permute threads so that
-    // all threads in a NUMA node clear a contiguous region of the TT.
+    // We aim to achieve good distribution among NUMA nodes via first-touch policy.
+    // To prevent poor distribution when using large/huge pages, we permute threads
+    // so that all threads in a NUMA node are assigned to a contiguous region.
     if (threadToNuma.size() == threadCount)
     {
         std::stable_sort(order.begin(), order.end(), [&threadToNuma](size_t t1, size_t t2) {

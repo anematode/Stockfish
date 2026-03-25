@@ -61,13 +61,15 @@ using AdjustTokenPrivileges_t =
 
 namespace Stockfish {
 
-constexpr size_t HugePageSize = size_t(1) << 30;
+// Upper bound on the system's huge page size, in bytes
+constexpr size_t MaxHugePageSize = size_t(1) << 30;
 
 void* std_aligned_alloc(size_t alignment, size_t size);
 void  std_aligned_free(void* ptr);
 
 // Memory aligned by page size, min alignment: 4096 bytes
 void* aligned_large_pages_alloc_with_hint(size_t size, bool hugePageHint);
+size_t get_page_size(void* mem);
 void* aligned_large_pages_alloc(size_t size);
 void  aligned_large_pages_free(void* mem);
 
