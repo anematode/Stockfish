@@ -169,6 +169,11 @@ ExtMove* MovePicker::score(MoveList<Type>& ml) {
             // bonus for checks
             m.value += (bool(pos.check_squares(pt) & to) && pos.see_ge(m, -75)) * 16384;
 
+            // bonus for discovered checks
+            if (pos.blockers_for_king(~us) & from) {
+                m.value += 16384 * !bool(line_bb(from, to) & pos.pieces(~us, KING));
+            }
+
             // penalty for moving to a square threatened by a lesser piece
             // or bonus for escaping an attack by a lesser piece.
             int v = 20 * (bool(threatByLesser[pt] & from) - bool(threatByLesser[pt] & to));
