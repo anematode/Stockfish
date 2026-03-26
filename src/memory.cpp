@@ -129,7 +129,7 @@ void* aligned_large_pages_alloc_with_hint(size_t allocSize, bool) {
 
 #else
 
-    #if defined(__linux__) && defined(MAP_HUGE_SHIFT)
+    #if defined(__linux__) && !defined(__ANDROID__) && defined(MAP_HUGE_SHIFT)
         #define HAS_HUGE_PAGES
 
         #if defined(__x86_64__)
