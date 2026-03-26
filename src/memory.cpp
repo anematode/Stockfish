@@ -18,6 +18,7 @@
 
 #include "memory.h"
 
+#include <array>
 #include <cstdlib>
 #include <iostream>  // std::cerr
 
@@ -133,14 +134,15 @@ void* aligned_large_pages_alloc_with_hint(size_t allocSize, bool) {
 
         #if defined(__x86_64__)
 // Huge pages are always 2^30 bytes = 1GB on x86-64.
-static const int HugeSizes[] = {30};
+static const std::array<int, 1> HugeSizes = {30};
         #elif defined(__aarch64__)
 // The size of huge pages varies on arm64 depending on the system configuration.
 // For now we try 1GB and 512MB pages.
 // See https://docs.kernel.org/arch/arm64/hugetlbpage.html
-static const int HugeSizes[] = {30, 29};
+static const std::array<int, 2> HugeSizes = {30, 29};
         #else
-static const int HugeSizes[] = {};
+// Huge pages unsupported elsewhere
+static const std::array<int, 0> HugeSizes;
         #endif
 
 static std::map<void*, size_t> huge_pages;
@@ -169,8 +171,7 @@ void* aligned_large_pages_alloc_with_hint(size_t allocSize, [[maybe_unused]] boo
     #ifdef HAS_HUGE_PAGES
     if (hugePageHint && allocSize >= MaxHugePageSize)
     {
-        void* mem = try_huge_pages_alloc(allocSize);
-        if (mem)
+        if (void* mem = try_huge_pages_alloc(allocSize))
             return mem;
     }
     #endif
