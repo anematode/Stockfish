@@ -18,7 +18,6 @@
 
 #include "memory.h"
 
-#include <array>
 #include <cstdlib>
 #include <iostream>  // std::cerr
 
