@@ -149,7 +149,11 @@ ExtMove* MovePicker::score(MoveList<Type>& ml) {
         const Square    to            = m.to_sq();
         const Piece     pc            = pos.moved_piece(m);
         const PieceType pt            = type_of(pc);
-        const Piece     capturedPiece = pos.piece_on(to);
+        Piece     capturedPiece = pos.piece_on(to);
+
+        if (Type == CAPTURES && m.type_of() == EN_PASSANT) {
+            capturedPiece = ~pc;
+        }
 
         if constexpr (Type == CAPTURES)
             m.value = (*captureHistory)[pc][to][type_of(capturedPiece)]

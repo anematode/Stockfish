@@ -1080,6 +1080,8 @@ moves_loop:  // When in check, search starts here
             if (capture || givesCheck)
             {
                 Piece capturedPiece = pos.piece_on(move.to_sq());
+                if (move.type_of() == EN_PASSANT)
+                    capturedPiece = ~movedPiece;
                 int   captHist = captureHistory[movedPiece][move.to_sq()][type_of(capturedPiece)];
 
                 // Futility pruning for captures
@@ -1870,6 +1872,9 @@ void update_all_stats(const Position& pos,
     {
         // Increase stats for the best move in case it was a capture move
         capturedPiece = type_of(pos.piece_on(bestMove.to_sq()));
+        if (bestMove.type_of() == EN_PASSANT) {
+            capturedPiece = PAWN;
+        }
         captureHistory[movedPiece][bestMove.to_sq()][capturedPiece] << bonus * 1286 / 1024;
     }
 
@@ -1883,6 +1888,9 @@ void update_all_stats(const Position& pos,
     {
         movedPiece    = pos.moved_piece(move);
         capturedPiece = type_of(pos.piece_on(move.to_sq()));
+        if (move.type_of() == EN_PASSANT) {
+            capturedPiece = PAWN;
+        }
         captureHistory[movedPiece][move.to_sq()][capturedPiece] << -malus * 1559 / 1024;
     }
 }
