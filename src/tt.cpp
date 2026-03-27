@@ -160,7 +160,7 @@ void TranspositionTable::resize(size_t mbSize, ThreadPool& threads) {
     size_t ttBytes = clusterCount * sizeof(Cluster);
 
     // Request huge pages if we'd get at least one per NUMA node
-    bool hugePageHint = ttBytes >= threads.numa_nodes() * MaxHugePageSize;
+    bool hugePageHint = ttBytes >= threads.numa_nodes() * HugePageSize;
 
     table = static_cast<Cluster*>(aligned_large_pages_alloc_with_hint(ttBytes, hugePageHint));
 
@@ -195,13 +195,23 @@ void TranspositionTable::clear(ThreadPool& threads) {
         });
     }
 
+    // Thread clearing region i waits until nextToStart == i, then increments it.
+    // Therefore, threads will touch their first page sequentially, preventing
+    // first-touch races, but the TT is still cleared in parallel.
+    std::atomic<size_t> nextToStart{0};
+
     for (size_t i = 0; i < threadCount; ++i)
     {
-        threads.run_on_thread(order[i], [this, i, threadCount]() {
+        threads.run_on_thread(order[i], [this, &nextToStart, i, threadCount]() {
             // Each thread will zero its part of the hash table
             const size_t stride = clusterCount / threadCount;
             const size_t start  = stride * i;
             const size_t len    = i + 1 != threadCount ? stride : clusterCount - start;
+
+            while (nextToStart.load(std::memory_order_acquire) < i)
+                ;
+            // Wake up next thread
+            nextToStart.store(i + 1, std::memory_order_release);
 
             std::memset(&table[start], 0, len * sizeof(Cluster));
         });
