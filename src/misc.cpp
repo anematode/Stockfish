@@ -33,6 +33,11 @@
 #include <sstream>
 #include <string_view>
 
+#if defined(USE_PEXT) && defined(__GNUC__) && defined(__linux__)
+    #define TRY_MEMSET_CLZERO
+    #include <cpuid.h>
+#endif
+
 #include "types.h"
 
 namespace Stockfish {
@@ -472,6 +477,37 @@ uint64_t hash_bytes(const char* data, size_t size) {
 
     return h;
 }
+
+void memzero(void* dest, size_t bytes) {
+#ifdef TRY_MEMSET_CLZERO
+    static bool HasClzero = []() {
+        unsigned eax, ebx, ecx, edx;
+        __cpuid_count(0x80000008, 0, eax, ebx, ecx, edx);
+        return ebx & (1U << 0);
+    }();
+
+    constexpr size_t CacheLineSize = 64;
+    if (reinterpret_cast<uintptr_t>(dest) % CacheLineSize == 0 && bytes % CacheLineSize == 0
+        && HasClzero)
+    {
+        // Some versions of glibc won't use non-temporal stores nor rep stos on Zen3+ for
+        // memset; see https://sourceware.org/bugzilla/show_bug.cgi?id=34129.
+        // clzero always performs NT stores and is available on affected systems
+        char *write = reinterpret_cast<char*>(dest), *end = write + bytes;
+        while (write < end)
+        {
+            asm("clzero" ::"a"(write));
+            write += CacheLineSize;
+        }
+
+        _mm_sfence();
+        return;
+    }
+#endif
+
+    std::memset(dest, 0, bytes);
+}
+
 
 // Trampoline helper to avoid moving Logger to misc.h
 void start_logger(const std::string& fname) { Logger::start(fname); }

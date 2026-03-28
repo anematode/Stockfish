@@ -112,6 +112,8 @@ void prefetch(const void* addr) {
 }
 #endif
 
+void memzero(void* dest, size_t bytes);
+
 void start_logger(const std::string& fname);
 
 size_t str_to_size_t(const std::string& s);
