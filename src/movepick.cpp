@@ -88,12 +88,14 @@ MovePicker::MovePicker(const Position&              p,
                        const CapturePieceToHistory* cph,
                        const PieceToHistory**       ch,
                        const SharedHistories*       sh,
+                       const CheckHistory* chkh,
                        int                          pl) :
     pos(p),
     mainHistory(mh),
     lowPlyHistory(lph),
     captureHistory(cph),
     continuationHistory(ch),
+    checkHistory(chkh),
     sharedHistory(sh),
     ttMove(ttm),
     depth(d),
@@ -167,7 +169,10 @@ ExtMove* MovePicker::score(MoveList<Type>& ml) {
             m.value += (*continuationHistory[5])[pc][to];
 
             // bonus for checks
-            m.value += (bool(pos.check_squares(pt) & to) && pos.see_ge(m, -75)) * 16384;
+            if (bool(pos.check_squares(pt) & to) && pos.see_ge(m, -75)) {
+                Square themKsq = pos.square<KING>(~us);
+                m.value += 16384 + (*checkHistory)[pt][to][themKsq] * 2;
+            }
 
             // penalty for moving to a square threatened by a lesser piece
             // or bonus for escaping an attack by a lesser piece.
