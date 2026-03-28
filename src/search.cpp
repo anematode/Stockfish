@@ -312,6 +312,7 @@ void Search::Worker::iterative_deepening() {
     int searchAgainCounter = 0;
 
     lowPlyHistory.fill(98);
+    checkHistory.fill(0);
 
     for (Color c : {WHITE, BLACK})
         for (int i = 0; i < UINT_16_HISTORY_SIZE; i++)
@@ -1927,12 +1928,13 @@ void update_quiet_histories(
     if (ss->ply < LOW_PLY_HISTORY_SIZE)
         workerThread.lowPlyHistory[ss->ply][move.raw()] << bonus * 682 / 1024;
 
-    if (pos.gives_check(move))
-        workerThread.checkHistory[pos.moved_piece(move)][move.to_sq()][pos.square<KING>(~us)] << bonus * 800 / 1024;
+    const Piece pc = pos.moved_piece(move);
+    if (pos.check_squares(type_of(pc)) & move.to_sq())  // only record direct checks
+        workerThread.checkHistory[pc][move.to_sq()][pos.square<KING>(~us)] << bonus * 800 / 1024;
 
-    update_continuation_histories(ss, pos.moved_piece(move), move.to_sq(), bonus * 894 / 1024);
+    update_continuation_histories(ss, pc, move.to_sq(), bonus * 894 / 1024);
 
-    workerThread.sharedHistory.pawn_entry(pos)[pos.moved_piece(move)][move.to_sq()]
+    workerThread.sharedHistory.pawn_entry(pos)[pc][move.to_sq()]
       << bonus * (bonus > 0 ? 974 : 543) / 1024;
 }
 

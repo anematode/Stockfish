@@ -171,7 +171,7 @@ ExtMove* MovePicker::score(MoveList<Type>& ml) {
             // bonus for checks
             if (bool(pos.check_squares(pt) & to) && pos.see_ge(m, -75)) {
                 Square themKsq = pos.square<KING>(~us);
-                m.value += 16384 + (*checkHistory)[pt][to][themKsq] * 2;
+                m.value += 16384 + (*checkHistory)[pc][to][themKsq] * 2;
             }
 
             // penalty for moving to a square threatened by a lesser piece
