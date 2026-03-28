@@ -166,6 +166,22 @@ void TranspositionTable::resize(size_t mbSize, ThreadPool& threads) {
     clear(threads);
 }
 
+static void memzero(void* start, size_t bytes) {
+    // std::memset(start, 0, bytes);
+
+    char* write = (char*) start;
+    char* end = write + bytes;
+    while (write < end && (uintptr_t)write % 64 != 0) *write++ = '\0';
+
+    while (write + 63 < end) {
+        asm ("clzero" :: "a"(write));
+        write += 64;
+    }
+
+    while (write < end) *write++ = '\0';
+    _mm_sfence();
+}
+
 
 // Initializes the entire transposition table to zero,
 // in a multi-threaded way.
@@ -185,8 +201,26 @@ void TranspositionTable::clear(ThreadPool& threads) {
         });
     }
 
+    using std::chrono::high_resolution_clock;
+    using std::chrono::duration_cast;
+    using std::chrono::duration;
+    using std::chrono::milliseconds;
+
+   
+    auto t1 = high_resolution_clock::now(); 
     for (size_t i = 0; i < threadCount; ++i)
         threads.wait_on_thread(i);
+
+    auto t2 = high_resolution_clock::now();
+
+    /* Getting number of milliseconds as an integer. */
+    auto ms_int = duration_cast<milliseconds>(t2 - t1);
+
+    /* Getting number of milliseconds as a double. */
+    duration<double, std::milli> ms_double = t2 - t1;
+
+    std::cout << ms_int.count() << "ms\n";
+    std::cout << ms_double.count() << "ms\n";
 }
 
 
