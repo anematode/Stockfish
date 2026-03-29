@@ -78,12 +78,18 @@ alignas(CacheLineSize) static constexpr struct OffsetIndices {
         #define RESTRICT
     #endif
 
+    #if defined(USE_AVX512) && !defined(USE_AVX512ICL)
+using NNZIndex = std::uint32_t;
+    #else
+using NNZIndex = std::uint16_t;
+    #endif
+
 // Find indices of nonzero 32-bit values in a packed byte buffer.
 // The input pointer addresses a sequence of 32-bit blocks stored in a
 // std::uint8_t array.
 template<const IndexType InputDimensions>
 void find_nnz(const std::uint8_t* RESTRICT input,
-              std::uint16_t* RESTRICT      out,
+              NNZIndex* RESTRICT      out,
               IndexType&                   count_out) {
 
     #if defined(USE_AVX512ICL)
@@ -130,7 +136,7 @@ void find_nnz(const std::uint8_t* RESTRICT input,
         // Get a bitmask and gather non zero indices
         const __mmask16 nnzMask = _mm512_test_epi32_mask(inputV, inputV);
         const __m512i   nnzV    = _mm512_maskz_compress_epi32(nnzMask, base);
-        _mm512_mask_cvtepi32_storeu_epi16(out + count, 0xFFFF, nnzV);
+        _mm512_storeu_si512(out + count, nnzV);
         count += popcount(nnzMask);
         base = _mm512_add_epi32(base, increment);
     }
@@ -293,7 +299,7 @@ class AffineTransformSparseInput {
     #else
           NumAccums;
     #endif
-        std::uint16_t nnz[NumChunks];
+        NNZIndex nnz[NumChunks];
         IndexType     count;
 
         // Find indices of nonzero 32-bit blocks
