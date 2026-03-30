@@ -110,6 +110,19 @@ template<PrefetchRw RW = PrefetchRw::READ, PrefetchLoc LOC = PrefetchLoc::HIGH>
 void prefetch(const void* addr) {
     __builtin_prefetch(addr, static_cast<int>(RW), static_cast<int>(LOC));
 }
+
+template<PrefetchRw RW = PrefetchRw::READ, PrefetchLoc LOC = PrefetchLoc::HIGH, typename T>
+void prefetchRange(const T* start, const T* end) {
+    const char* addr = (const char*)start;
+    const char* endAddr = (const char*)end + sizeof(T);
+
+    while (addr < endAddr)
+    {
+        prefetch<RW, LOC>(addr);
+        addr += 64;
+    }
+}
+
 #endif
 
 void start_logger(const std::string& fname);

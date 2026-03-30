@@ -878,6 +878,7 @@ void Position::do_move(Move                      m,
     Square to       = m.to_sq();
     Piece  pc       = piece_on(from);
     Piece  captured = m.type_of() == EN_PASSANT ? make_piece(them, PAWN) : piece_on(to);
+    bool newPawnKey = false;
 
     dp.pc             = pc;
     dp.from           = from;
@@ -926,6 +927,7 @@ void Position::do_move(Move                      m,
             }
 
             st->pawnKey ^= Zobrist::psq[captured][capsq];
+            newPawnKey = true;
         }
         else
         {
@@ -1034,6 +1036,7 @@ void Position::do_move(Move                      m,
 
         // Update pawn hash key
         st->pawnKey ^= Zobrist::psq[pc][from] ^ Zobrist::psq[pc][to];
+        newPawnKey = true;
 
         // Reset rule 50 draw counter
         st->rule50 = 0;
@@ -1054,8 +1057,12 @@ void Position::do_move(Move                      m,
 
     if (history)
     {
-        prefetch(&history->pawn_entry(*this)[pc][to]);
-        prefetch(&history->pawn_correction_entry(*this));
+        if (newPawnKey)
+        {
+            const auto& pawnEntry = history->pawn_entry(*this);
+            prefetchRange(&pawnEntry[PAWN], &pawnEntry[KING]);
+            prefetch(&history->pawn_correction_entry(*this));
+        }
         prefetch(&history->minor_piece_correction_entry(*this));
         prefetch(&history->nonpawn_correction_entry<WHITE>(*this));
         prefetch(&history->nonpawn_correction_entry<BLACK>(*this));
