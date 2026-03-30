@@ -155,6 +155,14 @@ constexpr Bitboard pawn_attacks_bb(Bitboard b) {
                       : shift<SOUTH_WEST>(b) | shift<SOUTH_EAST>(b);
 }
 
+template<Color C>
+constexpr Bitboard pawn_single_push_bb(Bitboard b) {
+    return shift<C == WHITE ? NORTH : SOUTH>(b);
+}
+
+constexpr Bitboard pawn_single_push_bb(Color c, Bitboard b) {
+    return c ? pawn_single_push_bb<WHITE>(b) : pawn_single_push_bb<BLACK>(b);
+}
 
 // Returns a bitboard representing an entire line (from board edge
 // to board edge) that intersects the two given squares. If the given squares
@@ -381,12 +389,15 @@ constexpr Bitboard pseudo_attacks(PieceType pt, Square sq) {
 }
 
 inline constexpr auto PseudoAttacks = []() constexpr {
-    std::array<std::array<Bitboard, SQUARE_NB>, PIECE_TYPE_NB> attacks{};
+    std::array<std::array<Bitboard, SQUARE_NB>, PIECE_TYPE_NB + 2> attacks{};
 
     for (Square s1 = SQ_A1; s1 <= SQ_H8; ++s1)
     {
         attacks[WHITE][s1] = pawn_attacks_bb<WHITE>(square_bb(s1));
         attacks[BLACK][s1] = pawn_attacks_bb<BLACK>(square_bb(s1));
+
+        attacks[WHITE + PIECE_TYPE_NB][s1] = pawn_single_push_bb<WHITE>(square_bb(s1)) | attacks[WHITE][s1];
+        attacks[BLACK + PIECE_TYPE_NB][s1] = pawn_single_push_bb<BLACK>(square_bb(s1)) | attacks[BLACK][s1];
 
         attacks[KING][s1]   = Bitboards::pseudo_attacks(KING, s1);
         attacks[KNIGHT][s1] = Bitboards::pseudo_attacks(KNIGHT, s1);
