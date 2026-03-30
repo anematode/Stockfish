@@ -171,9 +171,9 @@ constexpr auto init_index_luts() {
                                   * helper_offsets[attacker].cumulativePieceOffset;
 
             bool excluded                  = map < 0;
-            indices[attacker][attacked][0] = excluded ? FullThreats::Dimensions : feature;
+            indices[attacker][attacked][0] = excluded ? FullThreats::Dimensions + 10000 : feature;
             indices[attacker][attacked][1] =
-              excluded || semi_excluded ? FullThreats::Dimensions : feature;
+              excluded || semi_excluded ? FullThreats::Dimensions + 10000 : feature;
         }
     }
 
@@ -251,7 +251,7 @@ void FullThreats::append_active_indices(Color perspective, const Position& pos, 
                 }
 
                 // Set of pawns which are prevented from movement by a pawn in front of them
-                auto pushers = pawn_single_push_bb(~color, pawns) & pos.pieces(color, PAWN);
+                auto pushers = pawn_single_push_bb(~c, pawns) & pos.pieces(color, PAWN);
                 while (pushers) {
                     Square from = pop_lsb(pushers);
                     Square to = from + pawn_push(color);

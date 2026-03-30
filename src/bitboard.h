@@ -161,7 +161,7 @@ constexpr Bitboard pawn_single_push_bb(Bitboard b) {
 }
 
 constexpr Bitboard pawn_single_push_bb(Color c, Bitboard b) {
-    return c ? pawn_single_push_bb<WHITE>(b) : pawn_single_push_bb<BLACK>(b);
+    return c == WHITE ? pawn_single_push_bb<WHITE>(b) : pawn_single_push_bb<BLACK>(b);
 }
 
 // Returns a bitboard representing an entire line (from board edge
