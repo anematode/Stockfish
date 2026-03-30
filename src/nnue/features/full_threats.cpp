@@ -251,10 +251,10 @@ void FullThreats::append_active_indices(Color perspective, const Position& pos, 
                 }
 
                 // Set of pawns which are prevented from movement by a pawn in front of them
-                auto pushers = pawn_single_push_bb(~c, pawns) & pos.pieces(color, PAWN);
+                auto pushers = pawn_single_push_bb(~c, pawns) & pos.pieces(c, PAWN);
                 while (pushers) {
                     Square from = pop_lsb(pushers);
-                    Square to = from + pawn_push(color);
+                    Square to = from + pawn_push(c);
                     Piece attacked = pos.piece_on(to);
                     IndexType index = make_index(perspective, attacker, from, to, attacked, ksq);
 
