@@ -413,6 +413,48 @@ enum MoveType : uint16_t {
     CASTLING   = 3 << 14
 };
 
+using Trajectory = uint16_t;
+constexpr Trajectory TRAJECTORY_NB = 512;
+
+
+constexpr auto Trajectories = [] () {
+    std::array<std::array<uint8_t, 64>, 64> result{};
+
+    for (int from = 0; from < 64; ++from) {
+        int f1 = from % 8;
+        int r1 = from / 8;
+
+        for (int to = 0; to < 64; ++to) {
+            if (from == to) continue;
+
+            int f2 = to % 8;
+            int r2 = to / 8;
+
+            int df = f2 - f1;
+            int dr = r2 - r1;
+
+            bool is_linear = (df == 0 || dr == 0 || std::abs(df) == std::abs(dr));
+
+            if (is_linear) {
+                int step_f = (df > 0) - (df < 0);
+                int step_r = (dr > 0) - (dr < 0);
+
+                if (step_f == 1 && step_r == 0)       result[from][to] = 0;
+                else if (step_f == 1 && step_r == 1)  result[from][to] = 1;
+                else if (step_f == 0 && step_r == 1)  result[from][to] = 2;
+                else if (step_f == -1 && step_r == 1) result[from][to] = 3;
+                else if (step_f == -1 && step_r == 0) result[from][to] = 4;
+                else if (step_f == -1 && step_r == -1)result[from][to] = 5;
+                else if (step_f == 0 && step_r == -1) result[from][to] = 6;
+                else if (step_f == 1 && step_r == -1) result[from][to] = 7;
+            } else {
+                result[from][to] = 0;
+            }
+        }
+    }
+    return result;
+} ();
+
 // A move needs 16 bits to be stored
 //
 // bit  0- 5: destination square (from 0 to 63)
@@ -475,6 +517,10 @@ class Move {
 
     static constexpr int FromSqShift = 6;
     static constexpr int ToSqShift   = 0;
+
+    constexpr unsigned trajectory() const {
+        return Trajectories[from_sq()][to_sq()] + to_sq() * 8;
+    }
 
    protected:
     std::uint16_t data;

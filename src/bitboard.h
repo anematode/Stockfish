@@ -166,7 +166,6 @@ inline Bitboard line_bb(Square s1, Square s2) {
     return LineBB[s1][s2];
 }
 
-
 // Returns a bitboard representing the squares in the semi-open
 // segment between the squares s1 and s2 (excluding s1 but including s2). If the
 // given squares are not on a same file/rank/diagonal, it returns s2. For instance,
