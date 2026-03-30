@@ -72,7 +72,7 @@ constexpr auto make_piece_indices_piece() {
 
     for (Square from = SQ_A1; from <= SQ_H8; ++from)
     {
-        Bitboard attacks = pawn_attacks_bb<C>(from) | pawn_single_push_bb<C>(from);
+        Bitboard attacks = pawn_attacks_bb<C>(square_bb(from)) | pawn_single_push_bb<C>(square_bb(from));
 
         for (Square to = SQ_A1; to <= SQ_H8; ++to)
         {
@@ -171,9 +171,9 @@ constexpr auto init_index_luts() {
                                   * helper_offsets[attacker].cumulativePieceOffset;
 
             bool excluded                  = map < 0;
-            indices[attacker][attacked][0] = excluded ? FullThreats::Dimensions + 10000 : feature;
+            indices[attacker][attacked][0] = excluded ? FullThreats::Dimensions : feature;
             indices[attacker][attacked][1] =
-              excluded || semi_excluded ? FullThreats::Dimensions + 10000 : feature;
+              excluded || semi_excluded ? FullThreats::Dimensions : feature;
         }
     }
 
