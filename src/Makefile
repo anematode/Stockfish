@@ -515,7 +515,7 @@ ifeq ($(COMP),clang)
 	endif
 
 	CXXFLAGS += -pedantic -Wextra -Wshadow -Wmissing-prototypes \
-	            -Wconditional-uninitialized -flax-vector-conversions=none
+	            -Wconditional-uninitialized -flax-vector-conversions=none -fconstexpr-steps=100000000
 
 	ifeq ($(filter $(KERNEL),Darwin OpenBSD FreeBSD),)
 	ifeq ($(target_windows),)
@@ -623,7 +623,7 @@ ifeq ($(COMP),gcc)
 		profile_make = clang-profile-make
 		profile_use = clang-profile-use
 	else
-		CXXFLAGS += -Wstack-usage=128000
+		CXXFLAGS += -Wstack-usage=128000 -fconstexpr-ops-limit=100000000
 	endif
 endif
 
@@ -829,7 +829,7 @@ endif
 ifeq ($(pext),yes)
 	CXXFLAGS += -DUSE_PEXT
 	ifeq ($(comp),$(filter $(comp),gcc clang mingw icx))
-		CXXFLAGS += -mbmi2
+		CXXFLAGS += -mbmi2 -DUSE_COMPTIME_ATTACKS
 	endif
 endif
 
