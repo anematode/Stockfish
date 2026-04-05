@@ -1227,6 +1227,8 @@ void Position::update_piece_threats(Piece                     pc,
     const Bitboard kings        = pieces(KING);
     Bitboard       occupiedNoK  = occupied ^ kings;
 
+    const Color    color        = color_of(pc);
+
     Bitboard sliders         = (rookQueens & rAttacks) | (bishopQueens & bAttacks);
     auto     process_sliders = [&](bool addDirectAttacks) {
         while (sliders)
@@ -1274,10 +1276,32 @@ void Position::update_piece_threats(Piece                     pc,
         Bitboard whiteAttacks = PawnPushOrAttacks[WHITE][s];
         Bitboard blackAttacks = PawnPushOrAttacks[BLACK][s];
 
-        threatened |= (color_of(pc) == WHITE ? whiteAttacks : blackAttacks) & pieces(PAWN);
+        threatened |= (color == WHITE ? whiteAttacks : blackAttacks) & pieces(PAWN);
 
         incoming_threats |= whiteAttacks & blackPawns;
         incoming_threats |= blackAttacks & whitePawns;
+
+        // Passed pawns
+        const Bitboard opponentPawns       = pieces(~color, PAWN);
+        const Piece    opponentPawn        = make_piece(~color, PAWN);
+        const Bitboard withoutCurrentPawn  = pieces(color, PAWN) ^ square_bb(s);
+
+        const bool isPassed = is_passed_pawn(color, s, opponentPawns);
+        if (isPassed)
+            add_dirty_threat<PutPiece>(dts, pc, pc, s, reverse_target_promo_square(s, color));
+
+        Bitboard opponentPawnsPassedChange = PassedPawnsMasks[color][s] & opponentPawns;
+        while (opponentPawnsPassedChange)
+        {
+            Square sq   = pop_lsb(opponentPawnsPassedChange);
+            bool passed = is_passed_pawn(~color, sq, withoutCurrentPawn);
+            if (!passed) continue;
+
+            if (PutPiece) // Opponent's pawns may no longer be passed on the adjacent/forward file.
+                add_dirty_threat<false>(dts, opponentPawn, opponentPawn, sq, reverse_target_promo_square(sq, ~color));
+            else // Opponent's pawns can be passed on the adjacent/forward file.
+                add_dirty_threat<true>(dts, opponentPawn, opponentPawn, sq, reverse_target_promo_square(sq, ~color));
+        }
     }
     else
     {

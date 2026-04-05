@@ -264,6 +264,22 @@ void FullThreats::append_active_indices(Color perspective, const Position& pos, 
                     if (index < Dimensions)
                         active.push_back(index);
                 }
+
+                // Set of passed pawns
+                Bitboard opponent_pawns = pos.pieces(~c, PAWN);
+                while (bb)
+                {
+                    Square from = pop_lsb(bb);
+                    if (!is_passed_pawn(c, from, opponent_pawns))
+                        continue;
+
+                    Square to       = reverse_target_promo_square(from, c);
+                    IndexType index = make_index(perspective, attacker, from, to, attacker, ksq);
+
+                    if (index < Dimensions) {
+                        active.push_back(index);
+                    }
+                }
             }
             else
             {

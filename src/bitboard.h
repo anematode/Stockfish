@@ -468,6 +468,45 @@ inline Bitboard attacks_bb(Piece pc, Square s, Bitboard occupied) {
                                : attacks_bb(type_of(pc), s, occupied);
 }
 
+inline constexpr auto PassedPawnsMasks = []() constexpr {
+    std::array<std::array<Bitboard, SQUARE_NB>, COLOR_NB> masks{};
+    for (Square s1 = SQ_A2; s1 <= SQ_H6; ++s1){
+        int tmp = int(s1) + 8;
+        File file = file_of(s1);
+        while (tmp <= SQ_H7)
+        {
+            masks[WHITE][s1] |= square_bb(Square(tmp));
+            if (file != FILE_H) masks[WHITE][s1] |= square_bb(Square(tmp + 1));
+            if (file != FILE_A) masks[WHITE][s1] |= square_bb(Square(tmp - 1));
+            tmp += 8;
+        }
+    }
+
+    for (Square s1 = SQ_A3; s1 <= SQ_H7; ++s1){
+        int tmp = int(s1) - 8;
+        File file = file_of(s1);
+        while (tmp >= SQ_A2)
+        {
+            masks[BLACK][s1] |= square_bb(Square(tmp));
+            if (file != FILE_H) masks[BLACK][s1] |= square_bb(Square(tmp + 1));
+            if (file != FILE_A) masks[BLACK][s1] |= square_bb(Square(tmp - 1));
+            tmp -= 8;
+        }
+    }
+    return masks;
+}();
+
+inline bool is_passed_pawn(Color color, Square square, Bitboard opponentPawns) {
+    Bitboard bb = PassedPawnsMasks[color][square];
+    bool passed = (opponentPawns & bb) == 0;
+    return passed;
+}
+
+inline Square reverse_target_promo_square(Square square, Color color)
+{
+    return make_square(file_of(square), color == WHITE ? RANK_1 : RANK_8);
+}
+
 }  // namespace Stockfish
 
 #endif  // #ifndef BITBOARD_H_INCLUDED
