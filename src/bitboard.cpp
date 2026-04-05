@@ -82,8 +82,8 @@ namespace {
 constexpr
 #endif
   void
-  init_magics(PieceType pt, MagicMask table[], Magic magics[][2], bool tableAlreadyInit = false) {
-#if !defined(USE_COMPTIME_ATTACKS) || !defined(USE_PEXT)
+  init_magics(PieceType pt, MagicMask table[], Magic magics[][2], [[maybe_unused]] bool tableAlreadyInit = false) {
+#if !defined(USE_COMPTIME_ATTACKS)
     tableAlreadyInit = false;
 #endif
 
@@ -131,9 +131,11 @@ constexpr
 #endif
             reference[size] = Bitboards::sliding_attack(pt, s, b);
 
-            if (HasPext && !tableAlreadyInit)
+#ifdef USE_PEXT
+            if (!tableAlreadyInit)
                 m.attacks[constexpr_pext(b, m.mask)] =
                   constexpr_pext(reference[size], m.pseudoAttacks);
+#endif
 
             size++;
             b = (b - m.mask) & m.mask;

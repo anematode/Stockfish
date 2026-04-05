@@ -72,8 +72,9 @@ struct Magic {
     uint16_t* attacks;
     Bitboard  pseudoAttacks;  // All attacks from this square on an empty board (includes edges)
 #else
-    Bitboard magic;
-    unsigned shift;
+    Bitboard* attacks;
+    Bitboard  magic;
+    unsigned  shift;
 #endif
 
     // Compute the attack's index using the 'magic bitboards' approach
