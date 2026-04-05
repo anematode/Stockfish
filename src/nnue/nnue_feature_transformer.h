@@ -237,7 +237,8 @@ class FeatureTransformer {
                            AccumulatorStack&                         accumulatorStack,
                            AccumulatorCaches::Cache<HalfDimensions>& cache,
                            OutputType*                               output,
-                           int                                       bucket) const {
+                           int                                       bucket,
+                           uint8_t* nnz32) const {
 
         using namespace SIMD;
         accumulatorStack.evaluate(pos, *this, cache);
@@ -281,6 +282,7 @@ class FeatureTransformer {
             const vec_t* in1 =
               reinterpret_cast<const vec_t*>(&(accumulation[perspectives[p]][HalfDimensions / 2]));
             vec_t* out = reinterpret_cast<vec_t*>(output + offset);
+            uint8_t* nnz32_out = nnz32 + offset / 32;
 
             // Per the NNUE architecture, here we want to multiply pairs of
             // clipped elements and divide the product by 128. To do this,
@@ -365,6 +367,18 @@ class FeatureTransformer {
                     const vec_t pb = vec_mulhi_16(sum0b, sum1b);
 
                     out[j] = vec_packus_16(pa, pb);
+
+                    if constexpr (sizeof(vec_t) == 16) {
+                        if (j % 2 == 0) {
+                            *nnz32_out = vec_nnz(out[j]);
+                        } else {
+                            *nnz32_out++ += vec_nnz(out[j]) << 4;
+                        }
+                    } else {
+                        unsigned mask = vec_nnz(out[j]);
+                        memcpy(nnz32_out, &mask, sizeof(vec_t) / 32);
+                        nnz32_out += sizeof(vec_t) / 32;
+                    }
                 }
             }
             else
@@ -382,6 +396,18 @@ class FeatureTransformer {
                     const vec_t pb = vec_mulhi_16(sum0b, sum1b);
 
                     out[j] = vec_packus_16(pa, pb);
+
+                    if constexpr (sizeof(vec_t) == 16) {
+                        if (j % 2 == 0) {
+                            *nnz32_out = vec_nnz(out[j]);
+                        } else {
+                            *nnz32_out++ += vec_nnz(out[j]) << 4;
+                        }
+                    } else {
+                        unsigned mask = vec_nnz(out[j]);
+                        memcpy(nnz32_out, &mask, sizeof(vec_t) / 32);
+                        nnz32_out += sizeof(vec_t) / 32;
+                    }
                 }
             }
 
