@@ -78,11 +78,10 @@ namespace {
 // bitboards are used to look up attacks of sliding pieces. As a reference see
 // https://www.chessprogramming.org/Magic_Bitboards. In particular, here we use
 // the so called "fancy" approach.
-#ifdef USE_COMPTIME_ATTACKS
-constexpr
-#endif
-  void
-  init_magics(PieceType pt, MagicMask table[], Magic magics[][2], [[maybe_unused]] bool tableAlreadyInit = false) {
+constexpr void init_magics(PieceType             pt,
+                           MagicMask             table[],
+                           Magic                 magics[][2],
+                           [[maybe_unused]] bool tableAlreadyInit) {
 #if !defined(USE_COMPTIME_ATTACKS)
     tableAlreadyInit = false;
 #endif

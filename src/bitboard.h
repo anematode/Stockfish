@@ -70,7 +70,7 @@ struct Magic {
     Bitboard mask;
 #ifdef USE_PEXT
     uint16_t* attacks;
-    Bitboard  pseudoAttacks;  // All attacks from this square on an empty board (includes edges)
+    Bitboard  pseudoAttacks;
 #else
     Bitboard* attacks;
     Bitboard  magic;
