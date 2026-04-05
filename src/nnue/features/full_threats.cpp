@@ -276,9 +276,8 @@ void FullThreats::append_active_indices(Color perspective, const Position& pos, 
                     Square to       = reverse_target_promo_square(from, c);
                     IndexType index = make_index(perspective, attacker, from, to, attacker, ksq);
 
-                    if (index < Dimensions) {
+                    if (index < Dimensions)
                         active.push_back(index);
-                    }
                 }
             }
             else

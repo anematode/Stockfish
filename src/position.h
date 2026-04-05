@@ -399,10 +399,10 @@ inline void Position::move_piece(Square from, Square to, DirtyThreats* const dts
 inline void Position::swap_piece(Square s, Piece pc, DirtyThreats* const dts) {
     Piece old = board[s];
 
-    remove_piece(s);
-
     if (dts)
         update_piece_threats<false, false>(old, s, dts);
+
+    remove_piece(s);
 
     put_piece(pc, s);
 
