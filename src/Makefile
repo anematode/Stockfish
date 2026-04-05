@@ -515,7 +515,7 @@ ifeq ($(COMP),clang)
 	endif
 
 	CXXFLAGS += -pedantic -Wextra -Wshadow -Wmissing-prototypes \
-	            -Wconditional-uninitialized -flax-vector-conversions=none -fconstexpr-steps=100000000
+	            -Wconditional-uninitialized -flax-vector-conversions=none -fconstexpr-steps=500000000
 
 	ifeq ($(filter $(KERNEL),Darwin OpenBSD FreeBSD),)
 	ifeq ($(target_windows),)
@@ -623,7 +623,7 @@ ifeq ($(COMP),gcc)
 		profile_make = clang-profile-make
 		profile_use = clang-profile-use
 	else
-		CXXFLAGS += -Wstack-usage=128000 -fconstexpr-ops-limit=100000000
+		CXXFLAGS += -Wstack-usage=128000 -fconstexpr-ops-limit=500000000
 	endif
 endif
 
