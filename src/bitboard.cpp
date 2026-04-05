@@ -81,10 +81,11 @@ namespace {
 #ifdef USE_COMPTIME_ATTACKS
 constexpr
 #endif
-void init_magics(PieceType             pt,
-                           MagicMask             table[],
-                           Magic                 magics[][2],
-                           [[maybe_unused]] bool tableAlreadyInit) {
+  void
+  init_magics(PieceType             pt,
+              MagicMask             table[],
+              Magic                 magics[][2],
+              [[maybe_unused]] bool tableAlreadyInit) {
 #if !defined(USE_COMPTIME_ATTACKS)
     tableAlreadyInit = false;
 #endif
