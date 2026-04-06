@@ -1097,6 +1097,7 @@ void Position::do_move(Move                      m,
         }
     }
 
+    st->move = m;
     dts.ksq = square<KING>(us);
 
     assert(pos_is_ok());

@@ -138,6 +138,11 @@ void AccumulatorStack::pop() noexcept {
     size--;
 }
 
+thread_local bool reentering = false;
+
+thread_local AccumulatorStack reference{};
+thread_local AccumulatorCaches::Cache<TransformedFeatureDimensionsBig> cacheCopy;
+
 template<IndexType Dimensions>
 void AccumulatorStack::evaluate(const Position&                       pos,
                                 const FeatureTransformer<Dimensions>& featureTransformer,
@@ -147,10 +152,32 @@ void AccumulatorStack::evaluate(const Position&                       pos,
     evaluate_side<PSQFeatureSet>(WHITE, pos, featureTransformer, cache);
     evaluate_side<PSQFeatureSet>(BLACK, pos, featureTransformer, cache);
 
-    if (UseThreats)
+    if constexpr (UseThreats)
     {
         evaluate_side<ThreatFeatureSet>(WHITE, pos, featureTransformer, cache);
         evaluate_side<ThreatFeatureSet>(BLACK, pos, featureTransformer, cache);
+
+        if (!reentering) {
+            reentering = true;
+            memcpy(&cacheCopy, &cache, sizeof(cache));
+            reference.reset();
+            reference.evaluate<Dimensions>(pos, featureTransformer, cacheCopy);
+
+            // Verify that the latest state of each accumulator is the same
+            auto& correctLatest = reference.latest<ThreatFeatureSet>();
+            auto& ourLatest = latest<ThreatFeatureSet>();
+
+            if (correctLatest.accumulatorBig.accumulation != ourLatest.accumulatorBig.accumulation) {
+                std::cerr << "Mismatch! Position: " << pos.fen() << '\n';
+
+                const_cast<Position&>(pos).undo_move(pos.state()->move);
+                std::cerr << "Previous position: " << pos.fen() << '\n';
+
+                abort();
+            }
+
+            reentering = false;
+        }
     }
 }
 
