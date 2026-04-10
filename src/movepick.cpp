@@ -21,6 +21,7 @@
 #include <cassert>
 #include <limits>
 #include <utility>
+#include <mutex>
 
 #include "bitboard.h"
 #include "misc.h"
@@ -118,11 +119,74 @@ MovePicker::MovePicker(const Position& p, Move ttm, int th, const CapturePieceTo
     stage = PROBCUT_TT + !(ttm && pos.capture_stage(ttm) && pos.pseudo_legal(ttm));
 }
 
+// Output format:
+//   32 bytes: packed position pieces
+//   1 byte: stm
+//   1 byte: ep square
+//   4 bytes: castling rights
+
+static std::mutex mtx;
+static FILE* file;
+
+struct MovepickSampler {
+
+    char buffer[16384];
+    size_t s = 0;
+
+    static std::string random_name() {
+        unsigned _;
+        uint64_t ts = __rdtscp(&_);
+
+        return "movepick-dump-" + std::to_string(ts);
+    }
+
+    MovepickSampler(const Position& pos) {
+        uint8_t pcs[32] = {0};
+        for (Square sq = SQ_A1; sq <= SQ_H8; ++sq) {
+            pcs[sq / 2] |= pos.piece_on(sq) << ((sq % 2) * 4);
+        }
+        memcpy(buffer, pcs, sizeof(pcs));
+        s += sizeof(pcs);
+        write(uint8_t(pos.side_to_move()));
+        write(uint8_t(pos.ep_square()));
+        for (CastlingRights cr : { WHITE_OO, WHITE_OOO, BLACK_OO, BLACK_OOO })
+            write(uint8_t(pos.can_castle(cr)));
+    }
+
+    template <typename T> 
+    void write(const T& val) {
+        if (s + sizeof(val) >= sizeof(buffer))
+            abort();
+        memcpy(&buffer[s], &val, sizeof(val));
+        s += sizeof(val);
+    }
+
+    template <typename... Ts>
+    void write_i16s(const Ts&... ts) {
+        (write(int16_t(ts)), ...);
+    }
+
+    ~MovepickSampler() {
+        std::lock_guard lg(mtx);
+        if (file == nullptr) {
+            file = fopen(random_name().c_str(), "wb");
+            if (!file) {
+                perror("MovepickSampler fopen");
+                abort();
+            }
+        }
+        fwrite(buffer, 1, s, file);
+    }
+};
+
+constexpr uint64_t SAMPLE_EVERY = 2048;
+
 // Assigns a numerical value to each move in a list, used for sorting.
 // Captures are ordered by Most Valuable Victim (MVV), preferring captures
 // with a good history. Quiets moves are ordered using the history tables.
 template<GenType Type>
 ExtMove* MovePicker::score(const MoveList<Type>& ml) {
+    thread_local uint64_t SampleCount = 0;
 
     static_assert(Type == CAPTURES || Type == QUIETS || Type == EVASIONS, "Wrong type");
 
@@ -137,6 +201,40 @@ ExtMove* MovePicker::score(const MoveList<Type>& ml) {
           pos.attacks_by<KNIGHT>(~us) | pos.attacks_by<BISHOP>(~us) | threatByLesser[KNIGHT];
         threatByLesser[QUEEN] = pos.attacks_by<ROOK>(~us) | threatByLesser[ROOK];
         threatByLesser[KING]  = 0;
+    }
+
+    const bool doDump = Type == QUIETS && ++SampleCount % SAMPLE_EVERY == 0;
+
+    if (doDump) {
+        MovepickSampler sampler(pos);
+        sampler.write(uint8_t(ml.size()));
+
+        for (auto move : ml) {
+            sampler.write(move.raw());
+        }
+       
+        for (auto m : ml) {
+            const Square    from          = m.from_sq();
+            const Square    to            = m.to_sq();
+            const Piece     pc            = pos.moved_piece(m);
+            const PieceType pt            = type_of(pc);
+            const Piece     capturedPiece = pos.piece_on(to);
+            int v = 20 * (bool(threatByLesser[pt] & from) - bool(threatByLesser[pt] & to));
+            bool goodCheck = (bool(pos.check_squares(pt) & to) && pos.see_ge(m, -75));
+            sampler.write_i16s(
+                (*mainHistory)[us][m.raw()],
+                sharedHistory->pawn_entry(pos)[pc][to],
+                (*continuationHistory[0])[pc][to],
+                (*continuationHistory[1])[pc][to],
+                (*continuationHistory[2])[pc][to],
+                (*continuationHistory[3])[pc][to],
+                (*continuationHistory[5])[pc][to],
+                goodCheck,
+                v,
+                ply < LOW_PLY_HISTORY_SIZE ?  (*lowPlyHistory)[ply][m.raw()] : 0,
+                ply
+            );
+        }
     }
 
     ExtMove* it = cur;
@@ -166,8 +264,10 @@ ExtMove* MovePicker::score(const MoveList<Type>& ml) {
             m.value += (*continuationHistory[3])[pc][to];
             m.value += (*continuationHistory[5])[pc][to];
 
+            bool goodCheck = (bool(pos.check_squares(pt) & to) && pos.see_ge(m, -75));
+
             // bonus for checks
-            m.value += (bool(pos.check_squares(pt) & to) && pos.see_ge(m, -75)) * 16384;
+            m.value += goodCheck * 16384;
 
             // penalty for moving to a square threatened by a lesser piece
             // or bonus for escaping an attack by a lesser piece.
