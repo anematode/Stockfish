@@ -179,7 +179,7 @@ struct MovepickSampler {
     }
 };
 
-constexpr uint64_t SAMPLE_EVERY = 2048;
+constexpr uint64_t SAMPLE_EVERY = 32768;
 
 // Assigns a numerical value to each move in a list, used for sorting.
 // Captures are ordered by Most Valuable Victim (MVV), preferring captures
