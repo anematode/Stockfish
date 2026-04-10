@@ -363,11 +363,8 @@ FIT_FEATURE_NAMES = [
 ]
 
 
-def run_fit(dump_path: str, depth: int = 12, engine_path: str = STOCKFISH_PATH,
-            concurrency: int = 1, limit: int | None = None):
-    import numpy as np
-    from sklearn.linear_model import Ridge
-
+def _load_fit_data(dump_path, depth, engine_path, concurrency, limit):
+    """Load samples and evals, filtering unusable positions. Returns (samples, evals, filtered indices)."""
     evals_path = dump_path + ".evals.json"
     try:
         with open(evals_path) as f:
@@ -384,17 +381,12 @@ def run_fit(dump_path: str, depth: int = 12, engine_path: str = STOCKFISH_PATH,
     if limit is not None:
         samples = samples[:limit]
 
-    # Build training data
-    X_rows = []
-    y_rows = []
     skipped_mate = 0
     skipped_non_quiet = 0
-    used_samples = 0
+    filtered = []  # list of (sample, oracle_evals, oracle_cp_map)
 
     for sample, ev in zip(samples, evals_data):
         oracle_evals = ev["evals"]
-
-        # Skip positions with no evals or mate scores
         if not oracle_evals:
             skipped_mate += 1
             continue
@@ -402,103 +394,180 @@ def run_fit(dump_path: str, depth: int = 12, engine_path: str = STOCKFISH_PATH,
         if any(v is None for v in cp_values):
             skipped_mate += 1
             continue
-
-        # Skip positions where the best move is not a quiet move
         quiet_ucis = {mf.move.uci() for mf in sample.moves}
         if oracle_evals[0]["move"] not in quiet_ucis:
             skipped_non_quiet += 1
             continue
-
-        # Map uci move string -> oracle cp
         oracle_cp = {e["move"]: score_to_cp(e["score"]) for e in oracle_evals}
+        filtered.append((sample, oracle_evals, oracle_cp))
+
+    print(f"  {len(filtered)} usable positions "
+          f"(skipped: {skipped_mate} mate, {skipped_non_quiet} non-quiet best move)")
+    return filtered
+
+
+def _get_features(mf: MoveFeatures) -> list[float]:
+    return [getattr(mf, name) for name in FIT_FEATURE_NAMES]
+
+
+def _rank_metrics(filtered, score_fn):
+    """Compute ranking quality metrics given a scoring function score_fn(MoveFeatures) -> float."""
+    import numpy as np
+    top1_match = 0
+    top3_overlap = 0
+    total = 0
+
+    for sample, oracle_evals, _ in filtered:
+        if not sample.moves:
+            continue
+        scores = [score_fn(mf) for mf in sample.moves]
+        ranked_uci = [sample.moves[j].move.uci()
+                      for j in np.argsort([-s for s in scores])]
+        oracle_ranked = [e["move"] for e in oracle_evals]
+
+        if ranked_uci[0] == oracle_ranked[0]:
+            top1_match += 1
+        model_top3 = set(ranked_uci[:3])
+        oracle_top3 = set(oracle_ranked[:3])
+        top3_overlap += len(model_top3 & oracle_top3)
+        total += 1
+
+    return top1_match, top3_overlap, total
+
+
+def _print_metrics(top1_match, top3_overlap, total):
+    if total > 0:
+        print(f"  Top-1 accuracy: {top1_match}/{total} "
+              f"({100 * top1_match / total:.1f}%)")
+        print(f"  Top-3 overlap:  {top3_overlap}/{total * 3} "
+              f"({100 * top3_overlap / (total * 3):.1f}%)")
+
+
+def run_fit(dump_path: str, depth: int = 12, engine_path: str = STOCKFISH_PATH,
+            concurrency: int = 1, limit: int | None = None):
+    import numpy as np
+    from sklearn.linear_model import Ridge
+    from sklearn.preprocessing import StandardScaler
+
+    filtered = _load_fit_data(dump_path, depth, engine_path, concurrency, limit)
+
+    # === Pointwise regression with standardized features ===
+    print("\n--- Pointwise regression (standardized features) ---")
+
+    X_rows = []
+    y_rows = []
+    for sample, oracle_evals, oracle_cp in filtered:
+        cp_values = list(oracle_cp.values())
         worst_oracle = min(cp_values)
         default_target = worst_oracle - 100
 
-        # Build per-position targets, then center them
         features = []
         targets = []
         for mf in sample.moves:
             uci = mf.move.uci()
             target = oracle_cp.get(uci, default_target)
-            feat = [getattr(mf, name) for name in FIT_FEATURE_NAMES]
-            features.append(feat)
+            features.append(_get_features(mf))
             targets.append(target)
 
         if not features:
             continue
 
-        # Center targets per position so we learn relative ordering
         mean_target = sum(targets) / len(targets)
         for feat, target in zip(features, targets):
             X_rows.append(feat)
             y_rows.append(target - mean_target)
 
-        used_samples += 1
-
     X = np.array(X_rows, dtype=np.float64)
     y = np.array(y_rows, dtype=np.float64)
+    print(f"  {len(X)} training rows")
 
-    print(f"\nDataset: {used_samples} positions, {len(X)} move samples "
-          f"(skipped: {skipped_mate} mate, {skipped_non_quiet} non-quiet best move)")
+    scaler = StandardScaler()
+    X_scaled = scaler.fit_transform(X)
 
-    # Fit
-    model = Ridge(alpha=1.0, fit_intercept=False)
-    model.fit(X, y)
+    model_pt = Ridge(alpha=1.0, fit_intercept=False)
+    model_pt.fit(X_scaled, y)
 
-    print(f"\nFitted weights (R² = {model.score(X, y):.4f}):\n")
+    print(f"  R² = {model_pt.score(X_scaled, y):.4f}")
+    print(f"\n  Standardized weights:")
     max_name_len = max(len(n) for n in FIT_FEATURE_NAMES)
-    for name, w in zip(FIT_FEATURE_NAMES, model.coef_):
-        print(f"  {name:{max_name_len}s}  {w:+.4f}")
+    for name, w in zip(FIT_FEATURE_NAMES, model_pt.coef_):
+        print(f"    {name:{max_name_len}s}  {w:+.4f}")
 
-    # --- Ranking quality metrics ---
-    print("\nRanking quality:")
-    top1_match = 0
-    top3_overlap = 0
-    total_ranked = 0
+    # Raw-space weights: w_raw = w_scaled / std
+    raw_coef_pt = model_pt.coef_ / scaler.scale_
+    print(f"\n  Raw-space weights:")
+    for name, w in zip(FIT_FEATURE_NAMES, raw_coef_pt):
+        print(f"    {name:{max_name_len}s}  {w:+.6f}")
 
-    for sample, ev in zip(samples, evals_data):
-        oracle_evals = ev["evals"]
-        if not oracle_evals:
-            continue
-        cp_values = [score_to_cp(e["score"]) for e in oracle_evals]
-        if any(v is None for v in cp_values):
-            continue
+    print(f"\n  Ranking quality (pointwise):")
+    def score_pt(mf):
+        feat = np.array(_get_features(mf)).reshape(1, -1)
+        return model_pt.predict(scaler.transform(feat))[0]
+    _print_metrics(*_rank_metrics(filtered, score_pt))
 
-        quiet_ucis = {mf.move.uci() for mf in sample.moves}
-        if oracle_evals[0]["move"] not in quiet_ucis:
-            continue
+    # === Pairwise ranking ===
+    print("\n--- Pairwise ranking (standardized features) ---")
 
-        n_moves = len(sample.moves)
-        if n_moves == 0:
-            continue
+    X_pair = []
+    y_pair = []
+    rng = np.random.default_rng(42)
 
-        # Score each move with the model
-        feats = np.array([[getattr(mf, name) for name in FIT_FEATURE_NAMES]
-                          for mf in sample.moves], dtype=np.float64)
-        scores = model.predict(feats)
+    for sample, oracle_evals, oracle_cp in filtered:
+        # Build feature map for this position
+        move_feats = {}
+        for mf in sample.moves:
+            move_feats[mf.move.uci()] = np.array(_get_features(mf))
 
-        # Rank moves by model score (descending)
-        ranked_uci = [sample.moves[j].move.uci()
-                      for j in np.argsort(-scores)]
+        oracle_moves = [e["move"] for e in oracle_evals if e["move"] in move_feats]
 
-        oracle_ranked = [e["move"] for e in oracle_evals]
+        # Pairs: oracle-ranked move vs lower-ranked or unranked moves
+        oracle_set = set(oracle_moves)
+        unranked = [uci for uci in move_feats if uci not in oracle_set]
 
-        # Top-1 accuracy
-        if ranked_uci[0] == oracle_ranked[0]:
-            top1_match += 1
+        # Between oracle moves (higher rank beats lower rank), both directions
+        for i in range(len(oracle_moves)):
+            for j in range(i + 1, len(oracle_moves)):
+                diff = move_feats[oracle_moves[i]] - move_feats[oracle_moves[j]]
+                X_pair.append(diff)
+                y_pair.append(1.0)
+                X_pair.append(-diff)
+                y_pair.append(-1.0)
 
-        # Top-3 overlap
-        model_top3 = set(ranked_uci[:3])
-        oracle_top3 = set(oracle_ranked[:3])
-        top3_overlap += len(model_top3 & oracle_top3)
+        # Oracle moves vs a sample of unranked moves, both directions
+        n_neg = min(len(unranked), 3)
+        for om in oracle_moves:
+            for um in rng.choice(unranked, size=n_neg, replace=False) if unranked else []:
+                diff = move_feats[om] - move_feats[um]
+                X_pair.append(diff)
+                y_pair.append(1.0)
+                X_pair.append(-diff)
+                y_pair.append(-1.0)
 
-        total_ranked += 1
+    X_pair = np.array(X_pair, dtype=np.float64)
+    y_pair = np.array(y_pair, dtype=np.float64)
+    print(f"  {len(X_pair)} training pairs")
 
-    if total_ranked > 0:
-        print(f"  Top-1 accuracy: {top1_match}/{total_ranked} "
-              f"({100 * top1_match / total_ranked:.1f}%)")
-        print(f"  Top-3 overlap:  {top3_overlap}/{total_ranked * 3} "
-              f"({100 * top3_overlap / (total_ranked * 3):.1f}%)")
+    scaler_pw = StandardScaler()
+    X_pair_scaled = scaler_pw.fit_transform(X_pair)
+
+    model_pw = Ridge(alpha=1.0, fit_intercept=False)
+    model_pw.fit(X_pair_scaled, y_pair)
+
+    print(f"  R² = {model_pw.score(X_pair_scaled, y_pair):.4f}")
+    print(f"\n  Standardized weights:")
+    for name, w in zip(FIT_FEATURE_NAMES, model_pw.coef_):
+        print(f"    {name:{max_name_len}s}  {w:+.4f}")
+
+    raw_coef_pw = model_pw.coef_ / scaler_pw.scale_
+    print(f"\n  Raw-space weights:")
+    for name, w in zip(FIT_FEATURE_NAMES, raw_coef_pw):
+        print(f"    {name:{max_name_len}s}  {w:+.6f}")
+
+    print(f"\n  Ranking quality (pairwise):")
+    def score_pw(mf):
+        feat = np.array(_get_features(mf))
+        return feat.dot(raw_coef_pw)
+    _print_metrics(*_rank_metrics(filtered, score_pw))
 
 
 if __name__ == "__main__":
