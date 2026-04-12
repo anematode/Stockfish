@@ -41,8 +41,8 @@ using PSQFeatureSet    = Features::HalfKAv2_hm;
 
 // Number of input feature dimensions after conversion
 constexpr IndexType L1 = 1024;
-constexpr int       L2                           = 31;
-constexpr int       L3                           = 32;
+constexpr int       L2 = 31;
+constexpr int       L3 = 32;
 
 constexpr IndexType PSQTBuckets = 8;
 constexpr IndexType LayerStacks = 8;
@@ -144,8 +144,7 @@ struct NetworkArchitecture {
 
 template<>
 struct std::hash<Stockfish::Eval::NNUE::NetworkArchitecture> {
-    std::size_t
-    operator()(const Stockfish::Eval::NNUE::NetworkArchitecture& arch) const noexcept {
+    std::size_t operator()(const Stockfish::Eval::NNUE::NetworkArchitecture& arch) const noexcept {
         return arch.get_content_hash();
     }
 };

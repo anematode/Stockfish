@@ -46,9 +46,9 @@
 #if !defined(_MSC_VER) && !defined(NNUE_EMBEDDING_OFF)
 INCBIN(EmbeddedNNUE, EvalFileDefaultName);
 #else
-const unsigned char        gEmbeddedNNUEData[1]   = {0x0};
-const unsigned char* const gEmbeddedNNUEEnd       = &gEmbeddedNNUEData[1];
-const unsigned int         gEmbeddedNNUESize      = 1;
+const unsigned char        gEmbeddedNNUEData[1] = {0x0};
+const unsigned char* const gEmbeddedNNUEEnd     = &gEmbeddedNNUEData[1];
+const unsigned int         gEmbeddedNNUESize    = 1;
 #endif
 
 namespace Stockfish::Eval::NNUE {
@@ -136,15 +136,13 @@ bool Network::save(const std::optional<std::string>& filename) const {
 }
 
 
-NetworkOutput
-Network::evaluate(const Position&                         pos,
-                                     AccumulatorStack&                       accumulatorStack,
-                                     AccumulatorCaches& cache) const {
+NetworkOutput Network::evaluate(const Position&    pos,
+                                AccumulatorStack&  accumulatorStack,
+                                AccumulatorCaches& cache) const {
 
     constexpr uint64_t alignment = CacheLineSize;
 
-    alignas(alignment)
-      TransformedFeatureType transformedFeatures[FeatureTransformer::BufferSize];
+    alignas(alignment) TransformedFeatureType transformedFeatures[FeatureTransformer::BufferSize];
 
     ASSERT_ALIGNED(transformedFeatures, alignment);
 
@@ -157,7 +155,7 @@ Network::evaluate(const Position&                         pos,
 
 
 void Network::verify(std::string                                  evalfilePath,
-                                        const std::function<void(std::string_view)>& f) const {
+                     const std::function<void(std::string_view)>& f) const {
     if (evalfilePath.empty())
         evalfilePath = evalFile.defaultName;
 
@@ -196,15 +194,13 @@ void Network::verify(std::string                                  evalfilePath,
 }
 
 
-NnueEvalTrace
-Network::trace_evaluate(const Position&                         pos,
-                                           AccumulatorStack&                       accumulatorStack,
-                                           AccumulatorCaches& cache) const {
+NnueEvalTrace Network::trace_evaluate(const Position&    pos,
+                                      AccumulatorStack&  accumulatorStack,
+                                      AccumulatorCaches& cache) const {
 
     constexpr uint64_t alignment = CacheLineSize;
 
-    alignas(alignment)
-      TransformedFeatureType transformedFeatures[FeatureTransformer::BufferSize];
+    alignas(alignment) TransformedFeatureType transformedFeatures[FeatureTransformer::BufferSize];
 
     ASSERT_ALIGNED(transformedFeatures, alignment);
 
@@ -224,8 +220,7 @@ Network::trace_evaluate(const Position&                         pos,
 }
 
 
-void Network::load_user_net(const std::string& dir,
-                                               const std::string& evalfilePath) {
+void Network::load_user_net(const std::string& dir, const std::string& evalfilePath) {
     std::ifstream stream(dir + evalfilePath, std::ios::binary);
     auto          description = load(stream);
 
@@ -261,14 +256,12 @@ void Network::load_internal() {
 }
 
 
-void Network::initialize() {
-    initialized = true;
-}
+void Network::initialize() { initialized = true; }
 
 
 bool Network::save(std::ostream&      stream,
-                                      const std::string& name,
-                                      const std::string& netDescription) const {
+                   const std::string& name,
+                   const std::string& netDescription) const {
     if (name.empty() || name == "None")
         return false;
 
@@ -297,9 +290,7 @@ std::size_t Network::get_content_hash() const {
 }
 
 // Read network header
-bool Network::read_header(std::istream&  stream,
-                                             std::uint32_t* hashValue,
-                                             std::string*   desc) const {
+bool Network::read_header(std::istream& stream, std::uint32_t* hashValue, std::string* desc) const {
     std::uint32_t version, size;
 
     version    = read_little_endian<std::uint32_t>(stream);
@@ -315,8 +306,8 @@ bool Network::read_header(std::istream&  stream,
 
 // Write network header
 bool Network::write_header(std::ostream&      stream,
-                                              std::uint32_t      hashValue,
-                                              const std::string& desc) const {
+                           std::uint32_t      hashValue,
+                           const std::string& desc) const {
     write_little_endian<std::uint32_t>(stream, Version);
     write_little_endian<std::uint32_t>(stream, hashValue);
     write_little_endian<std::uint32_t>(stream, std::uint32_t(desc.size()));
@@ -325,8 +316,7 @@ bool Network::write_header(std::ostream&      stream,
 }
 
 
-bool Network::read_parameters(std::istream& stream,
-                                                 std::string&  netDescription) {
+bool Network::read_parameters(std::istream& stream, std::string& netDescription) {
     std::uint32_t hashValue;
     if (!read_header(stream, &hashValue, &netDescription))
         return false;
@@ -343,8 +333,7 @@ bool Network::read_parameters(std::istream& stream,
 }
 
 
-bool Network::write_parameters(std::ostream&      stream,
-                                                  const std::string& netDescription) const {
+bool Network::write_parameters(std::ostream& stream, const std::string& netDescription) const {
     if (!write_header(stream, Network::hash, netDescription))
         return false;
     if (!Detail::write_parameters(stream, featureTransformer))

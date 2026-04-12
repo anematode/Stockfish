@@ -43,7 +43,7 @@ class FeatureTransformer;
 
 // Class that holds the result of affine transformation of input features
 struct alignas(CacheLineSize) Accumulator {
-    std::array<std::array<std::int16_t, L1>, COLOR_NB>        accumulation;
+    std::array<std::array<std::int16_t, L1>, COLOR_NB>          accumulation;
     std::array<std::array<std::int32_t, PSQTBuckets>, COLOR_NB> psqtAccumulation;
     std::array<bool, COLOR_NB>                                  computed = {};
 };
@@ -62,7 +62,7 @@ struct AccumulatorCaches {
     }
 
     struct alignas(CacheLineSize) Entry {
-        std::array<BiasType, L1>              accumulation;
+        std::array<BiasType, L1>                accumulation;
         std::array<PSQTWeightType, PSQTBuckets> psqtAccumulation;
         std::array<Piece, SQUARE_NB>            pieces;
         Bitboard                                pieceBB;
@@ -71,8 +71,8 @@ struct AccumulatorCaches {
         // so we put the biases in the accumulation, without any weights on top
         void clear(const std::array<BiasType, L1>& biases) {
             accumulation = biases;
-            std::memset(reinterpret_cast<std::byte*>(this) + offsetof(Entry, psqtAccumulation),
-                        0, sizeof(Entry) - offsetof(Entry, psqtAccumulation));
+            std::memset(reinterpret_cast<std::byte*>(this) + offsetof(Entry, psqtAccumulation), 0,
+                        sizeof(Entry) - offsetof(Entry, psqtAccumulation));
         }
     };
 
@@ -86,13 +86,12 @@ struct AccumulatorCaches {
     std::array<Entry, COLOR_NB>& operator[](Square sq) { return entries[sq]; }
 
     std::array<std::array<Entry, COLOR_NB>, SQUARE_NB> entries;
-
 };
 
 
 template<typename FeatureSet>
-struct AccumulatorState : public Accumulator {
-    typename FeatureSet::DiffType                  diff;
+struct AccumulatorState: public Accumulator {
+    typename FeatureSet::DiffType diff;
 
     void reset(const typename FeatureSet::DiffType& dp) noexcept {
         diff = dp;
@@ -116,9 +115,9 @@ class AccumulatorStack {
     std::pair<DirtyPiece&, DirtyThreats&> push() noexcept;
     void                                  pop() noexcept;
 
-    void evaluate(const Position&                       pos,
+    void evaluate(const Position&           pos,
                   const FeatureTransformer& featureTransformer,
-                  AccumulatorCaches& cache) noexcept;
+                  AccumulatorCaches&        cache) noexcept;
 
    private:
     template<typename T>
@@ -131,25 +130,25 @@ class AccumulatorStack {
     [[nodiscard]] std::array<AccumulatorState<T>, MaxSize>& mut_accumulators() noexcept;
 
     template<typename FeatureSet>
-    void evaluate_side(Color                                 perspective,
-                       const Position&                       pos,
+    void evaluate_side(Color                     perspective,
+                       const Position&           pos,
                        const FeatureTransformer& featureTransformer,
-                       AccumulatorCaches& cache) noexcept;
+                       AccumulatorCaches&        cache) noexcept;
 
     template<typename FeatureSet>
     [[nodiscard]] std::size_t find_last_usable_accumulator(Color perspective) const noexcept;
 
     template<typename FeatureSet>
-    void forward_update_incremental(Color                                 perspective,
-                                    const Position&                       pos,
+    void forward_update_incremental(Color                     perspective,
+                                    const Position&           pos,
                                     const FeatureTransformer& featureTransformer,
-                                    const std::size_t                     begin) noexcept;
+                                    const std::size_t         begin) noexcept;
 
     template<typename FeatureSet>
-    void backward_update_incremental(Color                                 perspective,
-                                     const Position&                       pos,
+    void backward_update_incremental(Color                     perspective,
+                                     const Position&           pos,
                                      const FeatureTransformer& featureTransformer,
-                                     const std::size_t                     end) noexcept;
+                                     const std::size_t         end) noexcept;
 
     std::array<AccumulatorState<PSQFeatureSet>, MaxSize>    psq_accumulators;
     std::array<AccumulatorState<ThreatFeatureSet>, MaxSize> threat_accumulators;

@@ -87,7 +87,8 @@ class FeatureTransformer {
     using OutputType = TransformedFeatureType;
 
     // Number of input/output dimensions
-    static constexpr IndexType InputDimensions = PSQFeatureSet::Dimensions + ThreatFeatureSet::Dimensions;
+    static constexpr IndexType InputDimensions =
+      PSQFeatureSet::Dimensions + ThreatFeatureSet::Dimensions;
     static constexpr IndexType OutputDimensions = HalfDimensions;
 
     // Size of forward propagation buffer
@@ -128,7 +129,8 @@ class FeatureTransformer {
 
     // Hash value embedded in the evaluation file
     static constexpr std::uint32_t get_hash_value() {
-        return combine_hash({ThreatFeatureSet::HashValue, PSQFeatureSet::HashValue}) ^ (OutputDimensions * 2);
+        return combine_hash({ThreatFeatureSet::HashValue, PSQFeatureSet::HashValue})
+             ^ (OutputDimensions * 2);
     }
 
     void permute_weights() {
@@ -202,11 +204,11 @@ class FeatureTransformer {
     }
 
     // Convert input features
-    std::int32_t transform(const Position&                           pos,
-                           AccumulatorStack&                         accumulatorStack,
+    std::int32_t transform(const Position&    pos,
+                           AccumulatorStack&  accumulatorStack,
                            AccumulatorCaches& cache,
-                           OutputType*                               output,
-                           int                                       bucket) const {
+                           OutputType*        output,
+                           int                bucket) const {
 
         using namespace SIMD;
         accumulatorStack.evaluate(pos, *this, cache);
@@ -219,11 +221,11 @@ class FeatureTransformer {
           (psqtAccumulation[perspectives[0]][bucket] - psqtAccumulation[perspectives[1]][bucket]);
 
         const auto& threatPsqtAccumulation = threatAccumulatorState.psqtAccumulation;
-        psqt = (psqt + threatPsqtAccumulation[perspectives[0]][bucket]
+        psqt                               = (psqt + threatPsqtAccumulation[perspectives[0]][bucket]
                 - threatPsqtAccumulation[perspectives[1]][bucket])
              / 2;
 
-        const auto& accumulation = accumulatorState.accumulation;
+        const auto& accumulation       = accumulatorState.accumulation;
         const auto& threatAccumulation = threatAccumulatorState.accumulation;
 
         for (IndexType p = 0; p < 2; ++p)
@@ -315,10 +317,8 @@ class FeatureTransformer {
                 const vec_t acc1a = vec_add_16(in1[j * 2 + 0], tin1[j * 2 + 0]);
                 const vec_t acc1b = vec_add_16(in1[j * 2 + 1], tin1[j * 2 + 1]);
 
-                const vec_t sum0a =
-                  vec_slli_16(vec_max_16(vec_min_16(acc0a, One), Zero), shift);
-                const vec_t sum0b =
-                  vec_slli_16(vec_max_16(vec_min_16(acc0b, One), Zero), shift);
+                const vec_t sum0a = vec_slli_16(vec_max_16(vec_min_16(acc0a, One), Zero), shift);
+                const vec_t sum0b = vec_slli_16(vec_max_16(vec_min_16(acc0b, One), Zero), shift);
                 const vec_t sum1a = vec_min_16(acc1a, One);
                 const vec_t sum1b = vec_min_16(acc1b, One);
 
@@ -356,21 +356,21 @@ class FeatureTransformer {
     }  // end of function transform()
 
     alignas(CacheLineSize) std::array<BiasType, HalfDimensions> biases;
-    alignas(CacheLineSize) std::array<WeightType, HalfDimensions * PSQFeatureSet::Dimensions> weights;
+    alignas(
+      CacheLineSize) std::array<WeightType, HalfDimensions * PSQFeatureSet::Dimensions> weights;
     alignas(CacheLineSize)
       std::array<ThreatWeightType, HalfDimensions * ThreatFeatureSet::Dimensions> threatWeights;
-    alignas(CacheLineSize) std::array<PSQTWeightType, PSQFeatureSet::Dimensions * PSQTBuckets> psqtWeights;
+    alignas(CacheLineSize)
+      std::array<PSQTWeightType, PSQFeatureSet::Dimensions * PSQTBuckets> psqtWeights;
     alignas(CacheLineSize)
       std::array<PSQTWeightType, ThreatFeatureSet::Dimensions * PSQTBuckets> threatPsqtWeights;
 };
 
 }  // namespace Stockfish::Eval::NNUE
 
-template <>
+template<>
 struct std::hash<Stockfish::Eval::NNUE::FeatureTransformer> {
-    std::size_t
-    operator()(const Stockfish::Eval::NNUE::FeatureTransformer& ft)
-      const noexcept {
+    std::size_t operator()(const Stockfish::Eval::NNUE::FeatureTransformer& ft) const noexcept {
         return ft.get_content_hash();
     }
 };

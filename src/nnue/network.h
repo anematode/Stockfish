@@ -50,7 +50,8 @@ using NetworkOutput = std::tuple<Value, Value>;
 // there is no way to run destructors.
 class Network {
    public:
-    Network(EvalFile file) : evalFile(file) {}
+    Network(EvalFile file) :
+        evalFile(file) {}
 
     Network(const Network& other) = default;
     Network(Network&& other)      = default;
@@ -63,14 +64,14 @@ class Network {
 
     std::size_t get_content_hash() const;
 
-    NetworkOutput evaluate(const Position&                         pos,
-                           AccumulatorStack&                       accumulatorStack,
+    NetworkOutput evaluate(const Position&    pos,
+                           AccumulatorStack&  accumulatorStack,
                            AccumulatorCaches& cache) const;
 
 
     void verify(std::string evalfilePath, const std::function<void(std::string_view)>&) const;
-    NnueEvalTrace trace_evaluate(const Position&                         pos,
-                                 AccumulatorStack&                       accumulatorStack,
+    NnueEvalTrace trace_evaluate(const Position&    pos,
+                                 AccumulatorStack&  accumulatorStack,
                                  AccumulatorCaches& cache) const;
 
    private:
@@ -94,13 +95,13 @@ class Network {
     // Evaluation function
     NetworkArchitecture network[LayerStacks];
 
-    EvalFile         evalFile;
+    EvalFile evalFile;
 
     bool initialized = false;
 
     // Hash value of evaluation function structure
     static constexpr std::uint32_t hash =
-        FeatureTransformer::get_hash_value() ^ NetworkArchitecture::get_hash_value();
+      FeatureTransformer::get_hash_value() ^ NetworkArchitecture::get_hash_value();
 
     friend struct AccumulatorCaches;
 };
@@ -108,10 +109,9 @@ class Network {
 
 }  // namespace Stockfish
 
-template <>
+template<>
 struct std::hash<Stockfish::Eval::NNUE::Network> {
-    std::size_t operator()(
-      const Stockfish::Eval::NNUE::Network& network) const noexcept {
+    std::size_t operator()(const Stockfish::Eval::NNUE::Network& network) const noexcept {
         return network.get_content_hash();
     }
 };
