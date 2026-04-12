@@ -291,24 +291,24 @@ void Engine::verify_network() const {
 
 std::unique_ptr<Eval::NNUE::Network> Engine::get_default_network() const {
 
-    auto networks_ =
+    auto network_ =
       std::make_unique<NN::Network>(NN::EvalFile{EvalFileDefaultName, "None", ""});
 
-    networks_->load(binaryDirectory, "");
+    network_->load(binaryDirectory, "");
 
-    return networks_;
+    return network_;
 }
 
 void Engine::load_network(const std::string& file) {
     network.modify_and_replicate(
-      [this, &file](NN::Network& networks_) { networks_.load(binaryDirectory, file); });
+      [this, &file](NN::Network& network_) { network_.load(binaryDirectory, file); });
     threads.clear();
     threads.ensure_network_replicated();
 }
 
 void Engine::save_network(const std::pair<std::optional<std::string>, std::string> file) {
-    network.modify_and_replicate([&file](NN::Network& networks_) {
-        networks_.save(file.first);
+    network.modify_and_replicate([&file](NN::Network& network_) {
+        network_.save(file.first);
     });
 }
 
