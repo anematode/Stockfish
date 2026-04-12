@@ -44,35 +44,12 @@
 //     const unsigned int         gEmbeddedNNUESize;    // the size of the embedded file
 // Note that this does not work in Microsoft Visual Studio.
 #if !defined(_MSC_VER) && !defined(NNUE_EMBEDDING_OFF)
-INCBIN(EmbeddedNNUEBig, EvalFileDefaultName);
+INCBIN(EmbeddedNNUE, EvalFileDefaultName);
 #else
-const unsigned char        gEmbeddedNNUEBigData[1]   = {0x0};
-const unsigned char* const gEmbeddedNNUEBigEnd       = &gEmbeddedNNUEBigData[1];
-const unsigned int         gEmbeddedNNUEBigSize      = 1;
+const unsigned char        gEmbeddedNNUEData[1]   = {0x0};
+const unsigned char* const gEmbeddedNNUEEnd       = &gEmbeddedNNUEData[1];
+const unsigned int         gEmbeddedNNUESize      = 1;
 #endif
-
-namespace {
-
-struct EmbeddedNNUE {
-    EmbeddedNNUE(const unsigned char* embeddedData,
-                 const unsigned char* embeddedEnd,
-                 const unsigned int   embeddedSize) :
-        data(embeddedData),
-        end(embeddedEnd),
-        size(embeddedSize) {}
-    const unsigned char* data;
-    const unsigned char* end;
-    const unsigned int   size;
-};
-
-using namespace Stockfish::Eval::NNUE;
-
-EmbeddedNNUE get_embedded() {
-    return EmbeddedNNUE(gEmbeddedNNUEBigData, gEmbeddedNNUEBigEnd, gEmbeddedNNUEBigSize);
-}
-
-}
-
 
 namespace Stockfish::Eval::NNUE {
 
@@ -270,10 +247,8 @@ void Network::load_internal() {
         }
     };
 
-    const auto embedded = get_embedded();
-
-    MemoryBuffer buffer(const_cast<char*>(reinterpret_cast<const char*>(embedded.data)),
-                        size_t(embedded.size));
+    MemoryBuffer buffer(const_cast<char*>(reinterpret_cast<const char*>(gEmbeddedNNUEData)),
+                        size_t(gEmbeddedNNUESize));
 
     std::istream stream(&buffer);
     auto         description = load(stream);
