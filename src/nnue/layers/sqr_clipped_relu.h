@@ -66,13 +66,18 @@ class SqrClippedReLU {
         return h;
     }
 
-    // Forward propagation
+    // forward propagate
     void propagate(const InputType* input, OutputType* output) const {
+        // Simd branches assume alignas(64)
+        static_assert(CacheLineSize >= 64 && CacheLineSize % 64 == 0, "CacheLineSize must be a multiple of 64 for SIMD optimizations");
 
 #if defined(USE_AVX512)
         constexpr IndexType NumChunks = InputDimensions / 64;
+        // Reverses the double-pack scrambling across the four 128-bit lanes
+        const __m512i Offsets = _mm512_set_epi32(15, 11, 7, 3, 14, 10, 6, 2, 13, 9, 5, 1, 12, 8, 4, 0);
         const auto in  = reinterpret_cast<const __m512i*>(input);
         const auto out = reinterpret_cast<__m512i*>(output);
+
         for (IndexType i = 0; i < NumChunks; ++i)
         {
             __m512i words0 =
@@ -92,18 +97,21 @@ class SqrClippedReLU {
             }
             else
             {
-                static_assert(WeightScaleBitsLocal == 6 || WeightScaleBitsLocal == 7, 
-                              "Unsupported WeightScaleBitsLocal for SIMD squared propagate");
+                static_assert(WeightScaleBitsLocal == 6 || WeightScaleBitsLocal == 7,
+                              "Unsupported WeightScaleBitsLocal");
             }
 
-            _mm512_store_si512(&out[i], _mm512_packs_epi16(words0, words1));
-        }
+            __m512i packed = _mm512_packs_epi16(words0, words1);
+            _mm512_store_si512(&out[i], _mm512_permutexvar_epi32(Offsets, packed));        }
         constexpr IndexType Start = NumChunks * 64;
 
 #elif defined(USE_AVX2)
         constexpr IndexType NumChunks = InputDimensions / 32;
+        // Reverses the double-pack scrambling across the two 128-bit lanes
+        const __m256i Offsets = _mm256_set_epi32(7, 3, 6, 2, 5, 1, 4, 0);
         const auto in  = reinterpret_cast<const __m256i*>(input);
         const auto out = reinterpret_cast<__m256i*>(output);
+
         for (IndexType i = 0; i < NumChunks; ++i)
         {
             __m256i words0 =
@@ -123,18 +131,19 @@ class SqrClippedReLU {
             }
             else
             {
-                static_assert(WeightScaleBitsLocal == 6 || WeightScaleBitsLocal == 7, 
+                static_assert(WeightScaleBitsLocal == 6 || WeightScaleBitsLocal == 7,
                               "Unsupported WeightScaleBitsLocal for SIMD squared propagate");
             }
 
-            _mm256_store_si256(&out[i], _mm256_packs_epi16(words0, words1));
-        }
+            __m256i packed = _mm256_packs_epi16(words0, words1);
+            _mm256_store_si256(&out[i], _mm256_permutevar8x32_epi32(packed, Offsets));        }
         constexpr IndexType Start = NumChunks * 32;
 
 #elif defined(USE_SSE2)
         constexpr IndexType NumChunks = InputDimensions / 16;
         const auto in  = reinterpret_cast<const __m128i*>(input);
         const auto out = reinterpret_cast<__m128i*>(output);
+
         for (IndexType i = 0; i < NumChunks; ++i)
         {
             __m128i words0 =
@@ -154,7 +163,7 @@ class SqrClippedReLU {
             }
             else
             {
-                static_assert(WeightScaleBitsLocal == 6 || WeightScaleBitsLocal == 7, 
+                static_assert(WeightScaleBitsLocal == 6 || WeightScaleBitsLocal == 7,
                               "Unsupported WeightScaleBitsLocal for SIMD squared propagate");
             }
 
@@ -166,6 +175,7 @@ class SqrClippedReLU {
         constexpr IndexType NumChunks = InputDimensions / 16;
         const auto in  = reinterpret_cast<const int32x4_t*>(input);
         const auto out = reinterpret_cast<int8x16_t*>(output);
+
         for (IndexType i = 0; i < NumChunks; ++i)
         {
             // vqmovn_s32 narrows 32-bit to 16-bit with signed saturation
@@ -186,7 +196,7 @@ class SqrClippedReLU {
             }
             else
             {
-                static_assert(WeightScaleBitsLocal == 6 || WeightScaleBitsLocal == 7, 
+                static_assert(WeightScaleBitsLocal == 6 || WeightScaleBitsLocal == 7,
                               "Unsupported WeightScaleBitsLocal for SIMD squared propagate");
             }
 
