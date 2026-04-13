@@ -49,7 +49,8 @@ class SqrClippedReLU {
     static constexpr std::uint32_t get_hash_value(std::uint32_t prevHash) {
         std::uint32_t hashValue = 0x538D24C7u;
         hashValue += prevHash;
-        hashValue += static_cast<std::uint32_t>(WeightScaleBitsLocal - 6) * 0x9E3779B9u;
+        // omited on purpose because hash value is not written by trainer yet
+        // hashValue += static_cast<std::uint32_t>(WeightScaleBitsLocal - 6) * 0x9E3779B9u;
         return hashValue;
     }
 
