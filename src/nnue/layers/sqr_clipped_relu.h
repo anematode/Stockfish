@@ -29,7 +29,7 @@
 
 namespace Stockfish::Eval::NNUE::Layers {
 
-// Clipped ReLU
+// Squared Clipped ReLU
 template<IndexType InDims, int WeightScaleBitsLocal = WeightScaleBits>
 class SqrClippedReLU {
    public:
@@ -67,10 +67,70 @@ class SqrClippedReLU {
     // Forward propagation
     void propagate(const InputType* input, OutputType* output) const {
 
-#if defined(USE_SSE2)
-        constexpr IndexType NumChunks = InputDimensions / 16;
+#if defined(USE_AVX512)
+        constexpr IndexType NumChunks = InputDimensions / 64;
+        const auto in  = reinterpret_cast<const __m512i*>(input);
+        const auto out = reinterpret_cast<__m512i*>(output);
+        for (IndexType i = 0; i < NumChunks; ++i)
+        {
+            __m512i words0 =
+              _mm512_packs_epi32(_mm512_load_si512(&in[i * 4 + 0]), _mm512_load_si512(&in[i * 4 + 1]));
+            __m512i words1 =
+              _mm512_packs_epi32(_mm512_load_si512(&in[i * 4 + 2]), _mm512_load_si512(&in[i * 4 + 3]));
 
-        static_assert(WeightScaleBits == 6);
+            if constexpr (WeightScaleBitsLocal == 6)
+            {
+                words0 = _mm512_srli_epi16(_mm512_mulhi_epi16(words0, words0), 3);
+                words1 = _mm512_srli_epi16(_mm512_mulhi_epi16(words1, words1), 3);
+            }
+            else if constexpr (WeightScaleBitsLocal == 7)
+            {
+                words0 = _mm512_srli_epi16(_mm512_mulhi_epi16(words0, words0), 5);
+                words1 = _mm512_srli_epi16(_mm512_mulhi_epi16(words1, words1), 5);
+            }
+            else
+            {
+                static_assert(WeightScaleBitsLocal == 6 || WeightScaleBitsLocal == 7, 
+                              "Unsupported WeightScaleBitsLocal for SIMD squared propagate");
+            }
+
+            _mm512_store_si512(&out[i], _mm512_packs_epi16(words0, words1));
+        }
+        constexpr IndexType Start = NumChunks * 64;
+
+#elif defined(USE_AVX2)
+        constexpr IndexType NumChunks = InputDimensions / 32;
+        const auto in  = reinterpret_cast<const __m256i*>(input);
+        const auto out = reinterpret_cast<__m256i*>(output);
+        for (IndexType i = 0; i < NumChunks; ++i)
+        {
+            __m256i words0 =
+              _mm256_packs_epi32(_mm256_load_si256(&in[i * 4 + 0]), _mm256_load_si256(&in[i * 4 + 1]));
+            __m256i words1 =
+              _mm256_packs_epi32(_mm256_load_si256(&in[i * 4 + 2]), _mm256_load_si256(&in[i * 4 + 3]));
+
+            if constexpr (WeightScaleBitsLocal == 6)
+            {
+                words0 = _mm256_srli_epi16(_mm256_mulhi_epi16(words0, words0), 3);
+                words1 = _mm256_srli_epi16(_mm256_mulhi_epi16(words1, words1), 3);
+            }
+            else if constexpr (WeightScaleBitsLocal == 7)
+            {
+                words0 = _mm256_srli_epi16(_mm256_mulhi_epi16(words0, words0), 5);
+                words1 = _mm256_srli_epi16(_mm256_mulhi_epi16(words1, words1), 5);
+            }
+            else
+            {
+                static_assert(WeightScaleBitsLocal == 6 || WeightScaleBitsLocal == 7, 
+                              "Unsupported WeightScaleBitsLocal for SIMD squared propagate");
+            }
+
+            _mm256_store_si256(&out[i], _mm256_packs_epi16(words0, words1));
+        }
+        constexpr IndexType Start = NumChunks * 32;
+
+#elif defined(USE_SSE2)
+        constexpr IndexType NumChunks = InputDimensions / 16;
         const auto in  = reinterpret_cast<const __m128i*>(input);
         const auto out = reinterpret_cast<__m128i*>(output);
         for (IndexType i = 0; i < NumChunks; ++i)
@@ -80,13 +140,56 @@ class SqrClippedReLU {
             __m128i words1 =
               _mm_packs_epi32(_mm_load_si128(&in[i * 4 + 2]), _mm_load_si128(&in[i * 4 + 3]));
 
-            // We shift by WeightScaleBitsLocal * 2 = 12 and divide by 128
-            // which is an additional shift-right of 7, meaning 19 in total.
-            // MulHi strips the lower 16 bits so we need to shift out 3 more to match.
-            words0 = _mm_srli_epi16(_mm_mulhi_epi16(words0, words0), 3);
-            words1 = _mm_srli_epi16(_mm_mulhi_epi16(words1, words1), 3);
+            if constexpr (WeightScaleBitsLocal == 6)
+            {
+                words0 = _mm_srli_epi16(_mm_mulhi_epi16(words0, words0), 3);
+                words1 = _mm_srli_epi16(_mm_mulhi_epi16(words1, words1), 3);
+            }
+            else if constexpr (WeightScaleBitsLocal == 7)
+            {
+                words0 = _mm_srli_epi16(_mm_mulhi_epi16(words0, words0), 5);
+                words1 = _mm_srli_epi16(_mm_mulhi_epi16(words1, words1), 5);
+            }
+            else
+            {
+                static_assert(WeightScaleBitsLocal == 6 || WeightScaleBitsLocal == 7, 
+                              "Unsupported WeightScaleBitsLocal for SIMD squared propagate");
+            }
 
             _mm_store_si128(&out[i], _mm_packs_epi16(words0, words1));
+        }
+        constexpr IndexType Start = NumChunks * 16;
+
+#elif defined(USE_NEON)
+        constexpr IndexType NumChunks = InputDimensions / 16;
+        const auto in  = reinterpret_cast<const int32x4_t*>(input);
+        const auto out = reinterpret_cast<int8x16_t*>(output);
+        for (IndexType i = 0; i < NumChunks; ++i)
+        {
+            // vqmovn_s32 narrows 32-bit to 16-bit with signed saturation
+            int16x8_t words0 = vcombine_s16(vqmovn_s32(in[i * 4 + 0]), vqmovn_s32(in[i * 4 + 1]));
+            int16x8_t words1 = vcombine_s16(vqmovn_s32(in[i * 4 + 2]), vqmovn_s32(in[i * 4 + 3]));
+
+            if constexpr (WeightScaleBitsLocal == 6)
+            {
+                // Net shift: 19. vqdmulhq_s16 removes 15. Remaining: 4.
+                words0 = vshrq_n_s16(vqdmulhq_s16(words0, words0), 4);
+                words1 = vshrq_n_s16(vqdmulhq_s16(words1, words1), 4);
+            }
+            else if constexpr (WeightScaleBitsLocal == 7)
+            {
+                // Net shift: 21. vqdmulhq_s16 removes 15. Remaining: 6.
+                words0 = vshrq_n_s16(vqdmulhq_s16(words0, words0), 6);
+                words1 = vshrq_n_s16(vqdmulhq_s16(words1, words1), 6);
+            }
+            else
+            {
+                static_assert(WeightScaleBitsLocal == 6 || WeightScaleBitsLocal == 7, 
+                              "Unsupported WeightScaleBitsLocal for SIMD squared propagate");
+            }
+
+            // vqmovn_s16 narrows 16-bit to 8-bit with signed saturation
+            out[i] = vcombine_s8(vqmovn_s16(words0), vqmovn_s16(words1));
         }
         constexpr IndexType Start = NumChunks * 16;
 
@@ -97,8 +200,6 @@ class SqrClippedReLU {
         for (IndexType i = Start; i < InputDimensions; ++i)
         {
             output[i] = static_cast<OutputType>(
-              // Really should be /127 but we need to make it fast so we right-shift
-              // by an extra 7 bits instead. Needs to be accounted for in the trainer.
               std::min(127ll, ((long long) (input[i]) * input[i]) >> (2 * WeightScaleBitsLocal + 7)));
         }
     }
