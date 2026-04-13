@@ -77,6 +77,7 @@ struct NetworkArchitecture {
         hashValue ^= TransformedFeatureDimensions * 2;
 
         hashValue = decltype(fc_0)::get_hash_value(hashValue);
+        hashValue = decltype(ac_sqr_0)::get_hash_value(hashValue);
         hashValue = decltype(ac_0)::get_hash_value(hashValue);
         hashValue = decltype(fc_1)::get_hash_value(hashValue);
         hashValue = decltype(ac_1)::get_hash_value(hashValue);
