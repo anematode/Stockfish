@@ -30,7 +30,7 @@
 namespace Stockfish::Eval::NNUE::Layers {
 
 // Clipped ReLU
-template<IndexType InDims>
+template<IndexType InDims, int WeightScaleBitsLocal = WeightScaleBits>
 class SqrClippedReLU {
    public:
     // Input/output type
@@ -80,7 +80,7 @@ class SqrClippedReLU {
             __m128i words1 =
               _mm_packs_epi32(_mm_load_si128(&in[i * 4 + 2]), _mm_load_si128(&in[i * 4 + 3]));
 
-            // We shift by WeightScaleBits * 2 = 12 and divide by 128
+            // We shift by WeightScaleBitsLocal * 2 = 12 and divide by 128
             // which is an additional shift-right of 7, meaning 19 in total.
             // MulHi strips the lower 16 bits so we need to shift out 3 more to match.
             words0 = _mm_srli_epi16(_mm_mulhi_epi16(words0, words0), 3);
@@ -99,7 +99,7 @@ class SqrClippedReLU {
             output[i] = static_cast<OutputType>(
               // Really should be /127 but we need to make it fast so we right-shift
               // by an extra 7 bits instead. Needs to be accounted for in the trainer.
-              std::min(127ll, ((long long) (input[i]) * input[i]) >> (2 * WeightScaleBits + 7)));
+              std::min(127ll, ((long long) (input[i]) * input[i]) >> (2 * WeightScaleBitsLocal + 7)));
         }
     }
 };
