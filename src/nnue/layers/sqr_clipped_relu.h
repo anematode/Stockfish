@@ -122,7 +122,7 @@ class SqrClippedReLU {
         }
         constexpr IndexType Start = Start256 + (NumChunks128 * 16);
 
-#if defined(USE_SSE2)
+#elif defined(USE_SSE2)
         constexpr IndexType NumChunks = InputDimensions / 16;
 
 
