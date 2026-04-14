@@ -66,6 +66,8 @@ class SqrClippedReLU {
 
     // Forward propagation
     void propagate(const InputType* input, OutputType* output) const {
+    // Simd branches assume alignas(64)
+    static_assert(CacheLineSize >= 64 && CacheLineSize % 64 == 0, "CacheLineSize must be a multiple of 64 for SIMD optimizations");
 
 #if defined(USE_SSE2)
         constexpr IndexType NumChunks = InputDimensions / 16;
@@ -94,6 +96,40 @@ class SqrClippedReLU {
             }
 
             _mm_store_si128(&out[i], _mm_packs_epi16(words0, words1));
+        }
+        constexpr IndexType Start = NumChunks * 16;
+
+#elif defined(USE_NEON)
+        constexpr IndexType NumChunks = InputDimensions / 16;
+        const auto in  = reinterpret_cast<const int32x4_t*>(input);
+        const auto out = reinterpret_cast<int8x16_t*>(output);
+
+        for (IndexType i = 0; i < NumChunks; ++i)
+        {
+            // vqmovn_s32 narrows 32-bit to 16-bit with signed saturation
+            int16x8_t words0 = vcombine_s16(vqmovn_s32(in[i * 4 + 0]), vqmovn_s32(in[i * 4 + 1]));
+            int16x8_t words1 = vcombine_s16(vqmovn_s32(in[i * 4 + 2]), vqmovn_s32(in[i * 4 + 3]));
+
+            if constexpr (WeightScaleBitsLocal == 6)
+            {
+                // Net shift: 19. vqdmulhq_s16 removes 15. Remaining: 4.
+                words0 = vshrq_n_s16(vqdmulhq_s16(words0, words0), 4);
+                words1 = vshrq_n_s16(vqdmulhq_s16(words1, words1), 4);
+            }
+            else if constexpr (WeightScaleBitsLocal == 7)
+            {
+                // Net shift: 21. vqdmulhq_s16 removes 15. Remaining: 6.
+                words0 = vshrq_n_s16(vqdmulhq_s16(words0, words0), 6);
+                words1 = vshrq_n_s16(vqdmulhq_s16(words1, words1), 6);
+            }
+            else
+            {
+                static_assert(WeightScaleBitsLocal == 6 || WeightScaleBitsLocal == 7,
+                              "Unsupported WeightScaleBitsLocal for SIMD squared propagate");
+            }
+
+            // vqmovn_s16 narrows 16-bit to 8-bit with signed saturation
+            out[i] = vcombine_s8(vqmovn_s16(words0), vqmovn_s16(words1));
         }
         constexpr IndexType Start = NumChunks * 16;
 
