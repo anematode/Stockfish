@@ -67,12 +67,74 @@ constexpr Bitboard Rank6BB = Rank1BB << (8 * 5);
 constexpr Bitboard Rank7BB = Rank1BB << (8 * 6);
 constexpr Bitboard Rank8BB = Rank1BB << (8 * 7);
 
-extern uint8_t PopCnt16[1 << 16];
-extern uint8_t SquareDistance[SQUARE_NB][SQUARE_NB];
+constexpr auto SquareDistance = [] () {
+    auto abs = [] (int v) constexpr { return v < 0 ? -v : v; };
 
-extern Bitboard BetweenBB[SQUARE_NB][SQUARE_NB];
-extern Bitboard LineBB[SQUARE_NB][SQUARE_NB];
-extern Bitboard RayPassBB[SQUARE_NB][SQUARE_NB];
+    std::array<std::array<uint8_t, SQUARE_NB>, SQUARE_NB> arr{};
+
+    for (Square s1 = SQ_A1; s1 <= SQ_H8; ++s1)
+        for (Square s2 = SQ_A1; s2 <= SQ_H8; ++s2)
+            arr[s1][s2] = std::max(abs(file_of(s1) - file_of(s2)), abs(rank_of(s1) - rank_of(s2)));
+
+    return arr;
+
+} ();
+
+constexpr auto BitboardLookups = []() {
+    std::array<std::array<Bitboard, SQUARE_NB>, SQUARE_NB> BetweenBB{}, LineBB{}, RayPassBB{};
+
+    for (Square s1 = SQ_A1; s1 <= SQ_H8; ++s1) {
+        for (Square s2 = SQ_A1; s2 <= SQ_H8; ++s2) {
+            if (s1 == s2) continue;
+
+            int r1 = rank_of(s1), f1 = file_of(s1);
+            int r2 = rank_of(s2), f2 = file_of(s2);
+            int dr = r2 - r1;
+            int df = f2 - f1;
+
+            if (dr == 0 || df == 0 || dr == df || dr == -df) {
+                int stepR = (dr > 0) - (dr < 0);
+                int stepF = (df > 0) - (df < 0);
+
+                Bitboard line = 0;
+                for (int r = r1, f = f1; r >= 0 && r <= 7 && f >= 0 && f <= 7; r -= stepR, f -= stepF)
+                    line |= 1ULL << make_square(File(f), Rank(r));
+                for (int r = r1 + stepR, f = f1 + stepF; r >= 0 && r <= 7 && f >= 0 && f <= 7; r += stepR, f += stepF)
+                    line |= 1ULL << make_square(File(f), Rank(r));
+
+                LineBB[s1][s2] = line;
+
+                Bitboard between = 0;
+                int curR = r1 + stepR;
+                int curF = f1 + stepF;
+                while (curR != r2 || curF != f2) {
+                    between |= 1ULL << make_square(File(curF), Rank(curR));
+                    curR += stepR;
+                    curF += stepF;
+                }
+                BetweenBB[s1][s2] = between;
+
+                Bitboard ray = 0;
+                curR = r1 + stepR;
+                curF = f1 + stepF;
+                while (curR >= 0 && curR <= 7 && curF >= 0 && curF <= 7) {
+                    ray |= 1ULL << make_square(File(curF), Rank(curR));
+                    curR += stepR;
+                    curF += stepF;
+                }
+                RayPassBB[s1][s2] = ray;
+            }
+
+            BetweenBB[s1][s2] |= 1ULL << s2;
+        }
+    }
+
+    return std::tuple(BetweenBB, LineBB, RayPassBB);
+}();
+
+constexpr auto BetweenBB = std::get<0>(BitboardLookups);
+constexpr auto LineBB = std::get<1>(BitboardLookups);
+constexpr auto RayPassBB = std::get<2>(BitboardLookups);
 
 // Magic holds all magic bitboards relevant data for a single square
 struct Magic {
@@ -236,12 +298,7 @@ constexpr int constexpr_popcount(Bitboard b) {
 inline int popcount(Bitboard b) {
 
 #ifndef USE_POPCNT
-
-    std::uint16_t indices[4];
-    std::memcpy(indices, &b, sizeof(b));
-    return PopCnt16[indices[0]] + PopCnt16[indices[1]] + PopCnt16[indices[2]]
-         + PopCnt16[indices[3]];
-
+    return constexpr_popcount(b);
 #elif defined(_MSC_VER)
 
     return int(_mm_popcnt_u64(b));
