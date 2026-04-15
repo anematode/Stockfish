@@ -73,36 +73,39 @@ class SqrClippedReLU {
 
 #if defined(USE_AVX2)
         constexpr IndexType NumChunks256 = InputDimensions / 32;
+        constexpr IndexType Start128 = NumChunks256 * 32;
+        constexpr IndexType NumChunks128 = (InputDimensions - Start128) / 16;
+
         const __m256i Offsets = _mm256_set_epi32(7, 3, 6, 2, 5, 1, 4, 0);
         const auto in256  = reinterpret_cast<const __m256i*>(input);
         const auto out256 = reinterpret_cast<__m256i*>(output);
 
         // 32-element chunks
-        for (IndexType i = 0; i < NumChunks256; ++i)
+        if constexpr (NumChunks256 > 0)
         {
-            __m256i words0 = _mm256_packs_epi32(_mm256_load_si256(&in256[i * 4 + 0]), _mm256_load_si256(&in256[i * 4 + 1]));
-            __m256i words1 = _mm256_packs_epi32(_mm256_load_si256(&in256[i * 4 + 2]), _mm256_load_si256(&in256[i * 4 + 3]));
+            for (IndexType i = 0; i < NumChunks256; ++i)
+            {
+                __m256i words0 = _mm256_packs_epi32(_mm256_load_si256(&in256[i * 4 + 0]), _mm256_load_si256(&in256[i * 4 + 1]));
+                __m256i words1 = _mm256_packs_epi32(_mm256_load_si256(&in256[i * 4 + 2]), _mm256_load_si256(&in256[i * 4 + 3]));
 
-            if constexpr (WeightScaleBitsLocal == 6) {
-                words0 = _mm256_srli_epi16(_mm256_mulhi_epi16(words0, words0), 3);
-                words1 = _mm256_srli_epi16(_mm256_mulhi_epi16(words1, words1), 3);
-            } else if constexpr (WeightScaleBitsLocal == 7) {
-                words0 = _mm256_srli_epi16(_mm256_mulhi_epi16(words0, words0), 5);
-                words1 = _mm256_srli_epi16(_mm256_mulhi_epi16(words1, words1), 5);
+                if constexpr (WeightScaleBitsLocal == 6) {
+                    words0 = _mm256_srli_epi16(_mm256_mulhi_epi16(words0, words0), 3);
+                    words1 = _mm256_srli_epi16(_mm256_mulhi_epi16(words1, words1), 3);
+                } else if constexpr (WeightScaleBitsLocal == 7) {
+                    words0 = _mm256_srli_epi16(_mm256_mulhi_epi16(words0, words0), 5);
+                    words1 = _mm256_srli_epi16(_mm256_mulhi_epi16(words1, words1), 5);
+                }
+
+                __m256i packed = _mm256_packs_epi16(words0, words1);
+                _mm256_store_si256(&out256[i], _mm256_permutevar8x32_epi32(packed, Offsets));
             }
-
-            __m256i packed = _mm256_packs_epi16(words0, words1);
-            _mm256_store_si256(&out256[i], _mm256_permutevar8x32_epi32(packed, Offsets));
         }
-
-        constexpr IndexType Start256 = NumChunks256 * 32;
-        constexpr IndexType NumChunks128 = (InputDimensions - Start256) / 16;
 
         // 16-element remainder cascade
         if constexpr (NumChunks128 > 0)
         {
-            const auto in128  = reinterpret_cast<const __m128i*>(input + Start256);
-            const auto out128 = reinterpret_cast<__m128i*>(output + Start256);
+            const auto in128  = reinterpret_cast<const __m128i*>(input + Start128);
+            const auto out128 = reinterpret_cast<__m128i*>(output + Start128);
 
             for (IndexType i = 0; i < NumChunks128; ++i)
             {
@@ -120,7 +123,7 @@ class SqrClippedReLU {
                 _mm_store_si128(&out128[i], _mm_packs_epi16(words0, words1));
             }
         }
-        constexpr IndexType Start = Start256 + (NumChunks128 * 16);
+        constexpr IndexType Start = Start128 + (NumChunks128 * 16);
 
 #elif defined(USE_SSE2)
         constexpr IndexType NumChunks = InputDimensions / 16;
@@ -191,8 +194,6 @@ class SqrClippedReLU {
         for (IndexType i = Start; i < InputDimensions; ++i)
         {
             output[i] = static_cast<OutputType>(
-              // Really should be /127 but we need to make it fast so we right-shift
-              // by an extra 7 bits instead. Needs to be accounted for in the trainer.
               std::min(127ll, ((long long) (input[i]) * input[i]) >> (2 * WeightScaleBitsLocal + 7)));
         }
     }
