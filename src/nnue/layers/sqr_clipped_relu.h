@@ -128,28 +128,31 @@ class SqrClippedReLU {
 #elif defined(USE_SSE2)
         constexpr IndexType NumChunks = InputDimensions / 16;
 
-
         const auto in  = reinterpret_cast<const __m128i*>(input);
         const auto out = reinterpret_cast<__m128i*>(output);
-        for (IndexType i = 0; i < NumChunks; ++i)
+
+        if constexpr (NumChunks > 0)
         {
-            __m128i words0 =
-              _mm_packs_epi32(_mm_load_si128(&in[i * 4 + 0]), _mm_load_si128(&in[i * 4 + 1]));
-            __m128i words1 =
-              _mm_packs_epi32(_mm_load_si128(&in[i * 4 + 2]), _mm_load_si128(&in[i * 4 + 3]));
+            for (IndexType i = 0; i < NumChunks; ++i)
+            {
+                __m128i words0 =
+                _mm_packs_epi32(_mm_load_si128(&in[i * 4 + 0]), _mm_load_si128(&in[i * 4 + 1]));
+                __m128i words1 =
+                _mm_packs_epi32(_mm_load_si128(&in[i * 4 + 2]), _mm_load_si128(&in[i * 4 + 3]));
 
-            // We shift by WeightScaleBitsLocal * 2 and divide by 128 (7 bits)
-            if constexpr (WeightScaleBitsLocal == 6) {
-                // Total shift: 6 * 2 + 7 = 19. MulHi does 16. Need 3 more.
-                words0 = _mm_srli_epi16(_mm_mulhi_epi16(words0, words0), 3);
-                words1 = _mm_srli_epi16(_mm_mulhi_epi16(words1, words1), 3);
-            } else if constexpr (WeightScaleBitsLocal == 7) {
-                // Total shift: 7 * 2 + 7 = 21. MulHi does 16. Need 5 more.
-                words0 = _mm_srli_epi16(_mm_mulhi_epi16(words0, words0), 5);
-                words1 = _mm_srli_epi16(_mm_mulhi_epi16(words1, words1), 5);
+                // We shift by WeightScaleBitsLocal * 2 and divide by 128 (7 bits)
+                if constexpr (WeightScaleBitsLocal == 6) {
+                    // Total shift: 6 * 2 + 7 = 19. MulHi does 16. Need 3 more.
+                    words0 = _mm_srli_epi16(_mm_mulhi_epi16(words0, words0), 3);
+                    words1 = _mm_srli_epi16(_mm_mulhi_epi16(words1, words1), 3);
+                } else if constexpr (WeightScaleBitsLocal == 7) {
+                    // Total shift: 7 * 2 + 7 = 21. MulHi does 16. Need 5 more.
+                    words0 = _mm_srli_epi16(_mm_mulhi_epi16(words0, words0), 5);
+                    words1 = _mm_srli_epi16(_mm_mulhi_epi16(words1, words1), 5);
+                }
+
+                _mm_store_si128(&out[i], _mm_packs_epi16(words0, words1));
             }
-
-            _mm_store_si128(&out[i], _mm_packs_epi16(words0, words1));
         }
         constexpr IndexType Start = NumChunks * 16;
 
@@ -158,32 +161,34 @@ class SqrClippedReLU {
         const auto in  = reinterpret_cast<const int32x4_t*>(input);
         const auto out = reinterpret_cast<int8x16_t*>(output);
 
-        for (IndexType i = 0; i < NumChunks; ++i)
-        {
-            // vqmovn_s32 narrows 32-bit to 16-bit with signed saturation
-            int16x8_t words0 = vcombine_s16(vqmovn_s32(in[i * 4 + 0]), vqmovn_s32(in[i * 4 + 1]));
-            int16x8_t words1 = vcombine_s16(vqmovn_s32(in[i * 4 + 2]), vqmovn_s32(in[i * 4 + 3]));
+        if constexpr (NumChunks > 0) {
+            for (IndexType i = 0; i < NumChunks; ++i)
+            {
+                // vqmovn_s32 narrows 32-bit to 16-bit with signed saturation
+                int16x8_t words0 = vcombine_s16(vqmovn_s32(in[i * 4 + 0]), vqmovn_s32(in[i * 4 + 1]));
+                int16x8_t words1 = vcombine_s16(vqmovn_s32(in[i * 4 + 2]), vqmovn_s32(in[i * 4 + 3]));
 
-            if constexpr (WeightScaleBitsLocal == 6)
-            {
-                // Net shift: 19. vqdmulhq_s16 removes 15. Remaining: 4.
-                words0 = vshrq_n_s16(vqdmulhq_s16(words0, words0), 4);
-                words1 = vshrq_n_s16(vqdmulhq_s16(words1, words1), 4);
-            }
-            else if constexpr (WeightScaleBitsLocal == 7)
-            {
-                // Net shift: 21. vqdmulhq_s16 removes 15. Remaining: 6.
-                words0 = vshrq_n_s16(vqdmulhq_s16(words0, words0), 6);
-                words1 = vshrq_n_s16(vqdmulhq_s16(words1, words1), 6);
-            }
-            else
-            {
-                static_assert(WeightScaleBitsLocal == 6 || WeightScaleBitsLocal == 7,
-                              "Unsupported WeightScaleBitsLocal for SIMD squared propagate");
-            }
+                if constexpr (WeightScaleBitsLocal == 6)
+                {
+                    // Net shift: 19. vqdmulhq_s16 removes 15. Remaining: 4.
+                    words0 = vshrq_n_s16(vqdmulhq_s16(words0, words0), 4);
+                    words1 = vshrq_n_s16(vqdmulhq_s16(words1, words1), 4);
+                }
+                else if constexpr (WeightScaleBitsLocal == 7)
+                {
+                    // Net shift: 21. vqdmulhq_s16 removes 15. Remaining: 6.
+                    words0 = vshrq_n_s16(vqdmulhq_s16(words0, words0), 6);
+                    words1 = vshrq_n_s16(vqdmulhq_s16(words1, words1), 6);
+                }
+                else
+                {
+                    static_assert(WeightScaleBitsLocal == 6 || WeightScaleBitsLocal == 7,
+                                "Unsupported WeightScaleBitsLocal for SIMD squared propagate");
+                }
 
-            // vqmovn_s16 narrows 16-bit to 8-bit with signed saturation
-            out[i] = vcombine_s8(vqmovn_s16(words0), vqmovn_s16(words1));
+                // vqmovn_s16 narrows 16-bit to 8-bit with signed saturation
+                out[i] = vcombine_s8(vqmovn_s16(words0), vqmovn_s16(words1));
+            }
         }
         constexpr IndexType Start = NumChunks * 16;
 
@@ -191,10 +196,12 @@ class SqrClippedReLU {
         constexpr IndexType Start = 0;
 #endif
 
-        for (IndexType i = Start; i < InputDimensions; ++i)
-        {
-            output[i] = static_cast<OutputType>(
-              std::min(127ll, ((long long) (input[i]) * input[i]) >> (2 * WeightScaleBitsLocal + 7)));
+        if constexpr (InputDimensions > Start) {
+            for (IndexType i = Start; i < InputDimensions; ++i)
+            {
+                output[i] = static_cast<OutputType>(
+                std::min(127ll, ((long long) (input[i]) * input[i]) >> (2 * WeightScaleBitsLocal + 7)));
+            }
         }
     }
 };

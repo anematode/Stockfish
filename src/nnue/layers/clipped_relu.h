@@ -78,18 +78,21 @@ class ClippedReLU {
             const __m256i       Offsets   = _mm256_set_epi32(7, 3, 6, 2, 5, 1, 4, 0);
             const auto          in        = reinterpret_cast<const __m256i*>(input);
             const auto          out       = reinterpret_cast<__m256i*>(output);
-            for (IndexType i = 0; i < NumChunks; ++i)
+            if (NumChunks > 0)
             {
-                const __m256i words0 =
-                  _mm256_srli_epi16(_mm256_packus_epi32(_mm256_load_si256(&in[i * 4 + 0]),
-                                                        _mm256_load_si256(&in[i * 4 + 1])),
-                                    WeightScaleBitsLocal);
-                const __m256i words1 =
-                  _mm256_srli_epi16(_mm256_packus_epi32(_mm256_load_si256(&in[i * 4 + 2]),
-                                                        _mm256_load_si256(&in[i * 4 + 3])),
-                                    WeightScaleBitsLocal);
-                _mm256_store_si256(&out[i], _mm256_permutevar8x32_epi32(
-                                              _mm256_packs_epi16(words0, words1), Offsets));
+              for (IndexType i = 0; i < NumChunks; ++i)
+              {
+                  const __m256i words0 =
+                    _mm256_srli_epi16(_mm256_packus_epi32(_mm256_load_si256(&in[i * 4 + 0]),
+                                                          _mm256_load_si256(&in[i * 4 + 1])),
+                                      WeightScaleBitsLocal);
+                  const __m256i words1 =
+                    _mm256_srli_epi16(_mm256_packus_epi32(_mm256_load_si256(&in[i * 4 + 2]),
+                                                          _mm256_load_si256(&in[i * 4 + 3])),
+                                      WeightScaleBitsLocal);
+                  _mm256_store_si256(&out[i], _mm256_permutevar8x32_epi32(
+                                                _mm256_packs_epi16(words0, words1), Offsets));
+              }
             }
         }
         else
@@ -97,15 +100,18 @@ class ClippedReLU {
             constexpr IndexType NumChunks = InputDimensions / (SimdWidth / 2);
             const auto          in        = reinterpret_cast<const __m128i*>(input);
             const auto          out       = reinterpret_cast<__m128i*>(output);
-            for (IndexType i = 0; i < NumChunks; ++i)
+            if (NumChunks > 0)
             {
-                const __m128i words0 = _mm_srli_epi16(
-                  _mm_packus_epi32(_mm_load_si128(&in[i * 4 + 0]), _mm_load_si128(&in[i * 4 + 1])),
-                  WeightScaleBitsLocal);
-                const __m128i words1 = _mm_srli_epi16(
-                  _mm_packus_epi32(_mm_load_si128(&in[i * 4 + 2]), _mm_load_si128(&in[i * 4 + 3])),
-                  WeightScaleBitsLocal);
-                _mm_store_si128(&out[i], _mm_packs_epi16(words0, words1));
+              for (IndexType i = 0; i < NumChunks; ++i)
+              {
+                  const __m128i words0 = _mm_srli_epi16(
+                    _mm_packus_epi32(_mm_load_si128(&in[i * 4 + 0]), _mm_load_si128(&in[i * 4 + 1])),
+                    WeightScaleBitsLocal);
+                  const __m128i words1 = _mm_srli_epi16(
+                    _mm_packus_epi32(_mm_load_si128(&in[i * 4 + 2]), _mm_load_si128(&in[i * 4 + 3])),
+                    WeightScaleBitsLocal);
+                  _mm_store_si128(&out[i], _mm_packs_epi16(words0, words1));
+              }
             }
         }
         constexpr IndexType Start = InputDimensions % SimdWidth == 0
@@ -121,9 +127,11 @@ class ClippedReLU {
 
         const auto in  = reinterpret_cast<const __m128i*>(input);
         const auto out = reinterpret_cast<__m128i*>(output);
-        for (IndexType i = 0; i < NumChunks; ++i)
+        if (NumChunks > 0)
         {
-    #if defined(USE_SSE41)
+          for (IndexType i = 0; i < NumChunks; ++i)
+          {
+#if defined(USE_SSE41)
             const __m128i words0 = _mm_srli_epi16(
               _mm_packus_epi32(_mm_load_si128(&in[i * 4 + 0]), _mm_load_si128(&in[i * 4 + 1])),
               WeightScaleBitsLocal);
@@ -131,7 +139,7 @@ class ClippedReLU {
               _mm_packus_epi32(_mm_load_si128(&in[i * 4 + 2]), _mm_load_si128(&in[i * 4 + 3])),
               WeightScaleBitsLocal);
             _mm_store_si128(&out[i], _mm_packs_epi16(words0, words1));
-    #else
+#else
             const __m128i words0 = _mm_srai_epi16(
               _mm_packs_epi32(_mm_load_si128(&in[i * 4 + 0]), _mm_load_si128(&in[i * 4 + 1])),
               WeightScaleBitsLocal);
@@ -140,7 +148,8 @@ class ClippedReLU {
               WeightScaleBitsLocal);
             const __m128i packedbytes = _mm_packs_epi16(words0, words1);
             _mm_store_si128(&out[i], _mm_subs_epi8(_mm_adds_epi8(packedbytes, k0x80s), k0x80s));
-    #endif
+#endif
+          }
         }
         constexpr IndexType Start = NumChunks * SimdWidth;
 
@@ -149,22 +158,28 @@ class ClippedReLU {
         const SIMD::vec_i8x8_t Zero      = {0};
         const auto             in        = reinterpret_cast<const SIMD::vec_i32x4_t*>(input);
         const auto             out       = reinterpret_cast<SIMD::vec_i8x8_t*>(output);
-        for (IndexType i = 0; i < NumChunks; ++i)
+        if (NumChunks > 0)
         {
-            int16x8_t  shifted;
-            const auto pack = reinterpret_cast<int16x4_t*>(&shifted);
-            pack[0]         = vqshrn_n_s32(in[i * 2 + 0], WeightScaleBitsLocal);
-            pack[1]         = vqshrn_n_s32(in[i * 2 + 1], WeightScaleBitsLocal);
-            out[i]          = vmax_s8(vqmovn_s16(shifted), Zero);
+          for (IndexType i = 0; i < NumChunks; ++i)
+          {
+              int16x8_t  shifted;
+              const auto pack = reinterpret_cast<int16x4_t*>(&shifted);
+              pack[0]         = vqshrn_n_s32(in[i * 2 + 0], WeightScaleBitsLocal);
+              pack[1]         = vqshrn_n_s32(in[i * 2 + 1], WeightScaleBitsLocal);
+              out[i]          = vmax_s8(vqmovn_s16(shifted), Zero);
+          }
         }
         constexpr IndexType Start = NumChunks * (SimdWidth / 2);
 #else
         constexpr IndexType Start = 0;
 #endif
 
-        for (IndexType i = Start; i < InputDimensions; ++i)
+        if (InputDimensions > Start)
         {
-            output[i] = static_cast<OutputType>(std::clamp(input[i] >> WeightScaleBitsLocal, 0, 127));
+          for (IndexType i = Start; i < InputDimensions; ++i)
+          {
+              output[i] = static_cast<OutputType>(std::clamp(input[i] >> WeightScaleBitsLocal, 0, 127));
+          }
         }
     }
 };
