@@ -187,7 +187,9 @@ class Position {
     void remove_piece(Square s, DirtyThreats* const dts = nullptr);
     void swap_piece(Square s, Piece pc, DirtyThreats* const dts = nullptr);
 
-   private:
+    int  pawn_progress() const;
+
+    private:
     // Initialization helpers (used while setting up a position)
     void set_castling_right(Color c, Square rfrom);
     Key  compute_material_key() const;
@@ -416,6 +418,26 @@ inline void Position::do_move(Move m, StateInfo& newSt, const TranspositionTable
 }
 
 inline StateInfo* Position::state() const { return st; }
+
+// returns value between 0..95 [not 96]
+inline int Position::pawn_progress() const {
+    int pawnProgress = 0;
+    Bitboard pawns = pieces(PieceType::PAWN, Color::WHITE);
+    while(pawns)
+    {
+        Square ps = pop_lsb(pawns);
+        pawnProgress += 7 - rank_of(ps);
+    };
+
+    pawns = pieces(PieceType::PAWN, Color::BLACK);
+    while(pawns)
+    {
+        Square ps = pop_lsb(pawns);
+        pawnProgress += rank_of(ps);
+    };
+
+    return std::min(pawnProgress, 95);
+}
 
 }  // namespace Stockfish
 

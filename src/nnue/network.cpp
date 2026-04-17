@@ -184,6 +184,12 @@ bool Network<Arch, Transformer>::save(const std::optional<std::string>& filename
     return saved;
 }
 
+int bucket_index(const Position& pos) {
+    const int pawn_progress = pos.pawn_progress() / 32; // [0..2]
+    const int pieces        = (pos.count<ALL_PIECES>() - 1) / 4; // [0..7]
+    const int bucket        = pawn_progress * 8 + pieces;
+    return bucket;
+}
 
 template<typename Arch, typename Transformer>
 NetworkOutput
@@ -198,7 +204,7 @@ Network<Arch, Transformer>::evaluate(const Position&                         pos
 
     ASSERT_ALIGNED(transformedFeatures, alignment);
 
-    const int  bucket = (pos.count<ALL_PIECES>() - 1) / 4;
+    const auto bucket = bucket_index(pos);
     const auto psqt =
       featureTransformer.transform(pos, accumulatorStack, cache, transformedFeatures, bucket);
     const auto positional = network[bucket].propagate(transformedFeatures);
@@ -261,7 +267,7 @@ Network<Arch, Transformer>::trace_evaluate(const Position&                      
     ASSERT_ALIGNED(transformedFeatures, alignment);
 
     NnueEvalTrace t{};
-    t.correctBucket = (pos.count<ALL_PIECES>() - 1) / 4;
+    t.correctBucket = bucket_index(pos);
     for (IndexType bucket = 0; bucket < LayerStacks; ++bucket)
     {
         const auto materialist =

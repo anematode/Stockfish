@@ -48,8 +48,8 @@ constexpr IndexType TransformedFeatureDimensionsSmall = 128;
 constexpr int       L2Small                           = 15;
 constexpr int       L3Small                           = 32;
 
-constexpr IndexType PSQTBuckets = 8;
-constexpr IndexType LayerStacks = 8;
+constexpr IndexType PSQTBuckets = 24;
+constexpr IndexType LayerStacks = 24;
 
 // If vector instructions are enabled, we update and refresh the
 // accumulator tile by tile such that each tile fits in the CPU's
