@@ -53,7 +53,7 @@ using NetworkOutput = std::tuple<Value, Value>;
 // The network must be a trivial type, i.e. the memory must be in-line.
 // This is required to allow sharing the network via shared memory, as
 // there is no way to run destructors.
-template<typename Arch, typename Transformer>
+template<typename Arch, typename Transformer, int PSQTBuckets, int LayerStacks>
 class Network {
     static constexpr IndexType FTDimensions = Arch::TransformedFeatureDimensions;
 
@@ -75,13 +75,13 @@ class Network {
 
     NetworkOutput evaluate(const Position&                         pos,
                            AccumulatorStack&                       accumulatorStack,
-                           AccumulatorCaches::Cache<FTDimensions>& cache) const;
+                           AccumulatorCaches::Cache<FTDimensions, PSQTBuckets>& cache) const;
 
 
     void verify(std::string evalfilePath, const std::function<void(std::string_view)>&) const;
-    NnueEvalTrace trace_evaluate(const Position&                         pos,
+    NnueEvalTrace<PSQTBuckets, LayerStacks> trace_evaluate(const Position&                         pos,
                                  AccumulatorStack&                       accumulatorStack,
-                                 AccumulatorCaches::Cache<FTDimensions>& cache) const;
+                                 AccumulatorCaches::Cache<FTDimensions, PSQTBuckets>& cache) const;
 
    private:
     void load_user_net(const std::string&, const std::string&);
@@ -112,20 +112,20 @@ class Network {
     // Hash value of evaluation function structure
     static constexpr std::uint32_t hash = Transformer::get_hash_value() ^ Arch::get_hash_value();
 
-    template<IndexType Size>
+    template<IndexType Size, int PSQTBuckets_>
     friend struct AccumulatorCaches::Cache;
 };
 
 // Definitions of the network types
-using SmallFeatureTransformer = FeatureTransformer<TransformedFeatureDimensionsSmall>;
+using SmallFeatureTransformer = FeatureTransformer<TransformedFeatureDimensionsSmall, PSQTBucketsSmall>;
 using SmallNetworkArchitecture =
   NetworkArchitecture<TransformedFeatureDimensionsSmall, L2Small, L3Small>;
 
-using BigFeatureTransformer  = FeatureTransformer<TransformedFeatureDimensionsBig>;
+using BigFeatureTransformer  = FeatureTransformer<TransformedFeatureDimensionsBig, PSQTBucketsBig>;
 using BigNetworkArchitecture = NetworkArchitecture<TransformedFeatureDimensionsBig, L2Big, L3Big>;
 
-using NetworkBig   = Network<BigNetworkArchitecture, BigFeatureTransformer>;
-using NetworkSmall = Network<SmallNetworkArchitecture, SmallFeatureTransformer>;
+using NetworkBig   = Network<BigNetworkArchitecture, BigFeatureTransformer, PSQTBucketsBig, LayerStacksBig>;
+using NetworkSmall = Network<SmallNetworkArchitecture, SmallFeatureTransformer, PSQTBucketsSmall, LayerStacksSmall>;
 
 
 struct Networks {
@@ -140,10 +140,10 @@ struct Networks {
 
 }  // namespace Stockfish
 
-template<typename ArchT, typename FeatureTransformerT>
-struct std::hash<Stockfish::Eval::NNUE::Network<ArchT, FeatureTransformerT>> {
+template<typename ArchT, typename FeatureTransformerT, int PSQTBuckets, int LayerStacks>
+struct std::hash<Stockfish::Eval::NNUE::Network<ArchT, FeatureTransformerT, PSQTBuckets, LayerStacks>> {
     std::size_t operator()(
-      const Stockfish::Eval::NNUE::Network<ArchT, FeatureTransformerT>& network) const noexcept {
+      const Stockfish::Eval::NNUE::Network<ArchT, FeatureTransformerT, PSQTBuckets, LayerStacks>& network) const noexcept {
         return network.get_content_hash();
     }
 };

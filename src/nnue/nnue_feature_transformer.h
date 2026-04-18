@@ -78,7 +78,7 @@ void permute(std::array<T, N>& data, const std::array<std::size_t, OrderSize>& o
 }
 
 // Input feature converter
-template<IndexType TransformedFeatureDimensions>
+template<IndexType TransformedFeatureDimensions, int PSQTBuckets>
 class FeatureTransformer {
     static constexpr bool UseThreats =
       (TransformedFeatureDimensions == TransformedFeatureDimensionsBig);
@@ -235,7 +235,7 @@ class FeatureTransformer {
     // Convert input features
     std::int32_t transform(const Position&                           pos,
                            AccumulatorStack&                         accumulatorStack,
-                           AccumulatorCaches::Cache<HalfDimensions>& cache,
+                           AccumulatorCaches::Cache<HalfDimensions, PSQTBuckets>& cache,
                            OutputType*                               output,
                            int                                       bucket) const {
 
@@ -426,10 +426,10 @@ class FeatureTransformer {
 }  // namespace Stockfish::Eval::NNUE
 
 
-template<Stockfish::Eval::NNUE::IndexType TransformedFeatureDimensions>
-struct std::hash<Stockfish::Eval::NNUE::FeatureTransformer<TransformedFeatureDimensions>> {
+template<Stockfish::Eval::NNUE::IndexType TransformedFeatureDimensions, int PSQTBuckets>
+struct std::hash<Stockfish::Eval::NNUE::FeatureTransformer<TransformedFeatureDimensions, PSQTBuckets>> {
     std::size_t
-    operator()(const Stockfish::Eval::NNUE::FeatureTransformer<TransformedFeatureDimensions>& ft)
+    operator()(const Stockfish::Eval::NNUE::FeatureTransformer<TransformedFeatureDimensions, PSQTBuckets>& ft)
       const noexcept {
         return ft.get_content_hash();
     }

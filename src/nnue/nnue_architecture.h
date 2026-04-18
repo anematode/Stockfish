@@ -48,13 +48,19 @@ constexpr IndexType TransformedFeatureDimensionsSmall = 128;
 constexpr int       L2Small                           = 15;
 constexpr int       L3Small                           = 32;
 
-constexpr IndexType PSQTBuckets = 24;
-constexpr IndexType LayerStacks = 24;
+constexpr IndexType PSQTBucketsBig   = 24;
+constexpr IndexType LayerStacksBig   = 24;
+
+constexpr IndexType PSQTBucketsSmall = 8;
+constexpr IndexType LayerStacksSmall = 8;
 
 // If vector instructions are enabled, we update and refresh the
 // accumulator tile by tile such that each tile fits in the CPU's
 // vector registers.
-static_assert(PSQTBuckets % 8 == 0,
+static_assert(PSQTBucketsBig % 8 == 0,
+              "Per feature PSQT values cannot be processed at granularity lower than 8 at a time.");
+
+static_assert(PSQTBucketsSmall % 8 == 0,
               "Per feature PSQT values cannot be processed at granularity lower than 8 at a time.");
 
 template<IndexType L1, int L2, int L3>

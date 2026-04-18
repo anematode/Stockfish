@@ -44,6 +44,7 @@ struct EvalFile {
     FixedString<256> netDescription;
 };
 
+template<int LayerStacks, int PSQTBuckets>
 struct NnueEvalTrace {
     static_assert(LayerStacks == PSQTBuckets);
 

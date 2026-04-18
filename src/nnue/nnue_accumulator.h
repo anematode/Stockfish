@@ -37,14 +37,14 @@ class Position;
 
 namespace Stockfish::Eval::NNUE {
 
-template<IndexType Size>
+template<IndexType Size, int PSQTBuckets>
 struct alignas(CacheLineSize) Accumulator;
 
-template<IndexType TransformedFeatureDimensions>
+template<IndexType TransformedFeatureDimensions, int PSQTBuckets>
 class FeatureTransformer;
 
 // Class that holds the result of affine transformation of input features
-template<IndexType Size>
+template<IndexType Size, int PSQTBuckets>
 struct alignas(CacheLineSize) Accumulator {
     std::array<std::array<std::int16_t, Size>, COLOR_NB>        accumulation;
     std::array<std::array<std::int32_t, PSQTBuckets>, COLOR_NB> psqtAccumulation;
@@ -65,7 +65,7 @@ struct AccumulatorCaches {
         clear(networks);
     }
 
-    template<IndexType Size>
+    template<IndexType Size, int PSQTBuckets>
     struct alignas(CacheLineSize) Cache {
 
         struct alignas(CacheLineSize) Entry {
@@ -101,15 +101,15 @@ struct AccumulatorCaches {
         small.clear(networks.small);
     }
 
-    Cache<TransformedFeatureDimensionsBig>   big;
-    Cache<TransformedFeatureDimensionsSmall> small;
+    Cache<TransformedFeatureDimensionsBig, PSQTBucketsBig>   big;
+    Cache<TransformedFeatureDimensionsSmall, PSQTBucketsSmall> small;
 };
 
 
 template<typename FeatureSet>
 struct AccumulatorState {
-    Accumulator<TransformedFeatureDimensionsBig>   accumulatorBig;
-    Accumulator<TransformedFeatureDimensionsSmall> accumulatorSmall;
+    Accumulator<TransformedFeatureDimensionsBig, PSQTBucketsBig>   accumulatorBig;
+    Accumulator<TransformedFeatureDimensionsSmall, PSQTBucketsSmall> accumulatorSmall;
     typename FeatureSet::DiffType                  diff;
 
     template<IndexType Size>
@@ -160,10 +160,10 @@ class AccumulatorStack {
     std::pair<DirtyPiece&, DirtyThreats&> push() noexcept;
     void                                  pop() noexcept;
 
-    template<IndexType Dimensions>
+    template<IndexType Dimensions, int PSQTBuckets>
     void evaluate(const Position&                       pos,
-                  const FeatureTransformer<Dimensions>& featureTransformer,
-                  AccumulatorCaches::Cache<Dimensions>& cache) noexcept;
+                  const FeatureTransformer<Dimensions, PSQTBuckets>& featureTransformer,
+                  AccumulatorCaches::Cache<Dimensions, PSQTBuckets>& cache) noexcept;
 
    private:
     template<typename T>
@@ -175,25 +175,25 @@ class AccumulatorStack {
     template<typename T>
     [[nodiscard]] std::array<AccumulatorState<T>, MaxSize>& mut_accumulators() noexcept;
 
-    template<typename FeatureSet, IndexType Dimensions>
+    template<typename FeatureSet, IndexType Dimensions, int PSQTBuckets>
     void evaluate_side(Color                                 perspective,
                        const Position&                       pos,
-                       const FeatureTransformer<Dimensions>& featureTransformer,
-                       AccumulatorCaches::Cache<Dimensions>& cache) noexcept;
+                       const FeatureTransformer<Dimensions, PSQTBuckets>& featureTransformer,
+                       AccumulatorCaches::Cache<Dimensions, PSQTBuckets>& cache) noexcept;
 
     template<typename FeatureSet, IndexType Dimensions>
     [[nodiscard]] std::size_t find_last_usable_accumulator(Color perspective) const noexcept;
 
-    template<typename FeatureSet, IndexType Dimensions>
+    template<typename FeatureSet, IndexType Dimensions, int PSQTBuckets>
     void forward_update_incremental(Color                                 perspective,
                                     const Position&                       pos,
-                                    const FeatureTransformer<Dimensions>& featureTransformer,
+                                    const FeatureTransformer<Dimensions, PSQTBuckets>& featureTransformer,
                                     const std::size_t                     begin) noexcept;
 
-    template<typename FeatureSet, IndexType Dimensions>
+    template<typename FeatureSet, IndexType Dimensions, int PSQTBuckets>
     void backward_update_incremental(Color                                 perspective,
                                      const Position&                       pos,
-                                     const FeatureTransformer<Dimensions>& featureTransformer,
+                                     const FeatureTransformer<Dimensions, PSQTBuckets>& featureTransformer,
                                      const std::size_t                     end) noexcept;
 
     std::array<AccumulatorState<PSQFeatureSet>, MaxSize>    psq_accumulators;
