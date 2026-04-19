@@ -48,8 +48,8 @@ constexpr IndexType TransformedFeatureDimensionsSmall = 128;
 constexpr int       L2Small                           = 15;
 constexpr int       L3Small                           = 32;
 
-constexpr IndexType PSQTBucketsBig   = 24;
-constexpr IndexType LayerStacksBig   = 24;
+constexpr IndexType PSQTBucketsBig   = 16;
+constexpr IndexType LayerStacksBig   = 16;
 
 constexpr IndexType PSQTBucketsSmall = 8;
 constexpr IndexType LayerStacksSmall = 8;

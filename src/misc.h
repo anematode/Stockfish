@@ -137,6 +137,7 @@ void dbg_hit_on(bool cond, int slot = 0);
 void dbg_mean_of(int64_t value, int slot = 0);
 void dbg_stdev_of(int64_t value, int slot = 0);
 void dbg_extremes_of(int64_t value, int slot = 0);
+void dbg_string(std::string value);
 void dbg_correl_of(int64_t value1, int64_t value2, int slot = 0);
 void dbg_print();
 void dbg_clear();

@@ -351,6 +351,10 @@ void dbg_extremes_of(int64_t value, int slot) {
     {}
 }
 
+void dbg_string(std::string value) {
+    std::cout << value << std::endl;
+}
+
 void dbg_correl_of(int64_t value1, int64_t value2, int slot) {
 
     ++correl.at(slot)[0];

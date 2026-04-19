@@ -419,24 +419,35 @@ inline void Position::do_move(Move m, StateInfo& newSt, const TranspositionTable
 
 inline StateInfo* Position::state() const { return st; }
 
-// returns value between 0..95 [not 96]
 inline int Position::pawn_progress() const {
+    constexpr int MAXIMUM = 96;
     int pawnProgress = 0;
-    Bitboard pawns = pieces(PieceType::PAWN, Color::WHITE);
+    int alivePawns = 0;
+
+    Bitboard pawns = pieces(Color::WHITE, PieceType::PAWN);
     while(pawns)
     {
         Square ps = pop_lsb(pawns);
         pawnProgress += 7 - rank_of(ps);
+        alivePawns++;
     };
 
-    pawns = pieces(PieceType::PAWN, Color::BLACK);
+    pawns = pieces(Color::BLACK, PieceType::PAWN);
     while(pawns)
     {
         Square ps = pop_lsb(pawns);
         pawnProgress += rank_of(ps);
+        alivePawns++;
     };
 
-    return std::min(pawnProgress, 95);
+    if (alivePawns == 0)
+        return 0;
+
+    const int possibleMaximum    = alivePawns * 6;
+    const int scaledPawnProgress = (pawnProgress * MAXIMUM) / possibleMaximum;
+    assert(scaledPawnProgress <= 96);
+
+    return std::min(scaledPawnProgress, 95);
 }
 
 }  // namespace Stockfish
