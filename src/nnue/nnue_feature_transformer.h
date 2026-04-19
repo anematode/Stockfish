@@ -161,9 +161,19 @@ class FeatureTransformer {
 
         if constexpr (UseThreats)
         {
-            read_little_endian<ThreatWeightType>(stream, threatWeights.data(),
+            read_sparse_rows<ThreatWeightType>(stream, threatWeights.data(),
                                                  ThreatInputDimensions * HalfDimensions);
             read_leb_128(stream, weights);
+
+/*
+            for (int i = 0; i < ThreatInputDimensions; ++i) {
+                ThreatWeightType* s = &threatWeights[i * HalfDimensions];
+                if (std::all_of(s, s + HalfDimensions, [] (int i) { return i >= -1 && i <= 1; })) {
+                    std::fill_n(s, HalfDimensions, 0);
+                    printf("Zapped row %d\n", i);
+                }
+            }
+            */
 
             read_leb_128(stream, threatPsqtWeights, psqtWeights);
         }
@@ -188,7 +198,7 @@ class FeatureTransformer {
 
         if constexpr (UseThreats)
         {
-            write_little_endian<ThreatWeightType>(stream, copy->threatWeights.data(),
+            write_sparse_rows<ThreatWeightType>(stream, copy->threatWeights.data(),
                                                   ThreatInputDimensions * HalfDimensions);
             write_leb_128<WeightType>(stream, copy->weights);
 

@@ -169,6 +169,64 @@ inline void write_little_endian(std::ostream& stream, const IntType* values, std
             write_little_endian<IntType>(stream, values[i]);
 }
 
+// Reads sparse-row integers in bulk.
+template<typename IntType>
+inline void read_sparse_rows(std::istream& stream, IntType* out, std::size_t count) {
+    IntType* end = out + count;
+
+    while (out < end) {
+        auto length = read_little_endian<std::int32_t>(stream);
+        assert(length != 0);
+
+        if (length > 0) {
+            std::size_t n = static_cast<std::size_t>(length);
+            read_little_endian(stream, out, n);
+            out += n;
+        } else {
+            std::size_t n = static_cast<std::size_t>(-length);
+            std::fill_n(out, n, IntType(0));
+            out += n;
+        }
+    }
+}
+
+// Writes sparse-row integers in bulk to a little-endian stream.
+// The output is a sequence of pairs int32 length, IntType[] data.
+// If the length is negative, then -length 0s implicitly follow.
+template<typename IntType>
+inline void write_sparse_rows(std::ostream& stream, const IntType* values, std::size_t count) {
+    const IntType* end = values + count;
+
+    while (values < end) {
+        const IntType* cursor = values;
+        while (cursor != end && *cursor == 0) {
+            cursor++;
+        }
+
+        std::size_t zeros = cursor - values;
+        if (zeros >= 8 || (zeros > 0 && cursor == end)) {
+            write_little_endian<std::int32_t>(stream, -static_cast<std::int32_t>(zeros));
+            values = cursor;
+            continue;
+        }
+
+        cursor = values;
+        const IntType* block_end = end;
+        while (end - cursor >= 8) {
+            if (std::all_of(cursor, cursor + 8, [] (IntType i) { return i == 0; })) {
+                block_end = cursor;
+                break;
+            }
+            cursor++;
+        }
+
+        std::size_t n = block_end - values;
+        write_little_endian<std::int32_t>(stream, static_cast<std::int32_t>(n));
+        write_little_endian(stream, values, n);
+        values = block_end;
+    }
+}
+
 // Read N signed integers from the stream s, putting them in the array out.
 // The stream is assumed to be compressed using the signed LEB128 format.
 // See https://en.wikipedia.org/wiki/LEB128 for a description of the compression scheme.
