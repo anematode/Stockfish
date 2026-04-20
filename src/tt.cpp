@@ -218,11 +218,17 @@ std::tuple<bool, TTData, TTWriter> TranspositionTable::probe(const Key key) cons
     TTEntry* const tte   = first_entry(key);
     const uint16_t key16 = uint16_t(key);  // Use the low 16 bits as key inside the cluster
 
-    for (int i = 0; i < ClusterSize; ++i)
-        if (tte[i].key16 == key16)
-            // This gap is the main place for read races.
-            // After `read()` completes that copy is final, but may be self-inconsistent.
-            return {tte[i].is_occupied(), tte[i].read(), TTWriter(&tte[i])};
+    int mask = 0;
+    for (int i = ClusterSize - 1; i >= 0; --i) {
+        mask = 2 * mask + (tte[i].key16 == key16);
+    }
+
+    if (mask) {
+        int i = lsb(mask);
+        // This gap is the main place for read races.
+        // After `read()` completes that copy is final, but may be self-inconsistent.
+        return {tte[i].is_occupied(), tte[i].read(), TTWriter(&tte[i])};
+    }
 
     // Find an entry to be replaced according to the replacement strategy
     TTEntry* replace = tte;
