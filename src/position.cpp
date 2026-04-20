@@ -491,6 +491,7 @@ void Position::set_check_info() const {
 void Position::set_state() const {
 
     st->key               = 0;
+    st->pawnProgress      = 0;
     st->minorPieceKey     = 0;
     st->nonPawnKey[WHITE] = st->nonPawnKey[BLACK] = 0;
     st->pawnKey                                   = Zobrist::noPawns;
@@ -505,9 +506,10 @@ void Position::set_state() const {
         Piece  pc = piece_on(s);
         st->key ^= Zobrist::psq[pc][s];
 
-        if (type_of(pc) == PAWN)
+        if (type_of(pc) == PAWN) {
             st->pawnKey ^= Zobrist::psq[pc][s];
-
+            st->pawnProgress += color_of(pc) == WHITE ? 7 - rank_of(s) : rank_of(s);
+        }
         else
         {
             st->nonPawnKey[color_of(pc)] ^= Zobrist::psq[pc][s];
@@ -907,6 +909,7 @@ void Position::do_move(Move                      m,
             }
 
             st->pawnKey ^= Zobrist::psq[captured][capsq];
+            st->pawnProgress -= relative_rank(us, capsq);
         }
         else
         {
@@ -969,10 +972,13 @@ void Position::do_move(Move                      m,
     // If the moving piece is a pawn do some special extra work
     if (type_of(pc) == PAWN)
     {
+        int pawnProgressDelta = 1;
+
         // Check if the en passant square needs to be set. Accurate e.p. info is needed
         // for correct zobrist key generation and 3-fold checking.
         if ((int(to) ^ int(from)) == 16)
         {
+            pawnProgressDelta++;
             Square   epSquare = to - pawn_push(us);
             Bitboard pawns    = attacks_bb<PAWN>(epSquare, us) & pieces(them, PAWN);
 
@@ -1022,6 +1028,7 @@ void Position::do_move(Move                      m,
 
         // Update pawn hash key
         st->pawnKey ^= Zobrist::psq[pc][from] ^ Zobrist::psq[pc][to];
+        st->pawnProgress -= pawnProgressDelta;
 
         // Reset rule 50 draw counter
         st->rule50 = 0;

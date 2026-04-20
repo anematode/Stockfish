@@ -52,6 +52,7 @@ struct StateInfo {
     int    castlingRights;
     int    rule50;
     int    pliesFromNull;
+    int    pawnProgress;
     Square epSquare;
 
     // Not copied when making a move (will be recomputed anyhow)
@@ -421,30 +422,13 @@ inline StateInfo* Position::state() const { return st; }
 
 inline int Position::pawn_progress() const {
     constexpr int MAXIMUM = 96;
-    int pawnProgress = 0;
-    int alivePawns = 0;
 
-    Bitboard pawns = pieces(Color::WHITE, PieceType::PAWN);
-    while(pawns)
-    {
-        Square ps = pop_lsb(pawns);
-        pawnProgress += 7 - rank_of(ps);
-        alivePawns++;
-    };
-
-    pawns = pieces(Color::BLACK, PieceType::PAWN);
-    while(pawns)
-    {
-        Square ps = pop_lsb(pawns);
-        pawnProgress += rank_of(ps);
-        alivePawns++;
-    };
-
+    int alivePawns = popcount(pieces(PAWN));
     if (alivePawns == 0)
         return 0;
 
     const int possibleMaximum    = alivePawns * 6;
-    const int scaledPawnProgress = (pawnProgress * MAXIMUM) / possibleMaximum;
+    const int scaledPawnProgress = (st->pawnProgress * MAXIMUM) / possibleMaximum;
     assert(scaledPawnProgress <= 96);
 
     return std::min(scaledPawnProgress, 95);
