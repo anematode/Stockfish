@@ -189,6 +189,8 @@ Move* generate_moves(const Position& pos, Move* moveList, Bitboard target) {
     static_assert(Pt != KING && Pt != PAWN, "Unsupported piece type in generate_moves()");
 
     Bitboard bb = pos.pieces(Us, Pt);
+    if constexpr (Pt == KNIGHT)
+        bb &= ~pos.blockers_for_king(Us);  // pinned knights never can move
 
     while (bb)
     {
