@@ -155,7 +155,7 @@ else
    SUPPORTED_ARCH=false
 endif
 
-ifeq ($(ARCH), x86-64-universal)
+ifneq (,$(findstring universal,$(ARCH)))
    UNIVERSAL_BUILD=true
 else
    UNIVERSAL_BUILD=false
@@ -974,6 +974,7 @@ help:
 	echo "ppc-32                  > PPC 32-bit" && \
 	echo "armv7                   > ARMv7 32-bit" && \
 	echo "armv7-neon              > ARMv7 32-bit with popcnt and neon" && \
+	echo "armv8-universal         > ARMv8 64-bit with automatic runtime selection of the best architecture" && \
 	echo "armv8                   > ARMv8 64-bit with popcnt and neon" && \
 	echo "armv8-dotprod           > ARMv8 64-bit with popcnt, neon and dot product support" && \
 	echo "e2k                     > Elbrus 2000" && \
@@ -1054,13 +1055,13 @@ universal-object-pgo: objclean profileclean universalclean
 	@echo ""
 	@echo "Step 3/4. Building optimized object files ..."
 	$(MAKE) ARCH=$(ARCH) COMP=$(COMP) objclean
-	$(MAKE) ARCH=$(ARCH) COMP=$(COMP) ENV_LDFLAGS='-save-temps $(NNUE_EMBED_OBJ)' $(profile_use)
+	$(MAKE) ARCH=$(ARCH) COMP=$(COMP) ENV_LDFLAGS='-save-temps' $(profile_use)
 	@echo ""
 	@echo "Step 4/4. Extracting LTO-optimized relocatable object ..."
 	cp $(basename $(EXE)).ltrans0.ltrans.o stockfish.o
 
 universal-object-nopgo: objclean universalclean
-	$(MAKE) ARCH=$(ARCH) COMP=$(COMP) ENV_LDFLAGS='-save-temps $(NNUE_EMBED_OBJ)' all
+	$(MAKE) ARCH=$(ARCH) COMP=$(COMP) ENV_LDFLAGS='-save-temps' all
 	cp $(basename $(EXE)).ltrans0.ltrans.o stockfish.o
 
 strip:
@@ -1239,14 +1240,12 @@ endif
 # Usage:
 #   make -j ARCH=x86-64-universal build          # non-PGO
 #   make -j ARCH=x86-64-universal profile-build  # PGO (use RUN_PREFIX for intel SDE)
+#   make -j ARCH=armv8-universal build
 
 TEMP_DIR             := $(CURDIR)/temp_builds
 UNIVERSAL_EXE        := $(CURDIR)/$(EXE)
 
 ifeq ($(UNIVERSAL_BUILD),true)
-
-UNIVERSAL_ARCHES := x86-64 x86-64-sse41-popcnt x86-64-avx2 x86-64-bmi2 \
-                    x86-64-avxvnni x86-64-avx512 x86-64-vnni512 x86-64-avx512icl
 
 # GCC 15+ required for #embed
 GCC_MAJOR := $(shell $(CXX) -dumpversion 2>/dev/null | cut -d. -f1)
@@ -1256,16 +1255,28 @@ endif
 
 UNIVERSAL_SRC_DIR    := $(CURDIR)/universal
 NNUE_EMBED_OBJ       := $(TEMP_DIR)/nnue_embed.o
-UNIVERSAL_ENTRY_OBJ  := $(TEMP_DIR)/entry_x86.o
 NET_SENTINEL         := $(TEMP_DIR)/.net-done
+
+ifeq ($(arch),x86_64)
+    UNIVERSAL_ARCHES := x86-64 x86-64-sse41-popcnt x86-64-avx2 x86-64-bmi2 \
+                        x86-64-avxvnni x86-64-avx512 x86-64-vnni512 x86-64-avx512icl
+    UNIVERSAL_ENTRY_OBJ  := $(TEMP_DIR)/entry_x86.o
+    UNIVERSAL_ENTRY_SRC  := $(UNIVERSAL_SRC_DIR)/entry_x86.cpp
+    BASELINE_ARCH := x86-64
+else
+    UNIVERSAL_ARCHES := armv8 armv8-dotprod
+    UNIVERSAL_ENTRY_OBJ  := $(TEMP_DIR)/entry_armv8.o
+    UNIVERSAL_ENTRY_SRC  := $(UNIVERSAL_SRC_DIR)/entry_armv8.cpp
+    BASELINE_ARCH := armv8
+endif
 
 # Top-level tracked items in src/ (directories and files)
 TRACKED_TOP := $(shell echo "$(SRCS) $(HEADERS) Makefile incbin" | xargs -n1 | awk -F/ '{print $$1}' | sort -u)
 
-# Baseline x86-64 must come first in the final link (Windows --allow-multiple-definition
+# Baseline build must come first in the final link (Windows --allow-multiple-definition
 # uses the first copy of inline duplicates)
-ARCH_OBJS := $(TEMP_DIR)/x86-64/stockfish.o \
-             $(patsubst %,$(TEMP_DIR)/%/stockfish.o,$(filter-out x86-64,$(UNIVERSAL_ARCHES)))
+ARCH_OBJS := $(TEMP_DIR)/$(BASELINE_ARCH)/stockfish.o \
+             $(patsubst %,$(TEMP_DIR)/%/stockfish.o,$(filter-out $(BASELINE_ARCH),$(UNIVERSAL_ARCHES)))
 
 UNIVERSAL_FINAL_FLAGS := -fno-exceptions -Os -static-libstdc++ -static-libgcc -Wno-c++26-extensions
 ifeq ($(KERNEL),Linux)
@@ -1302,7 +1313,7 @@ $(NET_SENTINEL): | $(TEMP_DIR)
 $(NNUE_EMBED_OBJ): $(UNIVERSAL_SRC_DIR)/nnue_embed.cpp $(NET_SENTINEL) | $(TEMP_DIR)
 	$(CXX) -O2 -Wno-c++26-extensions --embed-dir=$(CURDIR) -c $< -o $@
 
-$(UNIVERSAL_ENTRY_OBJ): $(UNIVERSAL_SRC_DIR)/entry_x86.cpp | $(TEMP_DIR)
+$(UNIVERSAL_ENTRY_OBJ): $(UNIVERSAL_ENTRY_SRC) | $(TEMP_DIR)
 	$(CXX) -O2 -c $< -o $@
 
 # Symlink tracked top-level items from src/ into temp_builds/<arch>/.
