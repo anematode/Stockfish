@@ -183,12 +183,12 @@ Move* generate_pawn_moves(const Position& pos, Move* moveList, Bitboard target) 
 }
 
 
-template<Color Us, PieceType Pt>
-Move* generate_moves(const Position& pos, Move* moveList, Bitboard target) {
+template<PieceType Pt>
+Move* generate_moves(const Position& pos, Color us, Move* moveList, Bitboard target) {
 
     static_assert(Pt != KING && Pt != PAWN, "Unsupported piece type in generate_moves()");
 
-    Bitboard bb = pos.pieces(Us, Pt);
+    Bitboard bb = pos.pieces(us, Pt);
 
     while (bb)
     {
@@ -202,35 +202,36 @@ Move* generate_moves(const Position& pos, Move* moveList, Bitboard target) {
 }
 
 
-template<Color Us, GenType Type>
+template<GenType Type>
 Move* generate_all(const Position& pos, Move* moveList) {
 
     static_assert(Type != LEGAL, "Unsupported type in generate_all()");
 
-    const Square ksq = pos.square<KING>(Us);
+    Color us = pos.side_to_move();
+    const Square ksq = pos.square<KING>(us);
     Bitboard     target;
 
     // Skip generating non-king moves when in double check
     if (Type != EVASIONS || !more_than_one(pos.checkers()))
     {
         target = Type == EVASIONS     ? between_bb(ksq, lsb(pos.checkers()))
-               : Type == NON_EVASIONS ? ~pos.pieces(Us)
-               : Type == CAPTURES     ? pos.pieces(~Us)
+               : Type == NON_EVASIONS ? ~pos.pieces(us)
+               : Type == CAPTURES     ? pos.pieces(~us)
                                       : ~pos.pieces();  // QUIETS
 
-        moveList = generate_pawn_moves<Us, Type>(pos, moveList, target);
-        moveList = generate_moves<Us, KNIGHT>(pos, moveList, target);
-        moveList = generate_moves<Us, BISHOP>(pos, moveList, target);
-        moveList = generate_moves<Us, ROOK>(pos, moveList, target);
-        moveList = generate_moves<Us, QUEEN>(pos, moveList, target);
+        moveList = us == WHITE ? generate_pawn_moves<WHITE, Type>(pos, moveList, target) : generate_pawn_moves<BLACK, Type>(pos, moveList, target);
+        moveList = generate_moves<KNIGHT>(pos, us, moveList, target);
+        moveList = generate_moves<BISHOP>(pos, us, moveList, target);
+        moveList = generate_moves<ROOK>(pos, us, moveList, target);
+        moveList = generate_moves<QUEEN>(pos, us, moveList, target);
     }
 
-    Bitboard b = attacks_bb<KING>(ksq) & (Type == EVASIONS ? ~pos.pieces(Us) : target);
+    Bitboard b = attacks_bb<KING>(ksq) & (Type == EVASIONS ? ~pos.pieces(us) : target);
 
     moveList = splat_moves(moveList, ksq, b);
 
-    if ((Type == QUIETS || Type == NON_EVASIONS) && pos.can_castle(Us & ANY_CASTLING))
-        for (CastlingRights cr : {Us & KING_SIDE, Us & QUEEN_SIDE})
+    if ((Type == QUIETS || Type == NON_EVASIONS) && pos.can_castle(us & ANY_CASTLING))
+        for (CastlingRights cr : {us & KING_SIDE, us & QUEEN_SIDE})
             if (!pos.castling_impeded(cr) && pos.can_castle(cr))
                 *moveList++ = Move::make<CASTLING>(ksq, pos.castling_rook_square(cr));
 
@@ -252,10 +253,7 @@ Move* generate(const Position& pos, Move* moveList) {
     static_assert(Type != LEGAL, "Unsupported type in generate()");
     assert((Type == EVASIONS) == bool(pos.checkers()));
 
-    Color us = pos.side_to_move();
-
-    return us == WHITE ? generate_all<WHITE, Type>(pos, moveList)
-                       : generate_all<BLACK, Type>(pos, moveList);
+    return generate_all<Type>(pos, moveList);
 }
 
 // Explicit template instantiations
