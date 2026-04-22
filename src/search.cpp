@@ -81,14 +81,16 @@ using SearchedList                  = ValueList<Move, SEARCHEDLIST_CAPACITY>;
 // (*Scaler) All tuned parameters at time controls shorter than
 // optimized for require verifications at longer time controls
 
-int correction_value(const Worker& w, const Position& pos, const Stack* const ss) {
+int correction_value(const Worker& w, const Position& pos, const Stack* const ss, int staticEval) {
     const Color us     = pos.side_to_move();
     const auto  m      = (ss - 1)->currentMove;
     const auto& shared = w.sharedHistory;
-    const int   pcv    = shared.pawn_correction_entry(pos)[us].pawn;
-    const int   micv   = shared.minor_piece_correction_entry(pos)[us].minor;
-    const int   wnpcv  = shared.nonpawn_correction_entry<WHITE>(pos)[us].nonPawnWhite;
-    const int   bnpcv  = shared.nonpawn_correction_entry<BLACK>(pos)[us].nonPawnBlack;
+
+    int sign = staticEval < 0;
+    const int   pcv    = shared.pawn_correction_entry(pos)[us][sign].pawn;
+    const int   micv   = shared.minor_piece_correction_entry(pos)[us][sign].minor;
+    const int   wnpcv  = shared.nonpawn_correction_entry<WHITE>(pos)[us][sign].nonPawnWhite;
+    const int   bnpcv  = shared.nonpawn_correction_entry<BLACK>(pos)[us][sign].nonPawnBlack;
     const int   cntcv =
       m.is_ok() ? (*(ss - 2)->continuationCorrectionHistory)[pos.piece_on(m.to_sq())][m.to_sq()]
                     + (*(ss - 4)->continuationCorrectionHistory)[pos.piece_on(m.to_sq())][m.to_sq()]
@@ -106,17 +108,19 @@ Value to_corrected_static_eval(const Value v, const int cv) {
 void update_correction_history(const Position& pos,
                                Stack* const    ss,
                                Search::Worker& workerThread,
-                               const int       bonus) {
+                               const int       bonus,
+                               int staticEval) {
     const Move  m  = (ss - 1)->currentMove;
     const Color us = pos.side_to_move();
 
     constexpr int nonPawnWeight = 187;
     auto&         shared        = workerThread.sharedHistory;
 
-    shared.pawn_correction_entry(pos)[us].pawn << bonus;
-    shared.minor_piece_correction_entry(pos)[us].minor << bonus * 153 / 128;
-    shared.nonpawn_correction_entry<WHITE>(pos)[us].nonPawnWhite << bonus * nonPawnWeight / 128;
-    shared.nonpawn_correction_entry<BLACK>(pos)[us].nonPawnBlack << bonus * nonPawnWeight / 128;
+    int sign = staticEval < 0;
+    shared.pawn_correction_entry(pos)[us][sign].pawn << bonus;
+    shared.minor_piece_correction_entry(pos)[us][sign].minor << bonus * 153 / 128;
+    shared.nonpawn_correction_entry<WHITE>(pos)[us][sign].nonPawnWhite << bonus * nonPawnWeight / 128;
+    shared.nonpawn_correction_entry<BLACK>(pos)[us][sign].nonPawnBlack << bonus * nonPawnWeight / 128;
 
     if (m.is_ok())
     {
@@ -730,12 +734,17 @@ Value Search::Worker::search(
 
     // Step 5. Static evaluation of the position
     Value      unadjustedStaticEval = VALUE_NONE;
-    const auto correctionValue      = correction_value(*this, pos, ss);
+    int correctionValue = 0;
     // Skip early pruning when in check
-    if (ss->inCheck)
+    if (ss->inCheck) {
         ss->staticEval = eval = (ss - 2)->staticEval;
-    else if (excludedMove)
+        unadjustedStaticEval = (ss - 2)->unadjustedStaticEval;
+        correctionValue = correction_value(*this, pos, ss, unadjustedStaticEval);
+    }
+    else if (excludedMove) {
         unadjustedStaticEval = eval = ss->staticEval;
+        correctionValue = correction_value(*this, pos, ss, unadjustedStaticEval);
+    }
     else if (ss->ttHit)
     {
         // Never assume anything about values stored in TT
@@ -743,6 +752,7 @@ Value Search::Worker::search(
         if (!is_valid(unadjustedStaticEval))
             unadjustedStaticEval = evaluate(pos);
 
+        correctionValue = correction_value(*this, pos, ss, unadjustedStaticEval);
         ss->staticEval = eval = to_corrected_static_eval(unadjustedStaticEval, correctionValue);
 
         // ttValue can be used as a better position evaluation
@@ -753,12 +763,15 @@ Value Search::Worker::search(
     else
     {
         unadjustedStaticEval = evaluate(pos);
+        correctionValue = correction_value(*this, pos, ss, unadjustedStaticEval);
         ss->staticEval = eval = to_corrected_static_eval(unadjustedStaticEval, correctionValue);
 
         // Static evaluation is saved as it was before adjustment by correction history
         ttWriter.write(posKey, VALUE_NONE, ss->ttPv, BOUND_NONE, DEPTH_UNSEARCHED, Move::none(),
                        unadjustedStaticEval, tt.generation());
     }
+
+    ss->unadjustedStaticEval = unadjustedStaticEval;
 
     // Set up the improving flag, which is true if current static evaluation is
     // bigger than the previous static evaluation at our turn (if we were in
@@ -1496,7 +1509,7 @@ moves_loop:  // When in check, search starts here
         auto bonus =
           std::clamp(int(bestValue - ss->staticEval) * depth * (bestMove ? 12 : 17) / 128,
                      -CORRECTION_HISTORY_LIMIT / 4, CORRECTION_HISTORY_LIMIT / 4);
-        update_correction_history(pos, ss, *this, 1069 * bonus / 1024);
+        update_correction_history(pos, ss, *this, 1069 * bonus / 1024, unadjustedStaticEval);
     }
 
     assert(bestValue > -VALUE_INFINITE && bestValue < VALUE_INFINITE);
@@ -1579,8 +1592,6 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
         bestValue = futilityBase = -VALUE_INFINITE;
     else
     {
-        const auto correctionValue = correction_value(*this, pos, ss);
-
         if (ss->ttHit)
         {
             // Never assume anything about values stored in TT
@@ -1589,6 +1600,7 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
             if (!is_valid(unadjustedStaticEval))
                 unadjustedStaticEval = evaluate(pos);
 
+            const auto correctionValue = correction_value(*this, pos, ss, unadjustedStaticEval);
             ss->staticEval = bestValue =
               to_corrected_static_eval(unadjustedStaticEval, correctionValue);
 
@@ -1600,6 +1612,7 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
         else
         {
             unadjustedStaticEval = evaluate(pos);
+            const auto correctionValue = correction_value(*this, pos, ss, unadjustedStaticEval);
             ss->staticEval       = bestValue =
               to_corrected_static_eval(unadjustedStaticEval, correctionValue);
         }

@@ -109,7 +109,7 @@ struct Stack {
     int                         ply;
     Move                        currentMove;
     Move                        excludedMove;
-    Value                       staticEval;
+    Value                       staticEval, unadjustedStaticEval;
     int                         statScore;
     int                         moveCount;
     bool                        inCheck;

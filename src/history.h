@@ -207,7 +207,7 @@ struct CorrHistTypedef<NonPawn> {
 }
 
 using UnifiedCorrectionHistory =
-  DynStats<MultiArray<CorrectionBundle<std::int16_t, CORRECTION_HISTORY_LIMIT>, COLOR_NB>,
+  DynStats<MultiArray<CorrectionBundle<std::int16_t, CORRECTION_HISTORY_LIMIT>, COLOR_NB, 2>,
            CORRHIST_BASE_SIZE>;
 
 template<CorrHistType T>
