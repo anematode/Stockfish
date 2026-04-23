@@ -33,7 +33,11 @@ Bitboard LineBB[SQUARE_NB][SQUARE_NB];
 Bitboard BetweenBB[SQUARE_NB][SQUARE_NB];
 Bitboard RayPassBB[SQUARE_NB][SQUARE_NB];
 
-alignas(64) Magic Magics[SQUARE_NB][2];
+alignas(64) Magic Magics[SQUARE_NB];
+
+#ifdef USE_SVE_BITPERM
+#define USE_PEXT
+#endif
 
 #ifdef USE_PEXT
 using MagicMask = uint16_t;
@@ -84,7 +88,7 @@ constexpr
   void
   init_magics(PieceType             pt,
               MagicMask             table[],
-              Magic                 magics[][2],
+              Magic                 magics[],
               [[maybe_unused]] bool tableAlreadyInit) {
 #if !defined(USE_COMPTIME_ATTACKS)
     tableAlreadyInit = false;
@@ -111,17 +115,18 @@ constexpr
         // all the attacks for each possible subset of the mask and so is 2 power
         // the number of 1s of the mask. Hence we deduce the size of the shift to
         // apply to the 64 or 32 bits word to get the index.
-        Magic&   m       = magics[s][pt - BISHOP];
+        int pt_i = pt - BISHOP;
+        Magic&   m       = magics[s];
         Bitboard attacks = Bitboards::sliding_attack(pt, s, 0);
-        m.mask           = attacks & ~edges;
+        m.mask[pt_i]           = attacks & ~edges;
 #ifdef USE_PEXT
-        m.pseudoAttacks = attacks;
+        m.pseudoAttacks[pt_i] = attacks;
 #else
-        m.shift = (Is64Bit ? 64 : 32) - popcount(m.mask);
+        m.shift[pt_i] = (Is64Bit ? 64 : 32) - popcount(m.mask[pt_i]);
 #endif
         // Set the offset for the attacks table of the square. We have individual
         // table sizes for each square with "Fancy Magic Bitboards".
-        m.attacks = s == SQ_A1 ? table : magics[s - 1][pt - BISHOP].attacks + size;
+        m.attacks[pt_i] = s == SQ_A1 ? table : magics[s - 1].attacks[pt_i] + size;
         size      = 0;
 
         // Use Carry-Rippler trick to enumerate all subsets of masks[s] and
@@ -134,8 +139,8 @@ constexpr
             if (!tableAlreadyInit)
             {
                 Bitboard sliding = Bitboards::sliding_attack(pt, s, b);
-                m.attacks[size] =
-                  sliding != prevSliding ? constexpr_pext(sliding, attacks) : m.attacks[size - 1];
+                m.attacks[pt_i][size] =
+                  sliding != prevSliding ? constexpr_pext(sliding, attacks) : m.attacks[pt_i][size - 1];
                 prevSliding = sliding;
             }
 #else
@@ -144,7 +149,7 @@ constexpr
 #endif
 
             size++;
-            b = (b - m.mask) & m.mask;
+            b = (b - m.mask[pt_i]) & m.mask[pt_i];
         } while (b);
 
 #ifndef USE_PEXT
@@ -165,7 +170,7 @@ constexpr
             // m.attacks[] after every failed attempt.
             for (++cnt, i = 0; i < size; ++i)
             {
-                unsigned idx = m.index(occupancy[i]);
+                unsigned idx = m.index(occupancy[i], pt);
 
                 if (epoch[idx] < cnt)
                 {
@@ -183,13 +188,13 @@ constexpr
 #if defined(USE_COMPTIME_ATTACKS) && defined(USE_PEXT)
 constexpr auto RookTable = []() {
     std::array<uint16_t, 0x19000> result{};
-    Magic                         magics[64][2] = {};
+    Magic                         magics[64] = {};
     init_magics(ROOK, result.data(), magics, false);
     return result;
 }();
 constexpr auto BishopTable = []() {
     std::array<uint16_t, 0x1480> result{};
-    Magic                        magics[64][2] = {};
+    Magic                        magics[64] = {};
     init_magics(BISHOP, result.data(), magics, false);
     return result;
 }();

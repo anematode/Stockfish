@@ -76,41 +76,83 @@ extern Bitboard RayPassBB[SQUARE_NB][SQUARE_NB];
 
 // Magic holds all magic bitboards relevant data for a single square
 struct Magic {
-    Bitboard mask;
-#ifdef USE_PEXT
-    uint16_t* attacks;
-    Bitboard  pseudoAttacks;
+    Bitboard mask[2];
+#if defined(USE_PEXT) || defined(USE_SVE_BITPERM)
+    uint16_t* attacks[2];
+    Bitboard  pseudoAttacks[2];
 #else
-    Bitboard* attacks;
-    Bitboard  magic;
-    unsigned  shift;
+    Bitboard* attacks[2];
+    Bitboard  magic[2];
+    unsigned  shift[2];
 #endif
 
-    // Compute the attack's index using the 'magic bitboards' approach
-    unsigned index(Bitboard occupied) const {
+#ifdef USE_SVE_BITPERM
+    uint64x2_t get_attacks_vector(Bitboard occupied) const {
+        // For each 64-bit lane:
+        //   index <- bext(occupied, mask)
+        //   attacks[index] gather
+        //   Parallel bdep(attacks_set, pseudoAttacks)
 
+        svbool_t pg = svptrue_pat_b64(SV_VL2);
+        svuint64_t v_occ = svdup_n_u64(occupied);
+        svuint64_t v_masks = svld1_u64(pg, mask);
+        svuint64_t v_indices = svbext_u64(v_occ, v_masks);
+        svuint64_t v_base_ptrs = svld1_u64(pg, (const uint64_t*)attacks);
+
+        // base_ptr + (index * sizeof(uint16_t))
+        svuint64_t v_byte_offsets = svlsl_n_u64_z(pg, v_indices, 1);
+        svuint64_t v_addresses = svadd_u64_z(pg, v_base_ptrs, v_byte_offsets);
+
+        // 16 valid bits + 48 junk bits
+        svuint64_t v_attacks = svld1_gather_u64base_offset_u64(pg, v_addresses, 0);
+        svuint64_t v_pseudo = svld1_u64(pg, pseudoAttacks);
+        svuint64_t v_res = svbdep_u64(v_attacks, v_pseudo);
+
+        return svget_neonq_u64(v_res);
+    }
+#else
+    // Compute the attack's index using the 'magic bitboards' approach
+    unsigned index(Bitboard occupied, PieceType pt) const {
+        const int i = pt - BISHOP;
 #ifdef USE_PEXT
-        return unsigned(pext(occupied, mask));
+        return unsigned(pext(occupied, mask[i]));
 #else
         if (Is64Bit)
-            return unsigned(((occupied & mask) * magic) >> shift);
+            return unsigned(((occupied & mask[i]) * magic[i]) >> shift[i]);
 
         unsigned lo = unsigned(occupied) & unsigned(mask);
         unsigned hi = unsigned(occupied >> 32) & unsigned(mask >> 32);
         return (lo * unsigned(magic) ^ hi * unsigned(magic >> 32)) >> shift;
 #endif
     }
+#endif
 
-    Bitboard attacks_bb(Bitboard occupied) const {
-#ifdef USE_PEXT
-        return pdep(attacks[index(occupied)], pseudoAttacks);
+    Bitboard attacks_bb(Bitboard occupied, PieceType pt) const {
+        const int i = pt - BISHOP;
+
+#ifdef USE_SVE_BITPERM
+        auto vector = get_attacks_vector(occupied);
+        return vector[i];
+#elif defined(USE_PEXT)
+        return pdep(attacks[i][index(occupied, pt)], pseudoAttacks[i]);
 #else
-        return attacks[index(occupied)];
+        return attacks[i][index(occupied, pt)];
 #endif
     }
+
+/*
+    struct AttacksResult { Bitboard bishop, rook; };
+
+    AttacksResult all_attacks_bb(Bitboard occupied) const {
+#ifdef USE_SVE_BITPERM
+        
+#else
+        return { attacks_bb(occupied, BISHOP), attacks_bb(occupied, ROOK) };
+#endif
+    }*/
 };
 
-extern Magic Magics[SQUARE_NB][2];
+extern Magic Magics[SQUARE_NB];
 
 constexpr Bitboard square_bb(Square s) {
     assert(is_ok(s));
@@ -454,7 +496,7 @@ inline Bitboard attacks_bb(Square s, Bitboard occupied) {
     {
     case BISHOP :
     case ROOK :
-        return Magics[s][Pt - BISHOP].attacks_bb(occupied);
+        return Magics[s].attacks_bb(occupied, Pt);
     case QUEEN :
         return attacks_bb<BISHOP>(s, occupied) | attacks_bb<ROOK>(s, occupied);
     default :

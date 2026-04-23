@@ -90,6 +90,12 @@
         #define pdep(b, m) _pdep_u64(b, m)
     #endif
 
+    #if defined(USE_SVE_BITPERM)
+        #include <arm_sve.h>
+        #include <arm_neon.h>
+        #include <arm_neon_sve_bridge.h>
+    #endif
+
 namespace Stockfish {
 
     #ifdef USE_POPCNT

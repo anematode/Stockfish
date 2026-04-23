@@ -148,8 +148,8 @@ ifeq ($(ARCH), $(filter $(ARCH), \
                  x86-64-universal x86-64-avx512icl x86-64-vnni512 x86-64-avx512 x86-64-avxvnni \
                  x86-64-bmi2 x86-64-avx2 x86-64-sse41-popcnt x86-64-modern x86-64-ssse3 x86-64-sse3-popcnt \
                  x86-64 x86-32-sse41-popcnt x86-32-sse2 x86-32 ppc-64 ppc-64-altivec ppc-64-vsx ppc-32 e2k \
-                 armv7 armv7-neon armv8 armv8-dotprod apple-silicon general-64 general-32 riscv64 \
-                 loongarch64 loongarch64-lsx loongarch64-lasx))
+                 armv7 armv7-neon armv8 armv8-dotprod armv9-neoverse-v2 apple-silicon general-64 general-32 \
+                 riscv64 loongarch64 loongarch64-lsx loongarch64-lasx))
    SUPPORTED_ARCH=true
 else
    SUPPORTED_ARCH=false
@@ -186,6 +186,7 @@ dotprod = no
 arm_version = 0
 lsx = no
 lasx = no
+sve_bitperm = no
 STRIP = strip
 
 ifneq ($(shell which clang-format-20 2> /dev/null),)
@@ -372,6 +373,16 @@ ifeq ($(ARCH),armv8-dotprod)
 	arm_version = 8
 endif
 
+ifeq ($(ARCH),armv9-neoverse-v2)
+	arch = armv9
+	prefetch = yes
+	popcnt = yes
+	neon = yes
+	dotprod = yes
+	sve_bitperm = yes
+	arm_version = 9
+endif
+
 ifeq ($(ARCH),apple-silicon)
 	arch = arm64
 	prefetch = yes
@@ -462,7 +473,7 @@ ifeq ($(COMP),gcc)
 	CXX=g++
 	CXXFLAGS += -pedantic -Wextra -Wshadow -Wmissing-declarations
 
-	ifeq ($(arch),$(filter $(arch),armv7 armv8 riscv64))
+	ifeq ($(arch),$(filter $(arch),armv7 armv8 armv9 riscv64))
 		ifeq ($(OS),Android)
 			CXXFLAGS += -m$(bits)
 			LDFLAGS += -m$(bits)
@@ -534,7 +545,7 @@ ifeq ($(COMP),clang)
 	endif
 	endif
 
-	ifeq ($(arch),$(filter $(arch),armv7 armv8 riscv64))
+	ifeq ($(arch),$(filter $(arch),armv7 armv8 armv9 riscv64))
 		ifeq ($(OS),Android)
 			CXXFLAGS += -m$(bits)
 			LDFLAGS += -m$(bits)
@@ -723,7 +734,7 @@ else
 endif
 
 ifeq ($(popcnt),yes)
-	ifeq ($(arch),$(filter $(arch),ppc64 ppc64-altivec ppc64-vsx armv7 armv8 arm64))
+	ifeq ($(arch),$(filter $(arch),ppc64 ppc64-altivec ppc64-vsx armv7 armv8 armv9 arm64))
 		CXXFLAGS += -DUSE_POPCNT
 	else
 		CXXFLAGS += -msse3 -mpopcnt -DUSE_POPCNT
@@ -812,13 +823,17 @@ ifeq ($(neon),yes)
 	ifeq ($(KERNEL),Linux)
 	ifneq ($(COMP),ndk)
 	ifneq ($(arch),armv8)
+	ifneq ($(arch),armv9)
 		CXXFLAGS += -mfpu=neon
+	endif
 	endif
 	endif
 	endif
 endif
 
-ifeq ($(dotprod),yes)
+ifeq ($(sve_bitperm),yes)
+	CXXFLAGS += -march=armv9-a+sve2-bitperm -DUSE_NEON_DOTPROD -DUSE_SVE_BITPERM
+else ifeq ($(dotprod),yes)
 	CXXFLAGS += -march=armv8.2-a+dotprod -DUSE_NEON_DOTPROD
 endif
 
@@ -1149,7 +1164,7 @@ config-sanity: net
 	(test "$(SUPPORTED_ARCH)" = "true") && \
 	(test "$(arch)" = "any" || test "$(arch)" = "x86_64" || test "$(arch)" = "i386" || \
 	 test "$(arch)" = "ppc64" || test "$(arch)" = "ppc" || test "$(arch)" = "e2k" || \
-	 test "$(arch)" = "armv7" || test "$(arch)" = "armv8" || test "$(arch)" = "arm64" || \
+	 test "$(arch)" = "armv7" || test "$(arch)" = "armv8" || test "$(arch)" = "armv9" || test "$(arch)" = "arm64" || \
 	 test "$(arch)" = "riscv64" || test "$(arch)" = "loongarch64") && \
 	(test "$(bits)" = "32" || test "$(bits)" = "64") && \
 	(test "$(prefetch)" = "yes" || test "$(prefetch)" = "no") && \
