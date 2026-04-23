@@ -1459,6 +1459,7 @@ bool Position::see_ge(Move m, int threshold) const {
         }
 
         res ^= 1;
+        Bitboard lsb = 0;
 
         // Locate and remove the next least valuable attacker, and add to
         // the bitboard 'attackers' any X-ray attackers behind it.
@@ -1466,7 +1467,7 @@ bool Position::see_ge(Move m, int threshold) const {
         {
             if ((swap = PawnValue - swap) < res)
                 break;
-            occupied ^= least_significant_square_bb(bb);
+            occupied ^= (lsb = least_significant_square_bb(bb));
 
             attackers |= attacks_bb<BISHOP>(to, occupied) & pieces(BISHOP, QUEEN);
         }
@@ -1475,14 +1476,14 @@ bool Position::see_ge(Move m, int threshold) const {
         {
             if ((swap = KnightValue - swap) < res)
                 break;
-            occupied ^= least_significant_square_bb(bb);
+            occupied ^= (lsb = least_significant_square_bb(bb));
         }
 
         else if ((bb = stmAttackers & pieces(BISHOP)))
         {
             if ((swap = BishopValue - swap) < res)
                 break;
-            occupied ^= least_significant_square_bb(bb);
+            occupied ^= (lsb = least_significant_square_bb(bb));
 
             attackers |= attacks_bb<BISHOP>(to, occupied) & pieces(BISHOP, QUEEN);
         }
@@ -1491,7 +1492,7 @@ bool Position::see_ge(Move m, int threshold) const {
         {
             if ((swap = RookValue - swap) < res)
                 break;
-            occupied ^= least_significant_square_bb(bb);
+            occupied ^= (lsb = least_significant_square_bb(bb));
 
             attackers |= attacks_bb<ROOK>(to, occupied) & pieces(ROOK, QUEEN);
         }
@@ -1511,6 +1512,12 @@ bool Position::see_ge(Move m, int threshold) const {
               // If we "capture" with the king but the opponent still has attackers,
               // reverse the result.
             return (attackers & ~pieces(stm)) ? res ^ 1 : res;
+
+        if (lsb & blockers_for_king(~stm)) {
+            // If we just uncovered a discovered attack on the opponent king,
+            // then remove all of the opponent's non-king attackers
+            attackers &= pieces(stm) | pieces(~stm, KING);
+        }
     }
 
     return bool(res);
