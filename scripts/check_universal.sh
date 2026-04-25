@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 
 # Verify that the universal binary selects the correct per-arch build under
 # Intel SDE emulation for a range of target CPUs
@@ -37,10 +37,10 @@ icl:x86-64-avx512icl
 adl:x86-64-avxvnni
 "
 
-FAIL=0
-i=0
-for pair in $PAIRS; do
-    i=$((i + 1))
+JOBS=$(nproc 2>/dev/null || echo 4)
+
+check_pair() {
+    pair=$1
     cpu=${pair%%:*}
     expected_compiler=${pair##*:}
     compiler_out=$("$SDE_EXE" "-$cpu" -- "$STOCKFISH_EXE" compiler 2>&1 || true)
@@ -54,10 +54,32 @@ for pair in $PAIRS; do
     if [ "$actual_compiler" != "$expected_compiler" ] || [ "$actual_bench" != "$EXPECTED_BENCH" ]; then
         printf '===== CPU %s output (expected %s/%s, got %s/%s) =====\n' \
             "$cpu" "$expected_compiler" "$EXPECTED_BENCH" "${actual_compiler:--}" "$actual_bench" >&2
-        FAIL=1
-    else
-        printf 'CPU %s ok\n' "$cpu" >&2
+        return 1
     fi
+    printf 'CPU %s ok\n' "$cpu" >&2
+    return 0
+}
+
+FAIL=0
+running=0
+
+reap_one() {
+    if ! wait -n; then
+        FAIL=1
+    fi
+    running=$((running - 1))
+}
+
+for pair in $PAIRS; do
+    while [ "$running" -ge "$JOBS" ]; do
+        reap_one
+    done
+    check_pair "$pair" &
+    running=$((running + 1))
+done
+
+while [ "$running" -gt 0 ]; do
+    reap_one
 done
 
 if [ "$FAIL" != 0 ]; then
