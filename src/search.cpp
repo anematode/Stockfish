@@ -575,8 +575,14 @@ void Search::Worker::do_move(
     if (ss != nullptr)
     {
         ss->currentMove = move;
-        ss->continuationHistory =
+        auto contHist = ss->continuationHistory =
           &continuationHistory[ss->inCheck][capture][dirtyPiece.pc][move.to_sq()];
+
+        for (Piece pc : { W_PAWN, B_PAWN }) {
+            prefetch<PrefetchRw::READ, PrefetchLoc::LOW>(&contHist[pc][0]);
+            prefetch<PrefetchRw::READ, PrefetchLoc::LOW>(&contHist[pc][32]);
+        }
+
         ss->continuationCorrectionHistory =
           &continuationCorrectionHistory[dirtyPiece.pc][move.to_sq()];
     }
