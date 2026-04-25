@@ -262,6 +262,7 @@ struct SharedHistories {
 
     UnifiedCorrectionHistory correctionHistory;
     PawnHistory              pawnHistory;
+    ContinuationHistory             continuationHistory[2][2];
 
 
    private:
