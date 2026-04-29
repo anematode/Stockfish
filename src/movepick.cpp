@@ -80,6 +80,7 @@ struct MoveSorter {
         splat_extmove(m, move, value);
 
         // Mask of all elements except the insertion point
+        assert(m.value != std::numeric_limits<int>::min());
         const uint16_t expand = _kadd_mask16(_mm512_cmplt_epi32_mask(sortedValues, value), -1);
 
         sortedValues = _mm512_mask_expand_epi32(value, expand, sortedValues);
