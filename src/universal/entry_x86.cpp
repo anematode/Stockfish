@@ -1,6 +1,30 @@
 #include <cpuid.h>
 #include <stdint.h>
 
+#ifdef __APPLE__
+// We locate each arch's initializer pointer array at runtime via getsectiondata().
+// Example name is "_i_sse41_popcnt", baseline build is just "_i_"
+#include <stdio.h>
+#include <mach-o/getsect.h>
+
+extern "C" const struct mach_header_64 _mh_execute_header;
+
+#define DEFINE_BUILD(x) \
+    namespace Stockfish_##x { \
+        extern int main(int argc, char* argv[]); \
+    } \
+    int entry_##x(int argc, char* argv[]) { \
+        char        name[17]; \
+        const char* full = #x; \
+        snprintf(name, sizeof(name), "_i_%s", full[6] ? full + 7 : ""); \
+        unsigned long size = 0; \
+        auto**        fns  = reinterpret_cast<void (**)()>( \
+          getsectiondata(&_mh_execute_header, "__DATA", name, &size)); \
+        for (unsigned long i = 0; i < size / sizeof(*fns); i++) \
+            fns[i](); \
+        return Stockfish_##x::main(argc, argv); \
+    }
+#else
 #define DEFINE_BUILD(x) \
     namespace Stockfish_##x { \
         extern int main(int argc, char* argv[]); \
@@ -13,6 +37,7 @@
             __start_##x##_init[i](); \
         return Stockfish_##x::main(argc, argv); \
     }
+#endif
 
 DEFINE_BUILD(x86_64)
 DEFINE_BUILD(x86_64_sse41_popcnt)

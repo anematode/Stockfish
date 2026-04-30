@@ -631,6 +631,7 @@ ifeq ($(COMP),gcc)
 	ifneq ($(gccisclang),)
 		profile_make = clang-profile-make
 		profile_use = clang-profile-use
+		CXXFLAGS += -fconstexpr-steps=500000000
 	else
 		CXXFLAGS += -Wstack-usage=128000 -fno-ipa-cp-clone -fconstexpr-ops-limit=500000000
 	endif
@@ -1043,7 +1044,12 @@ profile-build: net config-sanity objclean profileclean
 	$(MAKE) ARCH=$(ARCH) COMP=$(COMP) profileclean
 endif
 
-ifeq ($(comp), clang)
+ifeq ($(KERNEL),Darwin)
+# Apple uses ld64 which doesn't have --save-temps, so we need to explicitly
+# specify a location to save the LTOed object
+LTO_OBJ_SUFFIX := .lto.o
+SAVE_TEMPS := -Wl,-object_path_lto,stockfish.lto.o
+else ifeq ($(comp), clang)
 LTO_OBJ_SUFFIX := .lto.o
 SAVE_TEMPS := -Wl,--save-temps
 else
@@ -1275,21 +1281,37 @@ TRACKED_TOP := $(sort $(foreach f,$(SRCS) $(HEADERS) Makefile incbin,$(firstword
 ARCH_OBJS := $(TEMP_DIR)/x86-64/stockfish.o \
              $(patsubst %,$(TEMP_DIR)/%/stockfish.o,$(filter-out x86-64,$(UNIVERSAL_ARCHES)))
 
-UNIVERSAL_FINAL_FLAGS := -fno-exceptions -Os -static-libstdc++ -static-libgcc -Wno-c++26-extensions
-ifeq ($(KERNEL),Linux)
-    UNIVERSAL_FINAL_FLAGS += -lrt -lpthread
+ifeq ($(KERNEL),Darwin)
+    UNIVERSAL_FINAL_FLAGS := -fno-exceptions -Os -mmacosx-version-min=10.15 -arch $(arch) $(EXTRACXXFLAGS)
 else
-    UNIVERSAL_FINAL_FLAGS += -Wl,--allow-multiple-definition -static
+    UNIVERSAL_FINAL_FLAGS := -fno-exceptions -Os -static-libstdc++ -static-libgcc -Wno-c++26-extensions
+    ifeq ($(KERNEL),Linux)
+        UNIVERSAL_FINAL_FLAGS += -lrt -lpthread
+    else
+        UNIVERSAL_FINAL_FLAGS += -Wl,--allow-multiple-definition -static
+    endif
 endif
 
 # $(call arch-namespace,x86-64-avx2) => Stockfish_x86_64_avx2
 arch-suffix     = $(subst -,_,$(1))
 arch-namespace  = Stockfish_$(call arch-suffix,$(1))
-# Itanium ABI mangled name for Stockfish_<suffix>::main(int, char**)
-arch-mangled    = _ZN$(shell printf %s '$(call arch-namespace,$(1))' | wc -c)$(call arch-namespace,$(1))4mainEiPPc
+# Itanium ABI mangled name for Stockfish_<suffix>::main(int, char**).
+# wc -c pads with spaces on BSD/macOS, so unpad.
+arch-mangled    = _ZN$(shell awk 'BEGIN{print length("$(call arch-namespace,$(1))")}')$(call arch-namespace,$(1))4mainEiPPc
+# Mach-O initializer section name: strip "x86-64" or "x86-64-" and prefix with "_i_"
+# n.b. Mach-O section names are restricted to <=16 chars, hence this naming scheme
+arch-mac-section = _i_$(subst -,_,$(patsubst x86-64,,$(patsubst x86-64-%,%,$(1))))
 
-arch-cxxflags   = --embed-dir=$(CURDIR) -DStockfish=$(call arch-namespace,$(1)) -DUNIVERSAL_BINARY \
-                  -Wl,--defsym=main=$(call arch-mangled,$(1)) -Wno-c++26-extensions
+ifeq ($(KERNEL),Darwin)
+    # ld64 uses -alias instead of --defsym, and macOS has a leading underscore
+    # on all symbols
+    arch-cxxflags = --embed-dir=$(CURDIR) -DStockfish=$(call arch-namespace,$(1)) -DUNIVERSAL_BINARY \
+                    -Wl,-alias,_$(call arch-mangled,$(1)),_main \
+                    -Wno-c++26-extensions -Wno-c23-extensions
+else
+    arch-cxxflags = --embed-dir=$(CURDIR) -DStockfish=$(call arch-namespace,$(1)) -DUNIVERSAL_BINARY \
+                    -Wl,--defsym=main=$(call arch-mangled,$(1)) -Wno-c++26-extensions
+endif
 
 UOBJ_TGT ?= universal-object-pgo
 
@@ -1307,11 +1329,17 @@ $(NET_SENTINEL): | $(TEMP_DIR)
 	@cd $(CURDIR) && $(SHELL) ../scripts/net.sh
 	@touch $@
 
+ifeq ($(KERNEL),Darwin)
+    UNIVERSAL_OBJ_FLAGS := -mmacosx-version-min=10.15 -arch $(arch) $(EXTRACXXFLAGS)
+else
+    UNIVERSAL_OBJ_FLAGS := $(EXTRACXXFLAGS)
+endif
+
 $(NNUE_EMBED_OBJ): $(UNIVERSAL_SRC_DIR)/nnue_embed.cpp $(NET_SENTINEL) | $(TEMP_DIR)
-	$(CXX) -O2 -Wno-c++26-extensions --embed-dir=$(CURDIR) -c $< -o $@
+	$(CXX) -std=c++17 -O2 -Wno-c++26-extensions $(UNIVERSAL_OBJ_FLAGS) --embed-dir=$(CURDIR) -c $< -o $@
 
 $(UNIVERSAL_ENTRY_OBJ): $(UNIVERSAL_SRC_DIR)/entry_x86.cpp | $(TEMP_DIR)
-	$(CXX) -O2 -c $< -o $@
+	$(CXX) -std=c++17 -O2 $(UNIVERSAL_OBJ_FLAGS) -c $< -o $@
 
 # Symlink tracked top-level items from src/ into temp_builds/<arch>/.
 $(TEMP_DIR)/%/.setup: | $(TEMP_DIR)
@@ -1323,6 +1351,19 @@ $(TEMP_DIR)/%/.setup: | $(TEMP_DIR)
 # Per-arch stockfish.o
 .SECONDARY: $(patsubst %,$(TEMP_DIR)/%/.setup,$(UNIVERSAL_ARCHES))
 
+ifeq ($(KERNEL),Darwin)
+$(TEMP_DIR)/%/stockfish.o: $(TEMP_DIR)/%/.setup $(NNUE_EMBED_OBJ) $(NET_SENTINEL)
+	+ENV_CXXFLAGS='$(ENV_CXXFLAGS) $(call arch-cxxflags,$*)' \
+	    $(MAKE) -C $(TEMP_DIR)/$* $(UOBJ_TGT) \
+	        ARCH=$* CXX=$(CXX) \
+	        NNUE_EMBED_OBJ=$(NNUE_EMBED_OBJ)
+# Mach-O has no GNU objcopy, so use ld -r to rename __DATA,__mod_init_func (where the ctors live) to
+# a per-arch section name (prefixed with _i_ -- see above).
+# ld64 auto-rewrites the section type from S_MOD_INIT_FUNC_POINTERS to S_REGULAR in the final link,
+# so no special work needed
+	ld -r -rename_section __DATA __mod_init_func __DATA $(call arch-mac-section,$*) $@ -o $@.tmp
+	mv $@.tmp $@
+else
 $(TEMP_DIR)/%/stockfish.o: $(TEMP_DIR)/%/.setup $(NNUE_EMBED_OBJ) $(NET_SENTINEL)
 	+ENV_CXXFLAGS='$(ENV_CXXFLAGS) $(call arch-cxxflags,$*)' \
 	    $(MAKE) -C $(TEMP_DIR)/$* $(UOBJ_TGT) \
@@ -1336,6 +1377,7 @@ $(TEMP_DIR)/%/stockfish.o: $(TEMP_DIR)/%/.setup $(NNUE_EMBED_OBJ) $(NET_SENTINEL
 	objcopy --rename-section .ctors=$(call arch-suffix,$*)_init $@
 # Make the array inert
 	objcopy --set-section-flags $(call arch-suffix,$*)_init=alloc,data $@
+endif
 
 $(UNIVERSAL_EXE): $(UNIVERSAL_ENTRY_OBJ) $(NNUE_EMBED_OBJ) $(ARCH_OBJS)
 	$(CXX) -o $@ $(UNIVERSAL_ENTRY_OBJ) $(NNUE_EMBED_OBJ) $(ARCH_OBJS) $(UNIVERSAL_FINAL_FLAGS)
