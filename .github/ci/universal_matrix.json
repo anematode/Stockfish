@@ -12,6 +12,12 @@
       "simple_name": "windows",
       "ext": ".exe",
       "archive_ext": "zip"
+    },
+    {
+      "name": "macOS 15 Apple Clang Universal",
+      "os": "macos-15-intel",
+      "simple_name": "macos",
+      "archive_ext": "tar.gz"
     }
   ],
   "binaries": ["x86-64-universal"]
