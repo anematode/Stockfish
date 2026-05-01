@@ -24,6 +24,7 @@
 
 #ifdef __aarch64__
     #include <arm_acle.h>
+    #include <arm_neon.h>
     #define USE_HYPERBOLA_QUINT
 #endif
 
@@ -60,6 +61,24 @@ struct Magic {
 
     Bitboard attacks_bb(Bitboard occupied) const {
         return hyperbola(occupied, mask1) | hyperbola(occupied, mask2);
+    }
+
+    Bitboard attacks_bb2(Bitboard occupied) {
+        uint64x2_t o = vdupq_n_u64(occupied);
+        uint64x2_t mask = vld1q_u64(&mask1);
+        o = vandq_u64(o, mask);
+        uint64x2_t rv = vdupq_n_u64(r), rrv = vdupq_n_u64(rr);
+
+        auto rbit = [] (uint64x2_t v) {
+            // TODO: If we ever add an SVE target this can be one instr
+            return vreinterpretq_u8_u64(vrev64q_u8(
+                vrbitq_u8(vreinterpretq_u64_u8(v))));
+        };
+
+        uint64x2_t fwd = vsubq_u64(o, rv);
+        uint64x2_t rev = vsubq_u64(rbit(o), rrv);
+        uint64x2_t res = vandq_u64(mask, veorq_u64(fwd, rbit(rev)));
+        return Bitboard(vaddvq_s64(vreinterpretq_u64_s64(res)));
     }
 };
 
@@ -129,6 +148,8 @@ struct Magic {
         return attacks[index(occupied)];
     #endif
     }
+
+    Bitboard attacks_bb2(Bitboard occupied) const { return attacks_bb(occupied); }
 };
 
 
@@ -344,8 +365,9 @@ Bitboard attacks_bb(Square s, Bitboard occupied) {
     switch (Pt)
     {
     case BISHOP :
+        return Magics[s][0].attacks_bb(occupied);
     case ROOK :
-        return Magics[s][Pt - BISHOP].attacks_bb(occupied);
+        return Magics[s][1].attacks_bb2(occupied);
     case QUEEN :
         return attacks_bb<BISHOP>(s, occupied) | attacks_bb<ROOK>(s, occupied);
     default :
