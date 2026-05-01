@@ -74,44 +74,6 @@ extern Bitboard BetweenBB[SQUARE_NB][SQUARE_NB];
 extern Bitboard LineBB[SQUARE_NB][SQUARE_NB];
 extern Bitboard RayPassBB[SQUARE_NB][SQUARE_NB];
 
-// Magic holds all magic bitboards relevant data for a single square
-struct Magic {
-    Bitboard mask;
-#ifdef USE_PEXT
-    uint16_t* attacks;
-    Bitboard  pseudoAttacks;
-#else
-    Bitboard* attacks;
-    Bitboard  magic;
-    unsigned  shift;
-#endif
-
-    // Compute the attack's index using the 'magic bitboards' approach
-    unsigned index(Bitboard occupied) const {
-
-#ifdef USE_PEXT
-        return unsigned(pext(occupied, mask));
-#else
-        if (Is64Bit)
-            return unsigned(((occupied & mask) * magic) >> shift);
-
-        unsigned lo = unsigned(occupied) & unsigned(mask);
-        unsigned hi = unsigned(occupied >> 32) & unsigned(mask >> 32);
-        return (lo * unsigned(magic) ^ hi * unsigned(magic >> 32)) >> shift;
-#endif
-    }
-
-    Bitboard attacks_bb(Bitboard occupied) const {
-#ifdef USE_PEXT
-        return pdep(attacks[index(occupied)], pseudoAttacks);
-#else
-        return attacks[index(occupied)];
-#endif
-    }
-};
-
-extern Magic Magics[SQUARE_NB][2];
-
 constexpr Bitboard square_bb(Square s) {
     assert(is_ok(s));
     return 1ULL << s;
@@ -446,21 +408,7 @@ inline Bitboard attacks_bb(Square s, Color c = COLOR_NB) {
 // assuming the board is occupied according to the passed Bitboard.
 // Sliding piece attacks do not continue passed an occupied square.
 template<PieceType Pt>
-inline Bitboard attacks_bb(Square s, Bitboard occupied) {
-
-    assert(Pt != PAWN && is_ok(s));
-
-    switch (Pt)
-    {
-    case BISHOP :
-    case ROOK :
-        return Magics[s][Pt - BISHOP].attacks_bb(occupied);
-    case QUEEN :
-        return attacks_bb<BISHOP>(s, occupied) | attacks_bb<ROOK>(s, occupied);
-    default :
-        return PseudoAttacks[Pt][s];
-    }
-}
+Bitboard attacks_bb(Square s, Bitboard occupied);
 
 // Returns the attacks by the given piece
 // assuming the board is occupied according to the passed Bitboard.

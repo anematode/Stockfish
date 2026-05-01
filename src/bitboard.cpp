@@ -22,7 +22,13 @@
 #include <bitset>
 #include <initializer_list>
 
+#ifdef __aarch64__
+    #include <arm_acle.h>
+    #define USE_HYPERBOLA_QUINT
+#endif
+
 #include "misc.h"
+
 
 namespace Stockfish {
 
@@ -33,13 +39,102 @@ Bitboard LineBB[SQUARE_NB][SQUARE_NB];
 Bitboard BetweenBB[SQUARE_NB][SQUARE_NB];
 Bitboard RayPassBB[SQUARE_NB][SQUARE_NB];
 
-alignas(64) Magic Magics[SQUARE_NB][2];
 
-#ifdef USE_PEXT
-using MagicMask = uint16_t;
+#ifdef USE_HYPERBOLA_QUINT
+// Hyperbola quintessence implementation for ARM, thanks the availability of an
+// efficient bit reversal instruction.
+// See https://www.chessprogramming.org/Hyperbola_Quintessence
+
+
+struct Magic {
+    Bitboard mask1, mask2, r, rr;
+
+    Bitboard hyperbola(Bitboard occupied, Bitboard mask) const {
+        Bitboard o   = occupied & mask;
+        Bitboard fwd = o - r;
+        Bitboard rev = __rbitll(o) - rr;
+        return (fwd ^ __rbitll(rev)) & mask;
+    }
+
+    Bitboard attacks_bb(Bitboard occupied) const {
+        return hyperbola(occupied, mask1) + hyperbola(occupied, mask2);
+    }
+};
+
+static Bitboard line_mask(Square sq, Direction d1, Direction d2) {
+    Bitboard mask = 0, dest;
+    for (Direction d : {d1, d2})
+    {
+        Square s = sq;
+        while ((dest = Bitboards::safe_destination(s, d)))
+        {
+            mask |= dest;
+            s += d;
+        }
+    }
+    return mask;
+}
+
+static void init_magics(Magic magics[][2]) {
+    for (Square s = SQ_A1; s <= SQ_H8; ++s)
+    {
+        Magic& rook = magics[s][ROOK - BISHOP];
+        rook.mask1  = line_mask(s, NORTH, SOUTH);
+        rook.mask2  = line_mask(s, EAST, WEST);
+
+        Magic& bishop = magics[s][BISHOP - BISHOP];
+        bishop.mask1  = line_mask(s, NORTH_EAST, SOUTH_WEST);
+        bishop.mask2  = line_mask(s, NORTH_WEST, SOUTH_EAST);
+
+        rook.r = bishop.r = square_bb(s) * 2;
+        rook.rr = bishop.rr = square_bb(Square(63 - int(s))) * 2;
+    }
+}
+
 #else
+
+// Magic holds all magic bitboards relevant data for a single square
+struct Magic {
+    Bitboard mask;
+    #ifdef USE_PEXT
+    uint16_t* attacks;
+    Bitboard  pseudoAttacks;
+    #else
+    Bitboard* attacks;
+    Bitboard  magic;
+    unsigned  shift;
+    #endif
+
+    // Compute the attack's index using the 'magic bitboards' approach
+    unsigned index(Bitboard occupied) const {
+
+    #ifdef USE_PEXT
+        return unsigned(pext(occupied, mask));
+    #else
+        if (Is64Bit)
+            return unsigned(((occupied & mask) * magic) >> shift);
+
+        unsigned lo = unsigned(occupied) & unsigned(mask);
+        unsigned hi = unsigned(occupied >> 32) & unsigned(mask >> 32);
+        return (lo * unsigned(magic) ^ hi * unsigned(magic >> 32)) >> shift;
+    #endif
+    }
+
+    Bitboard attacks_bb(Bitboard occupied) const {
+    #ifdef USE_PEXT
+        return pdep(attacks[index(occupied)], pseudoAttacks);
+    #else
+        return attacks[index(occupied)];
+    #endif
+    }
+};
+
+
+    #ifdef USE_PEXT
+using MagicMask = uint16_t;
+    #else
 using MagicMask = Bitboard;
-#endif
+    #endif
 
 // Returns an ASCII representation of a bitboard suitable
 // to be printed to standard output. Useful for debugging.
@@ -74,23 +169,23 @@ namespace {
     return result;
 }
 
-// Computes all rook and bishop attacks at startup or optionally, compile time. Magic
-// bitboards are used to look up attacks of sliding pieces. As a reference see
-// https://www.chessprogramming.org/Magic_Bitboards. In particular, here we use
-// the so called "fancy" approach.
-#ifdef USE_COMPTIME_ATTACKS
+    // Computes all rook and bishop attacks at startup or optionally, compile time. Magic
+    // bitboards are used to look up attacks of sliding pieces. As a reference see
+    // https://www.chessprogramming.org/Magic_Bitboards. In particular, here we use
+    // the so called "fancy" approach.
+    #ifdef USE_COMPTIME_ATTACKS
 constexpr
-#endif
+    #endif
   void
   init_magics(PieceType             pt,
               MagicMask             table[],
               Magic                 magics[][2],
               [[maybe_unused]] bool tableAlreadyInit) {
-#if !defined(USE_COMPTIME_ATTACKS)
+    #if !defined(USE_COMPTIME_ATTACKS)
     tableAlreadyInit = false;
-#endif
+    #endif
 
-#ifndef USE_PEXT
+    #ifndef USE_PEXT
     // Optimal PRNG seeds to pick the correct magics in the shortest time
     int seeds[][RANK_NB] = {{8977, 44560, 54343, 38998, 5731, 95205, 104912, 17020},
                             {728, 10316, 55013, 32803, 12281, 15100, 16645, 255}};
@@ -98,7 +193,7 @@ constexpr
     Bitboard occupancy[4096];
     int      epoch[4096] = {}, cnt = 0;
     Bitboard reference[4096] = {};
-#endif
+    #endif
     int size = 0;
 
     for (Square s = SQ_A1; s <= SQ_H8; ++s)
@@ -114,11 +209,11 @@ constexpr
         Magic&   m       = magics[s][pt - BISHOP];
         Bitboard attacks = Bitboards::sliding_attack(pt, s, 0);
         m.mask           = attacks & ~edges;
-#ifdef USE_PEXT
+    #ifdef USE_PEXT
         m.pseudoAttacks = attacks;
-#else
+    #else
         m.shift = (Is64Bit ? 64 : 32) - popcount(m.mask);
-#endif
+    #endif
         // Set the offset for the attacks table of the square. We have individual
         // table sizes for each square with "Fancy Magic Bitboards".
         m.attacks = s == SQ_A1 ? table : magics[s - 1][pt - BISHOP].attacks + size;
@@ -130,7 +225,7 @@ constexpr
         [[maybe_unused]] Bitboard prevSliding = -1;
         do
         {
-#ifdef USE_PEXT
+    #ifdef USE_PEXT
             if (!tableAlreadyInit)
             {
                 Bitboard sliding = Bitboards::sliding_attack(pt, s, b);
@@ -138,16 +233,16 @@ constexpr
                   sliding != prevSliding ? constexpr_pext(sliding, attacks) : m.attacks[size - 1];
                 prevSliding = sliding;
             }
-#else
+    #else
             occupancy[size] = b;
             reference[size] = Bitboards::sliding_attack(pt, s, b);
-#endif
+    #endif
 
             size++;
             b = (b - m.mask) & m.mask;
         } while (b);
 
-#ifndef USE_PEXT
+    #ifndef USE_PEXT
         PRNG rng(seeds[Is64Bit][rank_of(s)]);
 
         // Find a magic for square 's' picking up an (almost) random number
@@ -176,11 +271,11 @@ constexpr
                     break;
             }
         }
-#endif
+    #endif
     }
 }
 
-#if defined(USE_COMPTIME_ATTACKS) && defined(USE_PEXT)
+    #if defined(USE_COMPTIME_ATTACKS) && defined(USE_PEXT)
 constexpr auto RookTable = []() {
     std::array<uint16_t, 0x19000> result{};
     Magic                         magics[64][2] = {};
@@ -193,12 +288,15 @@ constexpr auto BishopTable = []() {
     init_magics(BISHOP, result.data(), magics, false);
     return result;
 }();
-#else
+    #else
 std::array<MagicMask, 0x19000> RookTable;
 std::array<MagicMask, 0x1480>  BishopTable;
-#endif
+    #endif
 }
 
+#endif
+
+alignas(64) Magic Magics[SQUARE_NB][2];
 
 // Initializes various bitboard tables. It is called at
 // startup and relies on global objects to be already zero-initialized.
@@ -211,8 +309,12 @@ void Bitboards::init() {
         for (Square s2 = SQ_A1; s2 <= SQ_H8; ++s2)
             SquareDistance[s1][s2] = std::max(distance<File>(s1, s2), distance<Rank>(s1, s2));
 
+#ifdef USE_HYPERBOLA_QUINT
+    init_magics(Magics);
+#else
     init_magics(ROOK, const_cast<MagicMask*>(RookTable.data()), Magics, true);
     init_magics(BISHOP, const_cast<MagicMask*>(BishopTable.data()), Magics, true);
+#endif
 
     for (Square s1 = SQ_A1; s1 <= SQ_H8; ++s1)
     {
@@ -231,5 +333,29 @@ void Bitboards::init() {
             }
     }
 }
+
+template<PieceType Pt>
+Bitboard attacks_bb(Square s, Bitboard occupied) {
+    assert(Pt != PAWN && is_ok(s));
+
+    switch (Pt)
+    {
+    case BISHOP :
+    case ROOK :
+        return Magics[s][Pt - BISHOP].attacks_bb(occupied);
+    case QUEEN :
+        return attacks_bb<BISHOP>(s, occupied) | attacks_bb<ROOK>(s, occupied);
+    default :
+        return PseudoAttacks[Pt][s];
+    }
+}
+
+// Explicit template instantiations
+template Bitboard attacks_bb<PAWN>(Square s, Bitboard occupied);
+template Bitboard attacks_bb<KNIGHT>(Square s, Bitboard occupied);
+template Bitboard attacks_bb<BISHOP>(Square s, Bitboard occupied);
+template Bitboard attacks_bb<ROOK>(Square s, Bitboard occupied);
+template Bitboard attacks_bb<QUEEN>(Square s, Bitboard occupied);
+template Bitboard attacks_bb<KING>(Square s, Bitboard occupied);
 
 }  // namespace Stockfish
