@@ -70,9 +70,7 @@ struct Magic {
         uint64x2_t rv = vdupq_n_u64(r), rrv = vdupq_n_u64(rr);
 
         auto rbit = [] (uint64x2_t v) {
-            // TODO: If we ever add an SVE target this can be one instr
-            return vreinterpretq_u8_u64(vrev64q_u8(
-                vrbitq_u8(vreinterpretq_u64_u8(v))));
+            return vreinterpretq_u8_u64(vrev64q_u8(vreinterpretq_u64_u8(v)));
         };
 
         uint64x2_t fwd = vsubq_u64(o, rv);
@@ -365,9 +363,9 @@ Bitboard attacks_bb(Square s, Bitboard occupied) {
     switch (Pt)
     {
     case BISHOP :
-        return Magics[s][0].attacks_bb(occupied);
+        return Magics[s][0].attacks_bb2(occupied);
     case ROOK :
-        return Magics[s][1].attacks_bb2(occupied);
+        return Magics[s][1].attacks_bb(occupied);
     case QUEEN :
         return attacks_bb<BISHOP>(s, occupied) | attacks_bb<ROOK>(s, occupied);
     default :
