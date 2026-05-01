@@ -29,6 +29,10 @@
 #include <initializer_list>
 #include <array>
 
+#if defined(__aarch64__)
+    #include <arm_acle.h>
+#endif
+
 #include "types.h"
 
 namespace Stockfish {
@@ -74,39 +78,18 @@ extern Bitboard BetweenBB[SQUARE_NB][SQUARE_NB];
 extern Bitboard LineBB[SQUARE_NB][SQUARE_NB];
 extern Bitboard RayPassBB[SQUARE_NB][SQUARE_NB];
 
-// Magic holds all magic bitboards relevant data for a single square
 struct Magic {
-    Bitboard mask;
-#ifdef USE_PEXT
-    uint16_t* attacks;
-    Bitboard  pseudoAttacks;
-#else
-    Bitboard* attacks;
-    Bitboard  magic;
-    unsigned  shift;
-#endif
+    Bitboard mask1, mask2, r, rr;
 
-    // Compute the attack's index using the 'magic bitboards' approach
-    unsigned index(Bitboard occupied) const {
-
-#ifdef USE_PEXT
-        return unsigned(pext(occupied, mask));
-#else
-        if (Is64Bit)
-            return unsigned(((occupied & mask) * magic) >> shift);
-
-        unsigned lo = unsigned(occupied) & unsigned(mask);
-        unsigned hi = unsigned(occupied >> 32) & unsigned(mask >> 32);
-        return (lo * unsigned(magic) ^ hi * unsigned(magic >> 32)) >> shift;
-#endif
+    Bitboard hyperbola(Bitboard occupied, Bitboard mask) const {
+        Bitboard o = occupied & mask;
+        Bitboard fwd = o - r;
+        Bitboard rev = __rbitll(o) - rr;
+        return (fwd ^ __rbitll(rev)) & mask;
     }
 
     Bitboard attacks_bb(Bitboard occupied) const {
-#ifdef USE_PEXT
-        return pdep(attacks[index(occupied)], pseudoAttacks);
-#else
-        return attacks[index(occupied)];
-#endif
+        return hyperbola(occupied, mask1) + hyperbola(occupied, mask2);
     }
 };
 
