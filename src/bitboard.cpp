@@ -353,7 +353,6 @@ Bitboard attacks_bb(Square s, Bitboard occupied) {
 }
 
 // Explicit template instantiations
-template Bitboard attacks_bb<PAWN>(Square s, Bitboard occupied);
 template Bitboard attacks_bb<KNIGHT>(Square s, Bitboard occupied);
 template Bitboard attacks_bb<BISHOP>(Square s, Bitboard occupied);
 template Bitboard attacks_bb<ROOK>(Square s, Bitboard occupied);
