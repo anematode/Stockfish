@@ -87,19 +87,18 @@ struct Magic {
 #endif
 
     // Compute the attack's index using the 'magic bitboards' approach
-    unsigned index(Bitboard occupied) const {
-
 #ifdef USE_PEXT
-        return unsigned(pext(occupied, mask));
+    unsigned index(Bitboard occupied) const { return unsigned(pext(occupied, mask)); }
 #else
+    constexpr unsigned index(Bitboard occupied) const {
         if (Is64Bit)
             return unsigned(((occupied & mask) * magic) >> shift);
 
         unsigned lo = unsigned(occupied) & unsigned(mask);
         unsigned hi = unsigned(occupied >> 32) & unsigned(mask >> 32);
         return (lo * unsigned(magic) ^ hi * unsigned(magic >> 32)) >> shift;
-#endif
     }
+#endif
 
     Bitboard attacks_bb(Bitboard occupied) const {
 #ifdef USE_PEXT
