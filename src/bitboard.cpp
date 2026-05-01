@@ -138,27 +138,6 @@ using MagicMask = uint16_t;
 using MagicMask = Bitboard;
     #endif
 
-// Returns an ASCII representation of a bitboard suitable
-// to be printed to standard output. Useful for debugging.
-std::string Bitboards::pretty(Bitboard b) {
-
-    std::string s = "+---+---+---+---+---+---+---+---+\n";
-
-    for (Rank r = RANK_8;; --r)
-    {
-        for (File f = FILE_A; f <= FILE_H; ++f)
-            s += b & make_square(f, r) ? "| X " : "|   ";
-
-        s += "| " + std::to_string(1 + r) + "\n+---+---+---+---+---+---+---+---+\n";
-
-        if (r == RANK_1)
-            break;
-    }
-    s += "  a   b   c   d   e   f   g   h\n";
-
-    return s;
-}
-
 namespace {
 [[maybe_unused]] constexpr Bitboard constexpr_pext(Bitboard b, Bitboard m) {
     Bitboard result = 0, bit = 0;
@@ -299,6 +278,28 @@ std::array<MagicMask, 0x1480>  BishopTable;
 #endif
 
 alignas(64) Magic Magics[SQUARE_NB][2];
+
+// Returns an ASCII representation of a bitboard suitable
+// to be printed to standard output. Useful for debugging.
+std::string Bitboards::pretty(Bitboard b) {
+
+    std::string s = "+---+---+---+---+---+---+---+---+\n";
+
+    for (Rank r = RANK_8;; --r)
+    {
+        for (File f = FILE_A; f <= FILE_H; ++f)
+            s += b & make_square(f, r) ? "| X " : "|   ";
+
+        s += "| " + std::to_string(1 + r) + "\n+---+---+---+---+---+---+---+---+\n";
+
+        if (r == RANK_1)
+            break;
+    }
+    s += "  a   b   c   d   e   f   g   h\n";
+
+    return s;
+}
+
 
 // Initializes various bitboard tables. It is called at
 // startup and relies on global objects to be already zero-initialized.
