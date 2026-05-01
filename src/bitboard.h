@@ -78,22 +78,34 @@ extern Bitboard BetweenBB[SQUARE_NB][SQUARE_NB];
 extern Bitboard LineBB[SQUARE_NB][SQUARE_NB];
 extern Bitboard RayPassBB[SQUARE_NB][SQUARE_NB];
 
+inline __m256i rev64(__m256i c) {
+    __m256i e = _mm256_set_epi8(8, 9, 10, 11, 12, 13, 14, 15, 0, 1, 2, 3, 4, 5, 6, 7,
+        8, 9, 10, 11, 12, 13, 14, 15, 0, 1, 2, 3, 4, 5, 6, 7);
+    __m256i b = _mm256_shuffle_epi8(c, e);
+
+    __m256i m = _mm256_set1_epi64x(0x8040201008040201ULL);
+    return _mm256_gf2p8affine_epi64_epi8(b, m, 0);
+}
+
 struct Magic {
-    Bitboard mask1, mask2, r, rr;
+    Bitboard mask1, mask2, mask3, mask4, r, rr, _pad1, _pad2;
 
-    Bitboard hyperbola(Bitboard occupied, Bitboard mask) const {
-        Bitboard o = occupied & mask;
-        Bitboard fwd = o - r;
-        Bitboard rev = __rbitll(o) - rr;
-        return (fwd ^ __rbitll(rev)) & mask;
-    }
+    std::pair<Bitboard, Bitboard> both_attacks_bb(Bitboard occupied) const {
+        __m256i masks = _mm256_loadu_si256((const __m256i*) this);
+        __m256i o = _mm256_and_si256(_mm256_set1_epi64x(occupied), masks);
 
-    Bitboard attacks_bb(Bitboard occupied) const {
-        return hyperbola(occupied, mask1) + hyperbola(occupied, mask2);
+        __m256i fwd = _mm256_sub_epi64(o, _mm256_set1_epi64x(r));
+        __m256i rev = _mm256_sub_epi64(rev64(o), _mm256_set1_epi64x(rr));
+
+        __m256i results = _mm256_and_si256(_mm256_xor_si256(fwd, rev64(rev)), masks);
+        __m128i hi = _mm256_extracti128_si256(results, 1);
+        __m128i lo = _mm256_castsi256_si128(results);
+        __m128i narrowed = _mm_add_epi64(lo, hi);
+        return { _mm_extract_epi64(narrowed, 1), _mm_cvtsi128_si64(narrowed)};
     }
 };
 
-extern Magic Magics[SQUARE_NB][2];
+extern Magic Magics[SQUARE_NB];
 
 constexpr Bitboard square_bb(Square s) {
     assert(is_ok(s));
@@ -433,11 +445,13 @@ inline Bitboard attacks_bb(Square s, Bitboard occupied) {
 
     assert(Pt != PAWN && is_ok(s));
 
+    const auto [ bishop, rook ] = Magics[s].both_attacks_bb(occupied);
+
     switch (Pt)
     {
     case BISHOP :
     case ROOK :
-        return Magics[s][Pt - BISHOP].attacks_bb(occupied);
+        return Pt == ROOK ? rook : bishop;
     case QUEEN :
         return attacks_bb<BISHOP>(s, occupied) | attacks_bb<ROOK>(s, occupied);
     default :

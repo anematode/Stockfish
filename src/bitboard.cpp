@@ -33,7 +33,7 @@ Bitboard LineBB[SQUARE_NB][SQUARE_NB];
 Bitboard BetweenBB[SQUARE_NB][SQUARE_NB];
 Bitboard RayPassBB[SQUARE_NB][SQUARE_NB];
 
-alignas(64) Magic Magics[SQUARE_NB][2];
+alignas(64) Magic Magics[SQUARE_NB];
 
 // Returns an ASCII representation of a bitboard suitable
 // to be printed to standard output. Useful for debugging.
@@ -72,19 +72,16 @@ Bitboard line_mask(Square sq, Direction d1, Direction d2) {
     return mask;
 }
 
-void init_magics(Magic magics[][2]) {
+void init_magics(Magic magics[]) {
     for (Square s = SQ_A1; s <= SQ_H8; ++s)
     {
-        Magic& rook  = magics[s][ROOK - BISHOP];
-        rook.mask1   = line_mask(s, NORTH, SOUTH);
-        rook.mask2   = line_mask(s, EAST, WEST);
-
-        Magic& bishop = magics[s][BISHOP - BISHOP];
-        bishop.mask1  = line_mask(s, NORTH_EAST, SOUTH_WEST);
-        bishop.mask2  = line_mask(s, NORTH_WEST, SOUTH_EAST);
-
-        rook.r = bishop.r = square_bb(s) * 2;
-        rook.rr = bishop.rr = square_bb(Square(63 - int(s))) * 2;
+        Magic& magic  = magics[s];
+        magic.mask1   = line_mask(s, NORTH, SOUTH);
+        magic.mask2  = line_mask(s, NORTH_EAST, SOUTH_WEST);
+        magic.mask3   = line_mask(s, EAST, WEST);
+        magic.mask4  = line_mask(s, NORTH_WEST, SOUTH_EAST);
+        magic.r = square_bb(s) * 2;
+        magic.rr = square_bb(Square(63 - int(s))) * 2;
     }
 }
 }
