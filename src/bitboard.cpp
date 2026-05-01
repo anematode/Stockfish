@@ -45,9 +45,11 @@ Bitboard RayPassBB[SQUARE_NB][SQUARE_NB];
 // efficient bit reversal instruction.
 // See https://www.chessprogramming.org/Hyperbola_Quintessence
 
-
 struct Magic {
-    Bitboard mask1, mask2, r, rr;
+    // For rooks: file attacks, rank attacks. For bishops: diagonal/antidiagonal
+    Bitboard mask1, mask2;
+    // Precomputed 2 * square_bb(sq), 2 * reverse(square_bb(sq))
+    Bitboard r, rr;
 
     Bitboard hyperbola(Bitboard occupied, Bitboard mask) const {
         Bitboard o   = occupied & mask;
@@ -57,7 +59,7 @@ struct Magic {
     }
 
     Bitboard attacks_bb(Bitboard occupied) const {
-        return hyperbola(occupied, mask1) + hyperbola(occupied, mask2);
+        return hyperbola(occupied, mask1) | hyperbola(occupied, mask2);
     }
 };
 
