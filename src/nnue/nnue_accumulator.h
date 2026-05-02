@@ -134,7 +134,8 @@ class AccumulatorStack {
     void evaluate_side(Color                     perspective,
                        const Position&           pos,
                        const FeatureTransformer& featureTransformer,
-                       AccumulatorCaches&        cache) noexcept;
+                       // Silence spurious warning on GCC 10
+                       [[maybe_unused]] AccumulatorCaches& cache) noexcept;
 
     template<typename FeatureSet>
     [[nodiscard]] std::size_t find_last_usable_accumulator(Color perspective) const noexcept;
