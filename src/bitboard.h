@@ -31,6 +31,11 @@
 
 #include "types.h"
 
+#ifdef __aarch64__
+    #include <arm_acle.h>
+    #define USE_HYPERBOLA_QUINT
+#endif
+
 namespace Stockfish {
 
 namespace Bitboards {
@@ -73,11 +78,6 @@ extern uint8_t SquareDistance[SQUARE_NB][SQUARE_NB];
 extern Bitboard BetweenBB[SQUARE_NB][SQUARE_NB];
 extern Bitboard LineBB[SQUARE_NB][SQUARE_NB];
 extern Bitboard RayPassBB[SQUARE_NB][SQUARE_NB];
-
-#ifdef __aarch64__
-    #include <arm_acle.h>
-    #define USE_HYPERBOLA_QUINT
-#endif
 
 #ifdef USE_HYPERBOLA_QUINT
 // Hyperbola quintessence implementation for ARM, thanks to the availability of an
