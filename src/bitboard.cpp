@@ -70,13 +70,13 @@ struct Magic {
         uint64x2_t rv = vdupq_n_u64(r), rrv = vdupq_n_u64(rr);
 
         auto rbit = [] (uint64x2_t v) {
-            return vreinterpretq_u8_u64(vrev64q_u8(vreinterpretq_u64_u8(v)));
+            return vreinterpretq_u64_u8(vrev64q_u8(vreinterpretq_u8_u64(v)));
         };
 
         uint64x2_t fwd = vsubq_u64(o, rv);
         uint64x2_t rev = vsubq_u64(rbit(o), rrv);
         uint64x2_t res = vandq_u64(mask, veorq_u64(fwd, rbit(rev)));
-        return Bitboard(vaddvq_s64(vreinterpretq_u64_s64(res)));
+        return Bitboard(vaddvq_s64(vreinterpretq_s64_u64(res)));
     }
 };
 
