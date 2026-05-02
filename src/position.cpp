@@ -478,8 +478,8 @@ void Position::set_check_info() const {
 
     st->checkSquares[PAWN]   = attacks_bb<PAWN>(ksq, ~sideToMove);
     st->checkSquares[KNIGHT] = attacks_bb<KNIGHT>(ksq);
-    st->checkSquares[BISHOP] = attacks_bb<BISHOP>(ksq, pieces());
-    st->checkSquares[ROOK]   = attacks_bb<ROOK>(ksq, pieces());
+    st->checkSquares[BISHOP] = attacks_bb<BISHOP, false>(ksq, pieces());
+    st->checkSquares[ROOK]   = attacks_bb<ROOK, false>(ksq, pieces());
     st->checkSquares[QUEEN]  = st->checkSquares[BISHOP] | st->checkSquares[ROOK];
     st->checkSquares[KING]   = 0;
 }
@@ -646,8 +646,8 @@ void Position::update_slider_blockers(Color c) const {
 // Slider attacks use the occupied bitboard to indicate occupancy.
 Bitboard Position::attackers_to(Square s, Bitboard occupied) const {
 
-    return (attacks_bb<ROOK>(s, occupied) & pieces(ROOK, QUEEN))
-         | (attacks_bb<BISHOP>(s, occupied) & pieces(BISHOP, QUEEN))
+    return (attacks_bb<ROOK, false>(s, occupied) & pieces(ROOK, QUEEN))
+         | (attacks_bb<BISHOP, false>(s, occupied) & pieces(BISHOP, QUEEN))
          | (attacks_bb<PAWN>(s, BLACK) & pieces(WHITE, PAWN))
          | (attacks_bb<PAWN>(s, WHITE) & pieces(BLACK, PAWN))
          | (attacks_bb<KNIGHT>(s) & pieces(KNIGHT)) | (attacks_bb<KING>(s) & pieces(KING));
@@ -655,8 +655,8 @@ Bitboard Position::attackers_to(Square s, Bitboard occupied) const {
 
 bool Position::attackers_to_exist(Square s, Bitboard occupied, Color c) const {
 
-    return (attacks_bb<ROOK>(s, occupied) & pieces(c, ROOK, QUEEN))
-        || (attacks_bb<BISHOP>(s, occupied) & pieces(c, BISHOP, QUEEN))
+    return (attacks_bb<ROOK, false>(s, occupied) & pieces(c, ROOK, QUEEN))
+        || (attacks_bb<BISHOP, false>(s, occupied) & pieces(c, BISHOP, QUEEN))
         || (attacks_bb<PAWN>(s, ~c) & pieces(c, PAWN))
         || (attacks_bb<KNIGHT>(s) & pieces(c, KNIGHT)) || (attacks_bb<KING>(s) & pieces(c, KING));
 }
@@ -1203,8 +1203,8 @@ void Position::update_piece_threats(Piece                     pc,
     const Bitboard occupied     = pieces();
     const Bitboard rookQueens   = pieces(ROOK, QUEEN);
     const Bitboard bishopQueens = pieces(BISHOP, QUEEN);
-    const Bitboard rAttacks     = attacks_bb<ROOK>(s, occupied);
-    const Bitboard bAttacks     = attacks_bb<BISHOP>(s, occupied);
+    const Bitboard rAttacks     = attacks_bb<ROOK, false>(s, occupied);
+    const Bitboard bAttacks     = attacks_bb<BISHOP, false>(s, occupied);
     const Bitboard kings        = pieces(KING);
     Bitboard       occupiedNoK  = occupied ^ kings;
 
@@ -1486,8 +1486,8 @@ bool Position::see_ge(Move m, int threshold) const {
             assert(swap >= res);
             occupied ^= least_significant_square_bb(bb);
 
-            attackers |= (attacks_bb<BISHOP>(to, occupied) & pieces(BISHOP, QUEEN))
-                       | (attacks_bb<ROOK>(to, occupied) & pieces(ROOK, QUEEN));
+            attackers |= (attacks_bb<BISHOP, false>(to, occupied) & pieces(BISHOP, QUEEN))
+                       | (attacks_bb<ROOK, false>(to, occupied) & pieces(ROOK, QUEEN));
         }
 
         else  // KING

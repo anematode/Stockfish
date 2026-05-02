@@ -33,6 +33,7 @@
 
 #ifdef __aarch64__
     #include <arm_acle.h>
+    #include <arm_neon.h>
     #define USE_HYPERBOLA_QUINT
 #endif
 
@@ -98,6 +99,23 @@ struct Magic {
 
     Bitboard attacks_bb(Bitboard occupied) const {
         return hyperbola(occupied, mask1) | hyperbola(occupied, mask2);
+    }
+
+    Bitboard attacks_bb2(Bitboard occupied) { // bishop only
+        const uint64x2_t mask = vld1q_u64(&mask1);
+        const uint64x2_t rv = vdupq_n_u64(r), rrv = vdupq_n_u64(rr);
+
+        uint64x2_t o = vdupq_n_u64(occupied);
+        o = vandq_u64(o, mask);
+
+        auto rbit = [] (uint64x2_t v) {
+            return vreinterpretq_u64_u8(vrev64q_u8(vreinterpretq_u8_u64(v)));
+        };
+
+        uint64x2_t fwd = vsubq_u64(o, rv);
+        uint64x2_t rev = vsubq_u64(rbit(o), rrv);
+        uint64x2_t res = vandq_u64(mask, veorq_u64(fwd, rbit(rev)));
+        return Bitboard(vaddvq_s64(vreinterpretq_s64_u64(res)));
     }
 };
 #else
@@ -473,7 +491,7 @@ inline Bitboard attacks_bb(Square s, Color c = COLOR_NB) {
 // Returns the attacks by the given piece
 // assuming the board is occupied according to the passed Bitboard.
 // Sliding piece attacks do not continue passed an occupied square.
-template<PieceType Pt>
+template<PieceType Pt, bool Singular = true>
 inline Bitboard attacks_bb(Square s, Bitboard occupied) {
 
     assert(Pt != PAWN && is_ok(s));
@@ -481,10 +499,11 @@ inline Bitboard attacks_bb(Square s, Bitboard occupied) {
     switch (Pt)
     {
     case BISHOP :
+        return Singular ? Magics[s][0].attacks_bb(occupied) : Magics[s][0].attacks_bb2(occupied);
     case ROOK :
-        return Magics[s][Pt - BISHOP].attacks_bb(occupied);
+        return Magics[s][1].attacks_bb(occupied);
     case QUEEN :
-        return attacks_bb<BISHOP>(s, occupied) | attacks_bb<ROOK>(s, occupied);
+        return Magics[s][0].attacks_bb2(occupied) | Magics[s][1].attacks_bb(occupied);
     default :
         return PseudoAttacks[Pt][s];
     }
@@ -493,6 +512,7 @@ inline Bitboard attacks_bb(Square s, Bitboard occupied) {
 // Returns the attacks by the given piece
 // assuming the board is occupied according to the passed Bitboard.
 // Sliding piece attacks do not continue passed an occupied square.
+template <bool Singular = true>
 inline Bitboard attacks_bb(PieceType pt, Square s, Bitboard occupied) {
 
     assert(pt != PAWN && is_ok(s));
@@ -500,11 +520,11 @@ inline Bitboard attacks_bb(PieceType pt, Square s, Bitboard occupied) {
     switch (pt)
     {
     case BISHOP :
-        return attacks_bb<BISHOP>(s, occupied);
+        return attacks_bb<BISHOP, Singular>(s, occupied);
     case ROOK :
-        return attacks_bb<ROOK>(s, occupied);
+        return attacks_bb<ROOK, Singular>(s, occupied);
     case QUEEN :
-        return attacks_bb<BISHOP>(s, occupied) | attacks_bb<ROOK>(s, occupied);
+        return attacks_bb<BISHOP, false>(s, occupied) | attacks_bb<ROOK, false>(s, occupied);
     default :
         return PseudoAttacks[pt][s];
     }
@@ -512,7 +532,7 @@ inline Bitboard attacks_bb(PieceType pt, Square s, Bitboard occupied) {
 
 inline Bitboard attacks_bb(Piece pc, Square s, Bitboard occupied) {
     return type_of(pc) == PAWN ? PseudoAttacks[color_of(pc)][s]
-                               : attacks_bb(type_of(pc), s, occupied);
+                               : attacks_bb<false>(type_of(pc), s, occupied);
 }
 
 }  // namespace Stockfish
