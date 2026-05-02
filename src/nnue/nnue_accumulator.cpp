@@ -324,10 +324,11 @@ struct AccumulatorUpdateContext {
                 auto*        column = reinterpret_cast<const vec_i8_t*>(&threatWeights[offset]);
 
     #ifdef USE_NEON
-                for (IndexType k = 0; k < Tiling::NumRegs; k += 2)
-                {
-                    acc[k]     = vsubw_s8(acc[k], vget_low_s8(column[k / 2]));
-                    acc[k + 1] = vsubw_high_s8(acc[k + 1], column[k / 2]);
+                asm ("" : "+r"(column));
+                for (IndexType k = 0; k < Tiling::NumRegs; k += 2, ++column) {
+                    int8x16_t c = vld1q_s8((const int8_t*) column);
+                    acc[k]     = vsubw_s8(acc[k], vget_low_s8(c));
+                    acc[k + 1] = vsubw_high_s8(acc[k + 1], c);
                 }
     #else
                 for (IndexType k = 0; k < Tiling::NumRegs; ++k)
@@ -342,10 +343,12 @@ struct AccumulatorUpdateContext {
                 auto*        column = reinterpret_cast<const vec_i8_t*>(&threatWeights[offset]);
 
     #ifdef USE_NEON
-                for (IndexType k = 0; k < Tiling::NumRegs; k += 2)
+                asm ("" : "+r"(column));
+                for (IndexType k = 0; k < Tiling::NumRegs; k += 2, ++column)
                 {
-                    acc[k]     = vaddw_s8(acc[k], vget_low_s8(column[k / 2]));
-                    acc[k + 1] = vaddw_high_s8(acc[k + 1], column[k / 2]);
+                    int8x16_t c = vld1q_s8((const int8_t*) column);
+                    acc[k]     = vaddw_s8(acc[k], vget_low_s8(c));
+                    acc[k + 1] = vaddw_high_s8(acc[k + 1], c);
                 }
     #else
                 for (IndexType k = 0; k < Tiling::NumRegs; ++k)
