@@ -22,13 +22,7 @@
 #include <bitset>
 #include <initializer_list>
 
-#ifdef __aarch64__
-    #include <arm_acle.h>
-    #define USE_HYPERBOLA_QUINT
-#endif
-
 #include "misc.h"
-
 
 namespace Stockfish {
 
@@ -39,30 +33,9 @@ Bitboard LineBB[SQUARE_NB][SQUARE_NB];
 Bitboard BetweenBB[SQUARE_NB][SQUARE_NB];
 Bitboard RayPassBB[SQUARE_NB][SQUARE_NB];
 
+alignas(64) Magic Magics[SQUARE_NB][2];
 
 #ifdef USE_HYPERBOLA_QUINT
-// Hyperbola quintessence implementation for ARM, thanks the availability of an
-// efficient bit reversal instruction.
-// See https://www.chessprogramming.org/Hyperbola_Quintessence
-
-struct Magic {
-    // For rooks: file attacks, rank attacks. For bishops: diagonal/antidiagonal
-    Bitboard mask1, mask2;
-    // Precomputed 2 * square_bb(sq), 2 * reverse(square_bb(sq))
-    Bitboard r, rr;
-
-    Bitboard hyperbola(Bitboard occupied, Bitboard mask) const {
-        Bitboard o   = occupied & mask;
-        Bitboard fwd = o - r;
-        Bitboard rev = __rbitll(o) - rr;
-        return (fwd ^ __rbitll(rev)) & mask;
-    }
-
-    Bitboard attacks_bb(Bitboard occupied) const {
-        return hyperbola(occupied, mask1) | hyperbola(occupied, mask2);
-    }
-};
-
 static Bitboard line_mask(Square sq, Direction d1, Direction d2) {
     Bitboard mask = 0, dest;
     for (Direction d : {d1, d2})
@@ -94,43 +67,6 @@ static void init_magics(Magic magics[][2]) {
 }
 
 #else
-
-// Magic holds all magic bitboards relevant data for a single square
-struct Magic {
-    Bitboard mask;
-    #ifdef USE_PEXT
-    uint16_t* attacks;
-    Bitboard  pseudoAttacks;
-    #else
-    Bitboard* attacks;
-    Bitboard  magic;
-    unsigned  shift;
-    #endif
-
-    // Compute the attack's index using the 'magic bitboards' approach
-    unsigned index(Bitboard occupied) const {
-
-    #ifdef USE_PEXT
-        return unsigned(pext(occupied, mask));
-    #else
-        if (Is64Bit)
-            return unsigned(((occupied & mask) * magic) >> shift);
-
-        unsigned lo = unsigned(occupied) & unsigned(mask);
-        unsigned hi = unsigned(occupied >> 32) & unsigned(mask >> 32);
-        return (lo * unsigned(magic) ^ hi * unsigned(magic >> 32)) >> shift;
-    #endif
-    }
-
-    Bitboard attacks_bb(Bitboard occupied) const {
-    #ifdef USE_PEXT
-        return pdep(attacks[index(occupied)], pseudoAttacks);
-    #else
-        return attacks[index(occupied)];
-    #endif
-    }
-};
-
 
     #ifdef USE_PEXT
 using MagicMask = uint16_t;
@@ -277,8 +213,6 @@ std::array<MagicMask, 0x1480>  BishopTable;
 
 #endif
 
-alignas(64) Magic Magics[SQUARE_NB][2];
-
 // Returns an ASCII representation of a bitboard suitable
 // to be printed to standard output. Useful for debugging.
 std::string Bitboards::pretty(Bitboard b) {
@@ -336,28 +270,5 @@ void Bitboards::init() {
             }
     }
 }
-
-template<PieceType Pt>
-Bitboard attacks_bb(Square s, Bitboard occupied) {
-    assert(Pt != PAWN && is_ok(s));
-
-    switch (Pt)
-    {
-    case BISHOP :
-    case ROOK :
-        return Magics[s][Pt - BISHOP].attacks_bb(occupied);
-    case QUEEN :
-        return attacks_bb<BISHOP>(s, occupied) | attacks_bb<ROOK>(s, occupied);
-    default :
-        return PseudoAttacks[Pt][s];
-    }
-}
-
-// Explicit template instantiations
-template Bitboard attacks_bb<KNIGHT>(Square s, Bitboard occupied);
-template Bitboard attacks_bb<BISHOP>(Square s, Bitboard occupied);
-template Bitboard attacks_bb<ROOK>(Square s, Bitboard occupied);
-template Bitboard attacks_bb<QUEEN>(Square s, Bitboard occupied);
-template Bitboard attacks_bb<KING>(Square s, Bitboard occupied);
 
 }  // namespace Stockfish

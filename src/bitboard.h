@@ -74,6 +74,72 @@ extern Bitboard BetweenBB[SQUARE_NB][SQUARE_NB];
 extern Bitboard LineBB[SQUARE_NB][SQUARE_NB];
 extern Bitboard RayPassBB[SQUARE_NB][SQUARE_NB];
 
+#ifdef __aarch64__
+    #include <arm_acle.h>
+    #define USE_HYPERBOLA_QUINT
+#endif
+
+#ifdef USE_HYPERBOLA_QUINT
+// Hyperbola quintessence implementation for ARM, thanks to the availability of an
+// efficient bit reversal instruction.
+// See https://www.chessprogramming.org/Hyperbola_Quintessence
+struct Magic {
+    // For rooks: file attacks, rank attacks. For bishops: diagonal/antidiagonal
+    Bitboard mask1, mask2;
+    // Precomputed 2 * square_bb(sq), 2 * reverse(square_bb(sq))
+    Bitboard r, rr;
+
+    Bitboard hyperbola(Bitboard occupied, Bitboard mask) const {
+        Bitboard o   = occupied & mask;
+        Bitboard fwd = o - r;
+        Bitboard rev = __rbitll(o) - rr;
+        return (fwd ^ __rbitll(rev)) & mask;
+    }
+
+    Bitboard attacks_bb(Bitboard occupied) const {
+        return hyperbola(occupied, mask1) | hyperbola(occupied, mask2);
+    }
+};
+#else
+// Magic holds all magic bitboards relevant data for a single square
+struct Magic {
+    Bitboard mask;
+    #ifdef USE_PEXT
+    uint16_t* attacks;
+    Bitboard  pseudoAttacks;
+    #else
+    Bitboard* attacks;
+    Bitboard  magic;
+    unsigned  shift;
+    #endif
+
+    // Compute the attack's index using the 'magic bitboards' approach
+    unsigned index(Bitboard occupied) const {
+
+    #ifdef USE_PEXT
+        return unsigned(pext(occupied, mask));
+    #else
+        if (Is64Bit)
+            return unsigned(((occupied & mask) * magic) >> shift);
+
+        unsigned lo = unsigned(occupied) & unsigned(mask);
+        unsigned hi = unsigned(occupied >> 32) & unsigned(mask >> 32);
+        return (lo * unsigned(magic) ^ hi * unsigned(magic >> 32)) >> shift;
+    #endif
+    }
+
+    Bitboard attacks_bb(Bitboard occupied) const {
+    #ifdef USE_PEXT
+        return pdep(attacks[index(occupied)], pseudoAttacks);
+    #else
+        return attacks[index(occupied)];
+    #endif
+    }
+};
+#endif
+
+extern Magic Magics[SQUARE_NB][2];
+
 constexpr Bitboard square_bb(Square s) {
     assert(is_ok(s));
     return 1ULL << s;
@@ -408,7 +474,21 @@ inline Bitboard attacks_bb(Square s, Color c = COLOR_NB) {
 // assuming the board is occupied according to the passed Bitboard.
 // Sliding piece attacks do not continue passed an occupied square.
 template<PieceType Pt>
-Bitboard attacks_bb(Square s, Bitboard occupied);
+inline Bitboard attacks_bb(Square s, Bitboard occupied) {
+
+    assert(Pt != PAWN && is_ok(s));
+
+    switch (Pt)
+    {
+    case BISHOP :
+    case ROOK :
+        return Magics[s][Pt - BISHOP].attacks_bb(occupied);
+    case QUEEN :
+        return attacks_bb<BISHOP>(s, occupied) | attacks_bb<ROOK>(s, occupied);
+    default :
+        return PseudoAttacks[Pt][s];
+    }
+}
 
 // Returns the attacks by the given piece
 // assuming the board is occupied according to the passed Bitboard.
