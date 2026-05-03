@@ -28,7 +28,7 @@
 #include <string>
 #include <initializer_list>
 #include <array>
-
+#include <immintrin.h>
 #include "types.h"
 
 namespace Stockfish {
@@ -73,6 +73,67 @@ extern uint8_t SquareDistance[SQUARE_NB][SQUARE_NB];
 extern Bitboard BetweenBB[SQUARE_NB][SQUARE_NB];
 extern Bitboard LineBB[SQUARE_NB][SQUARE_NB];
 extern Bitboard RayPassBB[SQUARE_NB][SQUARE_NB];
+
+
+struct HypMagic {
+    Bitboard mask1, mask2, mask3, mask4, r, rr;
+
+    struct AttacksPair {
+        Bitboard bishop, rook;
+
+        Bitboard queen() const {
+            return rook + bishop;
+        }
+    };
+
+    struct Accessor {
+        __m256i masks;
+        __m256i rv, rrv;
+
+        __m256i rev64(__m256i c) const {
+            __m256i b = _mm256_shuffle_epi8(c,
+                _mm256_set_epi8(8, 9, 10, 11, 12, 13, 14, 15, 0, 1, 2, 3, 4, 5, 6, 7,
+                8, 9, 10, 11, 12, 13, 14, 15, 0, 1, 2, 3, 4, 5, 6, 7));
+#ifdef USE_AVX512ICL
+            return _mm256_gf2p8affine_epi64_epi8(b, _mm256_set1_epi64x(0x8040201008040201ULL), 0);
+#else
+            __m256i lookup = _mm256_setr_epi8(
+                0, 8, 4, 12, 2, 10, 6, 14, 1, 9, 5, 13, 3, 11, 7, 15,
+                0, 8, 4, 12, 2, 10, 6, 14, 1, 9, 5, 13, 3, 11, 7, 15
+            );
+            __m256i low_mask = _mm256_set1_epi8(0x0F);
+
+            __m256i low_nibbles = _mm256_and_si256(b, low_mask);
+            __m256i high_nibbles = _mm256_and_si256(_mm256_srli_epi16(b, 4), low_mask);
+
+            __m256i rev_low = _mm256_shuffle_epi8(lookup, low_nibbles);
+            __m256i rev_high = _mm256_shuffle_epi8(lookup, high_nibbles);
+
+            return _mm256_or_si256(_mm256_slli_epi16(rev_low, 4), rev_high);
+#endif
+        }
+
+        AttacksPair attacks_bb(Bitboard occupied) const {
+            __m256i o = _mm256_and_si256(_mm256_set1_epi64x(occupied), masks);
+
+            __m256i fwd = _mm256_sub_epi64(o, rv);
+            __m256i rev = _mm256_sub_epi64(rev64(o), rrv);
+
+            __m256i results = _mm256_and_si256(_mm256_xor_si256(fwd, rev64(rev)), masks);
+            __m128i hi = _mm256_extracti128_si256(results, 1);
+            __m128i lo = _mm256_castsi256_si128(results);
+            __m128i narrowed = _mm_add_epi64(lo, hi);
+
+            return { Bitboard(_mm_extract_epi64(narrowed, 1)), Bitboard(_mm_cvtsi128_si64(narrowed)) };
+        }
+    };
+
+    Accessor accessor() const {
+        return { _mm256_loadu_si256((const __m256i*) this),  _mm256_set1_epi64x(r), _mm256_set1_epi64x(rr) };
+    }
+};
+
+extern HypMagic HypMagics[SQUARE_NB];
 
 // Magic holds all magic bitboards relevant data for a single square
 struct Magic {

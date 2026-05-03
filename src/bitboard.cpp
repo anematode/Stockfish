@@ -33,6 +33,7 @@ Bitboard LineBB[SQUARE_NB][SQUARE_NB];
 Bitboard BetweenBB[SQUARE_NB][SQUARE_NB];
 Bitboard RayPassBB[SQUARE_NB][SQUARE_NB];
 
+alignas(64) HypMagic HypMagics[SQUARE_NB];
 alignas(64) Magic Magics[SQUARE_NB][2];
 
 #ifdef USE_PEXT
@@ -199,6 +200,19 @@ std::array<MagicMask, 0x1480>  BishopTable;
 #endif
 }
 
+static Bitboard line_mask(Square sq, Direction d1, Direction d2) {
+    Bitboard mask = 0, dest;
+    for (Direction d : {d1, d2})
+    {
+        Square s = sq;
+        while ((dest = Bitboards::safe_destination(s, d)))
+        {
+            mask |= dest;
+            s += d;
+        }
+    }
+    return mask;
+}
 
 // Initializes various bitboard tables. It is called at
 // startup and relies on global objects to be already zero-initialized.
@@ -213,6 +227,17 @@ void Bitboards::init() {
 
     init_magics(ROOK, const_cast<MagicMask*>(RookTable.data()), Magics, true);
     init_magics(BISHOP, const_cast<MagicMask*>(BishopTable.data()), Magics, true);
+
+    for (Square s = SQ_A1; s <= SQ_H8; ++s)
+    {
+        HypMagic& magic  = HypMagics[s];
+        magic.mask1   = line_mask(s, NORTH, SOUTH);
+        magic.mask2  = line_mask(s, NORTH_EAST, SOUTH_WEST);
+        magic.mask3   = line_mask(s, EAST, WEST);
+        magic.mask4  = line_mask(s, NORTH_WEST, SOUTH_EAST);
+        magic.r = square_bb(s) * 2;
+        magic.rr = square_bb(Square(63 - int(s))) * 2;
+    }
 
     for (Square s1 = SQ_A1; s1 <= SQ_H8; ++s1)
     {
