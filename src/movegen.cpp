@@ -302,8 +302,13 @@ Move* generate_all(const Position& pos, Move* moveList) {
         moveList = generate_moves<Us, QUEEN>(pos, moveList, target);
     }
 
-    moveList = splat_precomputed_moves<KING>(moveList, ksq, 0ULL,
-                                             (Type == EVASIONS ? ~pos.pieces(Us) : target));
+    Bitboard b = attacks_bb<KING>(ksq) & (Type == EVASIONS ? ~pos.pieces(Us) : target);
+
+#ifdef USE_AVX512ICL
+    moveList = splat_precomputed_moves<KING>(moveList, ksq, 0ULL, b);
+#else
+    moveList = splat_moves(moveList, ksq, b);
+#endif
 
     if ((Type == QUIETS || Type == NON_EVASIONS) && pos.can_castle(Us & ANY_CASTLING))
         for (CastlingRights cr : {Us & KING_SIDE, Us & QUEEN_SIDE})
