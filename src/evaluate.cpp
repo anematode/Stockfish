@@ -96,7 +96,8 @@ std::string Eval::trace(Position& pos, const Eval::NNUE::Network& network) {
 
     auto [psqt, positional] = network.evaluate(pos, *accumulators, *caches);
     Value v                 = psqt + positional;
-    v                       = pos.side_to_move() == WHITE ? v : -v;
+    ss << "NNUE evaluation          " << v << " (side to move, internal units)\n";
+    v = pos.side_to_move() == WHITE ? v : -v;
     ss << "NNUE evaluation        " << 0.01 * UCIEngine::to_cp(v, pos) << " (white side)\n";
 
     ss << "SimpleEval                         " << simple_eval(pos)
