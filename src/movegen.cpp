@@ -62,10 +62,40 @@ inline Move* splat_moves(Move* moveList, Square from, Bitboard to_bb) {
     return moveList + popcount(to_bb);
 }
 
+#else
+
+template<Direction offset>
+inline Move* splat_pawn_moves(Move* moveList, Bitboard to_bb) {
+    while (to_bb)
+    {
+        Square to   = pop_lsb(to_bb);
+        *moveList++ = Move(to - offset, to);
+    }
+    return moveList;
+}
+
+inline Move* splat_moves(Move* moveList, Square from, Bitboard to_bb) {
+    while (to_bb)
+        *moveList++ = Move(from, pop_lsb(to_bb));
+    return moveList;
+}
+
+#endif
+
+#ifdef USE_PEXT
+
+#ifdef USE_AVX512ICL
+using LUTType = Move;
+auto make_entry = [] (Square from, Square to) constexpr { return Move(from, to); };
+#else
+using LUTType = Square;
+auto make_entry = [] ([[maybe_unused]] Square from, Square to) constexpr { return to; };
+#endif
+
 // Rook/bishop, indexed by (Pt - BISHOP) and from sq
 // Moves are provided in ascending order of the piece's attacks on an empty board
 alignas(64) constexpr auto SliderMoves = []() {
-    std::array<std::array<std::array<Move, 16>, SQUARE_NB>, 2> arr{};
+    std::array<std::array<std::array<LUTType, 16>, SQUARE_NB>, 2> arr{};
     for (PieceType pt : {BISHOP, ROOK})
     {
         for (Square s = SQ_A1; s <= SQ_H8; ++s)
@@ -74,7 +104,7 @@ alignas(64) constexpr auto SliderMoves = []() {
             int      i  = 0;
             while (bb)
             {
-                arr[pt - BISHOP][s][i++] = Move(s, Square(constexpr_lsb(bb)));
+                arr[pt - BISHOP][s][i++] = make_entry(s, Square(constexpr_lsb(bb)));
                 bb &= bb - 1;
             }
         }
@@ -84,7 +114,7 @@ alignas(64) constexpr auto SliderMoves = []() {
 
 // Knight/king analog of the above
 alignas(64) constexpr auto KnightKingMoves = []() {
-    std::array<std::array<std::array<Move, 8>, SQUARE_NB>, 2> arr{};
+    std::array<std::array<std::array<LUTType, 8>, SQUARE_NB>, 2> arr{};
     for (PieceType pt : {KNIGHT, KING})
     {
         for (Square s = SQ_A1; s <= SQ_H8; ++s)
@@ -93,7 +123,7 @@ alignas(64) constexpr auto KnightKingMoves = []() {
             int      i  = 0;
             while (bb)
             {
-                arr[pt == KING][s][i++] = Move(s, Square(constexpr_lsb(bb)));
+                arr[pt == KING][s][i++] = make_entry(s, Square(constexpr_lsb(bb)));
                 bb &= bb - 1;
             }
         }
@@ -115,39 +145,48 @@ splat_precomputed_moves(Move* moveList, Square from, Bitboard occupied, Bitboard
         mask = magic.attacks[magic.index(occupied)];
         mask &= pext(target, magic.pseudoAttacks);
 
-        const __m256i moves =
-          *reinterpret_cast<const __m256i*>(SliderMoves[Pt - BISHOP][from].data());
-        _mm256_storeu_si256(reinterpret_cast<__m256i*>(moveList),
-                            _mm256_maskz_compress_epi16(mask, moves));
+        const auto* moveData = SliderMoves[Pt - BISHOP][from].data();
+
+#ifdef USE_AVX512ICL
+        __m256i moves = *reinterpret_cast<const __m256i*>(moveData);
+        moves = _mm256_maskz_compress_epi16(mask, moves);
+#else
+        Bitboard m = pdep(mask, 0x1111111111111111) * 0xf;
+        Bitboard idxs = pext(0xfedcba9876543210, m);
+
+        __m128i vec = _mm_cvtsi64_si128(idxs);
+        vec = _mm_and_si128(_mm_unpacklo_epi8(vec, _mm_srli_epi16(vec, 4)), _mm_set1_epi8(0xf));
+        vec = _mm_shuffle_epi8(*reinterpret_cast<const __m128i*>(moveData), vec);
+
+        __m256i moves = _mm256_or_si256(_mm256_set1_epi16(from << 6), _mm256_cvtepi8_epi16(vec));
+#endif
+
+        _mm256_storeu_si256(reinterpret_cast<__m256i*>(moveList), moves);
     }
     else
     {
         mask = pext(target, PseudoAttacks[Pt][from]);
 
-        __m128i moves = *reinterpret_cast<const __m128i*>(KnightKingMoves[Pt == KING][from].data());
-        _mm_storeu_si128(reinterpret_cast<__m128i*>(moveList),
-                         _mm_maskz_compress_epi16(mask, moves));
+        const auto* moveData = KnightKingMoves[Pt == KING][from].data();
+
+#ifdef USE_AVX512ICL
+        __m128i moves = *reinterpret_cast<const __m128i*>(moveData);
+        moves = _mm_maskz_compress_epi16(mask, moves);
+#else
+        Bitboard m = pdep(mask, 0x0101010101010101) * 0xff;
+        Bitboard idxs = pext(0x0706050403020100, m);
+        __m128i vec = _mm_cvtsi64_si128(idxs);
+        int64_t data;
+        memcpy(&data, moveData, 8);
+
+        vec = _mm_shuffle_epi8(_mm_cvtsi64_si128(data), vec);
+        __m128i moves = _mm_or_si128(_mm_set1_epi16(from << 6), _mm_cvtepi8_epi16(vec));
+#endif
+
+        _mm_storeu_si128(reinterpret_cast<__m128i*>(moveList), moves);
     }
 
     return moveList + popcount(mask);
-}
-
-#else
-
-template<Direction offset>
-inline Move* splat_pawn_moves(Move* moveList, Bitboard to_bb) {
-    while (to_bb)
-    {
-        Square to   = pop_lsb(to_bb);
-        *moveList++ = Move(to - offset, to);
-    }
-    return moveList;
-}
-
-inline Move* splat_moves(Move* moveList, Square from, Bitboard to_bb) {
-    while (to_bb)
-        *moveList++ = Move(from, pop_lsb(to_bb));
-    return moveList;
 }
 
 #endif
@@ -263,7 +302,7 @@ Move* generate_moves(const Position& pos, Move* moveList, Bitboard target) {
     while (bb)
     {
         Square from = pop_lsb(bb);
-#ifdef USE_AVX512ICL
+#ifdef USE_PEXT
         if constexpr (Pt != QUEEN)
         {
             moveList = splat_precomputed_moves<Pt>(moveList, from, pos.pieces(), target);
@@ -304,7 +343,7 @@ Move* generate_all(const Position& pos, Move* moveList) {
 
     Bitboard b = Type == EVASIONS ? ~pos.pieces(Us) : target;
 
-#ifdef USE_AVX512ICL
+#ifdef USE_PEXT
     moveList = splat_precomputed_moves<KING>(moveList, ksq, 0ULL, b);
 #else
     moveList = splat_moves(moveList, ksq, attacks_bb<KING>(ksq) & b);
