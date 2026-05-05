@@ -312,7 +312,6 @@ ifeq ($(findstring -avx512icl,$(ARCH)),-avx512icl)
 	sse41 = yes
 	avx2 = yes
 	pext = yes
-	avx512 = yes
 endif
 
 ifeq ($(sse),yes)
