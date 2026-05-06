@@ -264,6 +264,12 @@ std::string compiler_info() {
 #elif defined(USE_NEON)
     compiler += " NEON";
 #endif
+#if defined(USE_ARM_SME2)
+    compiler += " SME2";
+#if defined(USE_ARM_SVL)
+    compiler += " SVL=" stringify(USE_ARM_SVL);
+#endif
+#endif
     compiler += (HasPopCnt ? " POPCNT" : "");
 
 #if !defined(NDEBUG)

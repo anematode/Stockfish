@@ -148,7 +148,7 @@ ifeq ($(ARCH), $(filter $(ARCH), \
                  x86-64-universal x86-64-avx512icl x86-64-vnni512 x86-64-avx512 x86-64-avxvnni \
                  x86-64-bmi2 x86-64-avx2 x86-64-sse41-popcnt x86-64-modern x86-64-ssse3 x86-64-sse3-popcnt \
                  x86-64 x86-32-sse41-popcnt x86-32-sse2 x86-32 ppc-64 ppc-64-altivec ppc-64-vsx ppc-32 e2k \
-                 armv7 armv7-neon armv8 armv8-dotprod apple-silicon general-64 general-32 riscv64 \
+                 armv7 armv7-neon armv8 armv8-dotprod apple-silicon apple-m4 general-64 general-32 riscv64 \
                  loongarch64 loongarch64-lsx loongarch64-lasx))
    SUPPORTED_ARCH=true
 else
@@ -183,6 +183,8 @@ altivec = no
 vsx = no
 neon = no
 dotprod = no
+sme2 = no
+sme_svl =
 arm_version = 0
 lsx = no
 lasx = no
@@ -379,6 +381,17 @@ ifeq ($(ARCH),apple-silicon)
 	neon = yes
 	dotprod = yes
 	arm_version = 8
+endif
+
+ifeq ($(ARCH),apple-m4)
+	arch = arm64
+	prefetch = yes
+	popcnt = yes
+	neon = yes
+	dotprod = yes
+	sme2 = yes
+	sme_svl = 512
+	arm_version = 9
 endif
 
 ifeq ($(ARCH),ppc-32)
@@ -819,7 +832,17 @@ ifeq ($(neon),yes)
 endif
 
 ifeq ($(dotprod),yes)
-	CXXFLAGS += -march=armv8.2-a+dotprod -DUSE_NEON_DOTPROD
+	CXXFLAGS += -DUSE_NEON_DOTPROD
+	ifneq ($(sme2),yes)
+		CXXFLAGS += -march=armv8.2-a+dotprod
+	endif
+endif
+
+ifeq ($(sme2),yes)
+	CXXFLAGS += -march=armv9.2-a+sme2 -DUSE_ARM_SME2
+	ifneq ($(sme_svl),)
+		CXXFLAGS += -msve-vector-bits=$(sme_svl) -DUSE_ARM_SVL=$(sme_svl)
+	endif
 endif
 
 ifeq ($(lasx),yes)
@@ -978,6 +1001,7 @@ help:
 	echo "armv8-dotprod           > ARMv8 64-bit with popcnt, neon and dot product support" && \
 	echo "e2k                     > Elbrus 2000" && \
 	echo "apple-silicon           > Apple silicon ARM64" && \
+	echo "apple-m4                > Apple M4 (ARMv9.2-a + SME2, SVL=512)" && \
 	echo "general-64              > unspecified 64-bit" && \
 	echo "general-32              > unspecified 32-bit" && \
 	echo "riscv64                 > RISC-V 64-bit" && \
@@ -1140,6 +1164,8 @@ config-sanity: net
 	echo "vsx: '$(vsx)'" && \
 	echo "neon: '$(neon)'" && \
 	echo "dotprod: '$(dotprod)'" && \
+	echo "sme2: '$(sme2)'" && \
+	echo "sme_svl: '$(sme_svl)'" && \
 	echo "arm_version: '$(arm_version)'" && \
 	echo "lsx: '$(lsx)'" && \
 	echo "lasx: '$(lasx)'" && \
@@ -1175,6 +1201,7 @@ config-sanity: net
 	(test "$(altivec)" = "yes" || test "$(altivec)" = "no") && \
 	(test "$(vsx)" = "yes" || test "$(vsx)" = "no") && \
 	(test "$(neon)" = "yes" || test "$(neon)" = "no") && \
+	(test "$(sme2)" = "yes" || test "$(sme2)" = "no") && \
 	(test "$(lsx)" = "yes" || test "$(lsx)" = "no") && \
 	(test "$(lasx)" = "yes" || test "$(lasx)" = "no") && \
 	(test "$(comp)" = "gcc" || test "$(comp)" = "icx" || test "$(comp)" = "mingw" || \
