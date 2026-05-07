@@ -53,7 +53,7 @@ inline Move* splat_pawn_moves(Move* moveList, Bitboard to_bb) {
 inline Move* splat_moves(Move* moveList, Square from, Bitboard to_bb) {
     assert(popcount(to_bb) <= 32);  // Q can attack up to 27 squares
 
-    const __m512i fromVec = _mm512_set1_epi16(Move(from, SQUARE_ZERO).raw());
+    const __m512i fromVec = _mm512_set1_epi16(Move(from, SQ_ZERO).raw());
     const __m512i toSquares =
       _mm512_cvtepi8_epi16(_mm512_castsi512_si256(_mm512_maskz_compress_epi8(to_bb, AllSquares)));
     const __m512i moves = _mm512_or_si512(fromVec, _mm512_slli_epi16(toSquares, Move::ToSqShift));
@@ -84,13 +84,13 @@ inline Move* splat_moves(Move* moveList, Square from, Bitboard to_bb) {
 
 #ifdef USE_PEXT
 
-#ifdef USE_AVX512ICL
-using LUTType = Move;
-auto make_entry = [] (Square from, Square to) constexpr { return Move(from, to); };
-#else
-using LUTType = Square;
-auto make_entry = [] ([[maybe_unused]] Square from, Square to) constexpr { return to; };
-#endif
+    #ifdef USE_AVX512ICL
+using LUTType   = Move;
+auto make_entry = [](Square from, Square to) constexpr { return Move(from, to); };
+    #else
+using LUTType   = Square;
+auto make_entry = []([[maybe_unused]] Square from, Square to) constexpr { return to; };
+    #endif
 
 // Rook/bishop, indexed by (Pt - BISHOP) and from sq
 // Moves are provided in ascending order of the piece's attacks on an empty board
@@ -147,19 +147,24 @@ splat_precomputed_moves(Move* moveList, Square from, Bitboard occupied, Bitboard
 
         const auto* moveData = SliderMoves[Pt - BISHOP][from].data();
 
-#ifdef USE_AVX512ICL
+    #ifdef USE_AVX512ICL
         __m256i moves = *reinterpret_cast<const __m256i*>(moveData);
-        moves = _mm256_maskz_compress_epi16(mask, moves);
-#else
+        moves         = _mm256_maskz_compress_epi16(mask, moves);
+    #else
         Bitboard m = pdep(mask, 0x1111111111111111) * 0xf;
+        // Each nibble tells us the index of the to-square among the pseudo-attacks
         Bitboard idxs = pext(0xfedcba9876543210, m);
+        __m128i  vec  = _mm_cvtsi64_si128(idxs);
 
-        __m128i vec = _mm_cvtsi64_si128(idxs);
+        // Convert 4-bit nibbles into 8-bit indices; mask is required to prevent
+        // pshufb zeroing behavior
         vec = _mm_and_si128(_mm_unpacklo_epi8(vec, _mm_srli_epi16(vec, 4)), _mm_set1_epi8(0xf));
         vec = _mm_shuffle_epi8(*reinterpret_cast<const __m128i*>(moveData), vec);
 
-        __m256i moves = _mm256_or_si256(_mm256_set1_epi16(from << 6), _mm256_cvtepi8_epi16(vec));
-#endif
+        // Form moves (from, to)
+        __m256i moves = _mm256_slli_epi16(_mm256_cvtepi8_epi16(vec), Move::ToSqShift);
+        moves         = _mm256_or_si256(_mm256_set1_epi16(Move(from, SQ_A1).raw()), moves);
+    #endif
 
         _mm256_storeu_si256(reinterpret_cast<__m256i*>(moveList), moves);
     }
@@ -169,19 +174,22 @@ splat_precomputed_moves(Move* moveList, Square from, Bitboard occupied, Bitboard
 
         const auto* moveData = KnightKingMoves[Pt == KING][from].data();
 
-#ifdef USE_AVX512ICL
+    #ifdef USE_AVX512ICL
         __m128i moves = *reinterpret_cast<const __m128i*>(moveData);
-        moves = _mm_maskz_compress_epi16(mask, moves);
-#else
+        moves         = _mm_maskz_compress_epi16(mask, moves);
+    #else
         Bitboard m = pdep(mask, 0x0101010101010101) * 0xff;
+        // As above, except indices are already in 8 bits
         Bitboard idxs = pext(0x0706050403020100, m);
-        __m128i vec = _mm_cvtsi64_si128(idxs);
+        __m128i  vec  = _mm_cvtsi64_si128(idxs);
+
         int64_t data;
         memcpy(&data, moveData, 8);
 
-        vec = _mm_shuffle_epi8(_mm_cvtsi64_si128(data), vec);
-        __m128i moves = _mm_or_si128(_mm_set1_epi16(from << 6), _mm_cvtepi8_epi16(vec));
-#endif
+        vec           = _mm_shuffle_epi8(_mm_cvtsi64_si128(data), vec);
+        __m128i moves = _mm_slli_epi16(_mm_cvtepi8_epi16(vec), Move::ToSqShift);
+        moves         = _mm_or_si128(_mm_set1_epi16(Move(from, SQ_A1).raw()), moves);
+    #endif
 
         _mm_storeu_si128(reinterpret_cast<__m128i*>(moveList), moves);
     }
