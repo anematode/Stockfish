@@ -105,20 +105,21 @@ namespace Stockfish::Eval::NNUE {
             uint8_t* out;
 
             NNZCursor(NNZInfo& info, bool perspective) {
-                out = info.bitset + perspective * Dimensions / 8;
+                out = info.bitset + perspective * Dimensions / 64;
             }
 
-            void record2(vec_t neurons1, vec_t neurons2) {
+            void record2(SIMD::vec_t neurons1, SIMD::vec_t neurons2) {
                 auto m1 = vec_nnz(neurons1);
                 auto m2 = vec_nnz(neurons2);
 
-                if (sizeof(vec_t) == 16) {
+                if (sizeof(neurons1) == 16) {
                     *out++ = m1 + (m2 << 4);
                 } else {
-                    memcpy(out, &m1, sizeof(m1));
-                    out += sizeof(m1);
-                    memcpy(out, &m2, sizeof(m2));
-                    out += sizeof(m2);
+                    size_t bytes = sizeof(neurons1) / 32;
+                    memcpy(out, &m1, bytes);
+                    out += bytes;
+                    memcpy(out, &m2, bytes);
+                    out += bytes;
                 }
             }
 
