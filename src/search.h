@@ -58,44 +58,23 @@ class OptionsMap;
 
 namespace Search {
 
-struct PVMoves {
-    Move        moves[MAX_PLY + 1];
-    std::size_t length = 0;
-
-    Move*       begin() { return moves; }
-    const Move* begin() const { return moves; }
-    Move*       end() { return moves + length; }
-    const Move* end() const { return moves + length; }
-
-    Move&       operator[](std::size_t index) { return moves[index]; }
-    const Move& operator[](std::size_t index) const { return moves[index]; }
-
-    bool        empty() const { return length == 0; }
-    std::size_t size() const { return length; }
-
-    void clear() { length = 0; }
-
-    void push_back(Move move) {
-        assert(length < MAX_PLY + 1);
-        moves[length++] = move;
-    }
-
+struct PVMoves: public ValueList<Move, MAX_PLY + 1> {
     void resize(std::size_t newSize) {
-        assert(newSize <= length);
-        length = newSize;
+        assert(newSize <= size_);
+        size_ = newSize;
     }
 
     void update(Move move, const PVMoves* childPv) {
         assert(childPv == nullptr || childPv->size() <= MAX_PLY);
-        length = childPv ? childPv->length : 0;
+        size_ = childPv ? childPv->size_ : 0;
 
         if (childPv)
         {
-            std::memcpy(moves + 1, childPv->moves, length * sizeof(Move));
+            std::memcpy(values_ + 1, childPv->values_, size_ * sizeof(Move));
         }
 
-        moves[0] = move;
-        ++length;
+        values_[0] = move;
+        ++size_;
     }
 };
 
