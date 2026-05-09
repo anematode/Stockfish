@@ -109,6 +109,19 @@ namespace Stockfish::Eval::NNUE {
             }
 
             void record2(SIMD::vec_t neurons1, SIMD::vec_t neurons2) {
+                using namespace SIMD;
+
+#ifdef USE_NEON
+                alignas(16) static constexpr uint16_t Mask8[8] = {1, 16, 2, 32, 4, 64, 8, 128};
+
+                const uint32x4_t t1 = vtstq_u32((uint32x4_t) neurons1, (uint32x4_t) neurons1);
+                const uint32x4_t t2 = vtstq_u32((uint32x4_t) neurons2, (uint32x4_t) neurons2);
+
+                const uint16x8_t packed = vtrn1q_u16((uint16x8_t) t1, (uint16x8_t) t2);
+                const uint16x8_t bits   = vandq_u16(packed, vld1q_u16(Mask8));
+
+                *out++ = vaddvq_u16(bits);
+#else
                 auto m1 = vec_nnz(neurons1);
                 auto m2 = vec_nnz(neurons2);
 
@@ -121,6 +134,7 @@ namespace Stockfish::Eval::NNUE {
                     memcpy(out, &m2, bytes);
                     out += bytes;
                 }
+#endif
             }
 
             void finalize() { }
