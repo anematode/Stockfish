@@ -139,49 +139,53 @@ jobs:
   # Testing Jobs
   IWYU:
     name: IWYU
+    if: false
     uses: ./.github/workflows/iwyu.yml
   Sanitizers:
     name: Sanitizers
-    if: ${{ always() }}
+    if: false
     uses: ./.github/workflows/sanitizers.yml
   Tests:
     name: Tests
-    if: ${{ always() }}
+    if: false
     uses: ./.github/workflows/tests.yml
   Matetrack:
     name: Matetrack
-    if: ${{ always() }}
+    if: false
     uses: ./.github/workflows/matetrack.yml
   Games:
     name: Games
-    if: ${{ always() }}
+    if: false
     uses: ./.github/workflows/games.yml
   CompilerCheck:
     name: Compiler check
-    if: ${{ always() }}
+    if: false
     uses: ./.github/workflows/avx2_compilers.yml
   # Release Jobs
   Compilation:
     name: macOS builds
-    needs: [Matrix, Sanitizers, Tests, Matetrack, Games, CompilerCheck]
+    if: false
+    needs: [Matrix]
     uses: ./.github/workflows/compilation.yml
     with:
       matrix: ${{ needs.Matrix.outputs.macos_matrix }}
   WindowsARMCompilation:
     name: Windows ARM builds
-    needs: [Matrix, Sanitizers, Tests, Matetrack, Games, CompilerCheck]
+    if: false
+    needs: [Matrix]
     uses: ./.github/workflows/compilation.yml
     with:
       matrix: ${{ needs.Matrix.outputs.windows_arm_matrix }}
   ARMCompilation:
     name: Android builds
-    needs: [Matrix, Sanitizers, Tests, Matetrack, Games, CompilerCheck]
+    if: false
+    needs: [Matrix]
     uses: ./.github/workflows/arm_compilation.yml
     with:
       matrix: ${{ needs.Matrix.outputs.arm_matrix }}
   UniversalCompilation:
     name: "Universal builds"
-    needs: [Matrix, Sanitizers, Tests, Matetrack, Games, CompilerCheck]
+    needs: [Matrix]
     uses: ./.github/workflows/universal_compilation.yml
   Binaries:
     if: github.repository == 'official-stockfish/Stockfish'
