@@ -204,11 +204,11 @@ class FeatureTransformer {
     }
 
     // Convert input features
-    std::int32_t transform(const Position&    pos,
-                           AccumulatorStack&  accumulatorStack,
-                           AccumulatorCaches& cache,
-                           OutputType*        output,
-                           int                bucket,
+    std::int32_t transform(const Position&            pos,
+                           AccumulatorStack&          accumulatorStack,
+                           AccumulatorCaches&         cache,
+                           OutputType*                output,
+                           int                        bucket,
                            NNZInfo<OutputDimensions>& nnzInfo) const {
 
         using namespace SIMD;

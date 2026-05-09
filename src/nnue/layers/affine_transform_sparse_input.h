@@ -117,7 +117,8 @@ class AffineTransformSparseInput {
     }
 
     // Forward propagation
-    void propagate(const InputType* input, OutputType* output, const NNZInfo<InDims>& nnzInfo) const {
+    void
+    propagate(const InputType* input, OutputType* output, const NNZInfo<InDims>& nnzInfo) const {
 
 #if (USE_SSSE3 | (USE_NEON >= 8))
     #if defined(USE_AVX512)
@@ -149,7 +150,7 @@ class AffineTransformSparseInput {
         #define vec_add_dpbusd_32 SIMD::neon_m128_add_dpbusd_epi32
     #endif
         constexpr IndexType OutputSimdWidth = sizeof(outvec_t) / sizeof(OutputType);
-        constexpr IndexType NumAccums = OutputDimensions / OutputSimdWidth;
+        constexpr IndexType NumAccums       = OutputDimensions / OutputSimdWidth;
         // If we're using high-latency dot product instructions, split the accumulators
         // to create 3 separate dependency chains and merge at the end
         constexpr IndexType NumRegs =
@@ -167,7 +168,7 @@ class AffineTransformSparseInput {
         // convince GCC to not do weird pointer arithmetic in the following loops
         const std::int8_t* weights_cp = weights;
 
-#if defined(USE_VNNI)
+    #if defined(USE_VNNI)
         const auto* start = nnzInfo.nnz;
         const auto* end   = nnzInfo.nnz + nnzInfo.count;
 
@@ -211,17 +212,20 @@ class AffineTransformSparseInput {
             for (IndexType k = 0; k < NumAccums; ++k)
                 vec_add_dpbusd_32(acc[k], in, col[k]);
         }
-#else
+    #else
         static_assert(InputDimensions % 256 == 0, "Loop needs to be modified");
 
-        for (IndexType k = 0; k < InputDimensions / 256; ++k) {
-            uint64_t bits = load_as<uint64_t>(nnzInfo.bitset + k * 8);
+        for (IndexType k = 0; k < InputDimensions / 256; ++k)
+        {
+            uint64_t  bits = load_as<uint64_t>(nnzInfo.bitset + k * 8);
             ptrdiff_t base = k * 64;
 
-            while (bits) {
-                ptrdiff_t i = pop_lsb(bits) + base;
-                const invec_t in = vec_set_32(load_as<std::int32_t>(input + i * sizeof(std::int32_t)));
-                const auto    col =
+            while (bits)
+            {
+                ptrdiff_t     i = pop_lsb(bits) + base;
+                const invec_t in =
+                  vec_set_32(load_as<std::int32_t>(input + i * sizeof(std::int32_t)));
+                const auto col =
                   reinterpret_cast<const invec_t*>(&weights_cp[i * OutputDimensions * ChunkSize]);
                 for (IndexType l = 0; l < NumAccums; ++l)
                     vec_add_dpbusd_32(acc[l], in, col[l]);
