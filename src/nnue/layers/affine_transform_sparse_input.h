@@ -31,6 +31,7 @@
 #include "../../memory.h"
 #include "../simd.h"
 #include "../nnue_common.h"
+#include "../nnz_helper.h"
 
 /*
   This file contains the definition for a fully connected layer (aka affine transform) with block sparse input.
@@ -145,7 +146,7 @@ class AffineTransformSparseInput {
     }
 
     // Forward propagation
-    void propagate(const InputType* input, OutputType* output) const {
+    void propagate(const InputType* input, OutputType* output, const NNZInfo<InDims>& nnzInfo) const {
 
 #if (USE_SSSE3 | (USE_NEON >= 8))
     #if defined(USE_AVX512)
@@ -177,7 +178,6 @@ class AffineTransformSparseInput {
         #define vec_add_dpbusd_32 SIMD::neon_m128_add_dpbusd_epi32
     #endif
         constexpr IndexType OutputSimdWidth = sizeof(outvec_t) / sizeof(OutputType);
-        constexpr IndexType NumChunks = ceil_to_multiple<IndexType>(InputDimensions, 8) / ChunkSize;
         constexpr IndexType NumAccums = OutputDimensions / OutputSimdWidth;
         // If we're using high-latency dot product instructions, split the accumulators
         // to create 3 separate dependency chains and merge at the end
@@ -187,30 +187,22 @@ class AffineTransformSparseInput {
     #else
           NumAccums;
     #endif
-        NNZOutputType nnz[NumChunks];
-        IndexType     count;
-
-        // Find indices of nonzero 32-bit blocks
-        find_nnz<NumChunks>(input, nnz, count);
+        IndexType     count = nnzInfo.count;
 
         const outvec_t* biasvec = reinterpret_cast<const outvec_t*>(biases);
         outvec_t        acc[NumRegs];
         for (IndexType k = 0; k < NumAccums; ++k)
             acc[k] = biasvec[k];
 
-        const auto* start = nnz;
-        const auto* end   = nnz + count;
-
-        // convince GCC to not do weird pointer arithmetic in the following loop
+        // convince GCC to not do weird pointer arithmetic in the following loops
         const std::int8_t* weights_cp = weights;
-    #if defined(USE_VNNI) || defined(USE_NEON_DOTPROD)
-        #if defined(USE_VNNI)
+
+#if defined(USE_VNNI)
+        const auto* start = nnzInfo.nnz;
+        const auto* end   = nnzInfo.nnz + count;
+
         for (IndexType k = NumAccums; k < NumRegs; ++k)
             acc[k] = vec_zero();
-        #else
-        for (IndexType k = NumAccums; k < NumRegs; ++k)
-            acc[k] = vdupq_n_s32(0);
-        #endif
 
         while (start < end - 2)
         {
@@ -236,14 +228,10 @@ class AffineTransformSparseInput {
                 vec_add_dpbusd_32(acc[k + 2 * NumAccums], in2, col2[k]);
             }
         }
-        #if defined(USE_VNNI)
+
         for (IndexType k = 0; k < NumAccums; ++k)
             acc[k] = vec_add_32(vec_add_32(acc[k], acc[k + NumAccums]), acc[k + 2 * NumAccums]);
-        #else
-        for (IndexType k = 0; k < NumAccums; ++k)
-            acc[k] = vaddq_s32(vaddq_s32(acc[k], acc[k + NumAccums]), acc[k + 2 * NumAccums]);
-        #endif
-    #endif
+
         while (start < end)
         {
             const std::ptrdiff_t i = *start++;
@@ -253,7 +241,23 @@ class AffineTransformSparseInput {
             for (IndexType k = 0; k < NumAccums; ++k)
                 vec_add_dpbusd_32(acc[k], in, col[k]);
         }
+#else
+        static_assert(InputDimensions % 256 == 0, "Loop needs to be modified");
 
+        for (IndexType k = 0; k < InputDimensions / 256; ++k) {
+            uint64_t bits = load_as<uint64_t>(nnz + k * 8);
+            ptrdiff_t base = k * 64;
+
+            while (bits) {
+                ptrdiff_t i = pop_lsb(bits) + base;
+                const invec_t in = vec_set_32(load_as<std::int32_t>(input + i * sizeof(std::int32_t)));
+                const auto    col =
+                  reinterpret_cast<const invec_t*>(&weights_cp[i * OutputDimensions * ChunkSize]);
+                for (IndexType l = 0; l < NumAccums; ++l)
+                    vec_add_dpbusd_32(acc[l], in, col[l]);
+            }
+        }
+    #endif
         outvec_t* outptr = reinterpret_cast<outvec_t*>(output);
         for (IndexType k = 0; k < NumAccums; ++k)
             outptr[k] = acc[k];

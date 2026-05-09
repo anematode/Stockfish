@@ -22,48 +22,61 @@
 #include <utility>
 
 #include "nnue_common.h"
-#include "nnue_misc.h"
-#include "simd.h"
 #include "simd.h"
 
-namespace Stockfish {
-    template <IndexType Dimensions>
+namespace Stockfish::Eval::NNUE {
+    template <size_t Dimensions>
     struct NNZInfo {
 
 #if defined(USE_VNNI) && defined(USE_AVX512)
+        unsigned count = 0;
         uint16_t nnz[Dimensions / 4];
-        size_t count = 0;
+
+#ifdef USE_AVX512ICL
+        alignas(64) static constexpr auto Indices = [] () {
+             std::array<std::array<uint16_t, 32>, 2> indices{};
+             for (int i = 0; i < 2; ++i) {
+                 indices[i] = {0, 1, 2, 3, 16, 17, 18, 19, 4, 5, 6, 7, 20, 21, 22, 23, 8, 9, 10, 11, 24, 25, 26, 27, 12, 13, 14, 15, 28, 29, 30, 31};
+                 for (uint16_t& m : indices[i])
+                      m += i * Dimensions / 8;
+             }
+            return indices;
+        } ();
+#else
+        alignas(64) static constexpr auto Indices = [] () {
+            std::array<std::array<uint32_t, 16>, 2> indices{};
+            for (int i = 0; i < 2; ++i) {
+                indices[i] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15};
+                for (uint32_t& m : indices[i])
+                    m += i * Dimensions / 8;
+            }
+            return indices;
+        } ();
+#endif
 
         struct NNZCursor {
-            NNZIndex* out;
-            size_t& count;
-
+            NNZInfo& info;
             __m512i indices;
+            unsigned count;
 
-            NNZCursor(NNZInfo& info, IndexType offset) {
-                out = info.nnz;
-                count = info.count;
-
-                indices = _mm512_set_epi16(  // Same permute order as _mm512_packus_epi32()
-                  31, 30, 29, 28, 15, 14, 13, 12, 27, 26, 25, 24, 11, 10, 9, 8, 23, 22, 21, 20, 7, 6, 5, 4,
-                  19, 18, 17, 16, 3, 2, 1, 0);
-                indices = _mm512_add_epi16(indices, _mm512_set1_epi16(offset / 4));
+            NNZCursor(NNZInfo& info_, bool half, unsigned count_) : info(info_), count(count_) {
+                indices = _mm512_load_si512(&Indices[half]);
             }
 
-            void record2(vec_t neurons1, vec_t neurons2) {
+            void record2(SIMD::vec_t neurons1, SIMD::vec_t neurons2) {
 #if defined(USE_AVX512ICL)
-                const __m512i       increment    = _mm512_set1_epi16(64);
+                const __m512i       increment    = _mm512_set1_epi16(32);
 
                 // Get a bitmask and gather non zero indices
                 const __m512i   inputV01 = _mm512_packs_epi32(neurons1, neurons2);
                 const __mmask32 nnzMask  = _mm512_test_epi16_mask(inputV01, inputV01);
 
                 // Avoid _mm512_mask_compressstoreu_epi16() as it's 256 uOps on Zen4
-                __m512i nnz = _mm512_maskz_compress_epi16(nnzMask, base);
-                _mm512_storeu_si512(out + count, nnz);
+                __m512i nnz = _mm512_maskz_compress_epi16(nnzMask, indices);
+                _mm512_storeu_si512(info.nnz + count, nnz);
 
                 count += popcount(nnzMask);
-                base = _mm512_add_epi16(base, increment);
+                indices = _mm512_add_epi16(indices, increment);
 #else
                 for (auto neurons : { neurons1, neurons2 }) {
                     const __m512i       increment  = _mm512_set1_epi32(16);
@@ -76,15 +89,23 @@ namespace Stockfish {
                 }
 #endif
             }
+
+            void finalize() const {
+                info.count = count;
+            }
         };
+
+        NNZCursor make_cursor(bool perspective) {
+            return { *this, perspective, count };
+        }
 #else
         uint8_t bitset[(Dimensions + 31) / 32];
 
         struct NNZCursor {
             uint8_t* out;
 
-            NNZCursor(NNZInfo& info, IndexType offset) {
-                out = info.bitset + offset / 32;
+            NNZCursor(NNZInfo& info, bool perspective) {
+                out = info.bitset + perspective * Dimensions / 8;
             }
 
             void record2(vec_t neurons1, vec_t neurons2) {
@@ -96,16 +117,18 @@ namespace Stockfish {
                 } else {
                     memcpy(out, &m1, sizeof(m1));
                     out += sizeof(m1);
-                    memcpy(out, &m1, sizeof(m2));
+                    memcpy(out, &m2, sizeof(m2));
                     out += sizeof(m2);
                 }
             }
-        };
-#endif
 
-        NNZCursor make_cursor(IndexType offset) const {
-            return { *this, offset };
+            void finalize() { }
+        };
+
+        NNZCursor make_cursor(bool perspective) {
+            return { *this, perspective };
         }
+#endif
     };
 } // namespace Stockfish
 
