@@ -712,11 +712,35 @@ bool Position::pseudo_legal(const Move m) const {
     Square to   = m.to_sq();
     Piece  pc   = moved_piece(m);
 
-    // Use a slower but simpler function for uncommon cases
-    // yet we skip the legality check of MoveList<LEGAL>().
+    // Handle special moves, yet we skip the legality check of MoveList<LEGAL>().
     if (m.type_of() != NORMAL)
-        return checkers() ? MoveList<EVASIONS>(*this).contains(m)
-                          : MoveList<NON_EVASIONS>(*this).contains(m);
+    {
+        if (checkers())
+            return MoveList<EVASIONS>(*this).contains(m);
+
+        switch (m.type_of())
+        {
+        case EN_PASSANT :
+            // If there are two pawns in e.p. position, this pawn may be pinned;
+            // but the move is still pseudo-legal.
+            return pc == make_piece(us, PAWN) && m.to_sq() == st->epSquare;
+        case CASTLING : {
+            if (pc != make_piece(us, KING))
+                return false;
+
+            CastlingRights cr = us & (from < to ? KING_SIDE : QUEEN_SIDE);
+
+            return cr && !castling_impeded(cr) && can_castle(cr) && m.to_sq() == castling_rook_square(cr);
+        }
+        case PROMOTION :
+            if (pc != make_piece(us, PAWN))
+                return false;
+
+            goto validate_promotion;
+        default :
+            assert(false);
+        }
+    }
 
     // Is not a promotion, so the promotion piece must be empty
     assert(m.promotion_type() - KNIGHT == NO_PIECE_TYPE);
@@ -737,6 +761,7 @@ bool Position::pseudo_legal(const Move m) const {
         if ((Rank8BB | Rank1BB) & to)
             return false;
 
+validate_promotion:;
         // Check if it's a valid capture, single push, or double push
         const bool isCapture    = bool(attacks_bb<PAWN>(from, us) & pieces(~us) & to);
         const bool isSinglePush = (from + pawn_push(us) == to) && empty(to);
