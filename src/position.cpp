@@ -951,8 +951,10 @@ void Position::do_move(Move                      m,
     if (m.type_of() != CASTLING)
     {
         Piece toPc = pc;
-        if (m.type_of() == PROMOTION)
+        if (m.type_of() == PROMOTION) {
             toPc = make_piece(us, m.promotion_type());
+            pcId |= 0x40;
+        }
 
         if (captured && m.type_of() != EN_PASSANT)
         {
@@ -1116,7 +1118,7 @@ void Position::undo_move(Move m) {
         assert(type_of(pc) >= KNIGHT && type_of(pc) <= QUEEN);
 
         pc = make_piece(us, PAWN);
-        swap_piece(to, pc, pieceIds[to]);
+        swap_piece(to, pc, pieceIds[to] & 0x3f);
     }
 
     if (m.type_of() == CASTLING)

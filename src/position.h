@@ -140,6 +140,7 @@ class Position {
     bool  capture_stage(Move m) const;
     bool  gives_check(Move m) const;
     Piece moved_piece(Move m) const;
+    uint8_t piece_id(Square sq) const;
     Piece captured_piece() const;
 
     // Doing and undoing moves
@@ -245,6 +246,8 @@ inline const std::array<Piece, SQUARE_NB>& Position::piece_array() const { retur
 inline bool Position::empty(Square s) const { return piece_on(s) == NO_PIECE; }
 
 inline Piece Position::moved_piece(Move m) const { return piece_on(m.from_sq()); }
+
+inline uint8_t Position::piece_id(Square s) const { return pieceIds[s]; }
 
 inline Bitboard Position::pieces() const { return byTypeBB[ALL_PIECES]; }
 

@@ -684,6 +684,7 @@ Value Search::Worker::search(
     bool  capture, ttCapture;
     int   priorReduction;
     Piece movedPiece;
+    uint8_t movedPieceId;
 
     SearchedList capturesSearched;
     SearchedList quietsSearched;
@@ -1070,6 +1071,7 @@ moves_loop:  // When in check, search starts here
         extension  = 0;
         capture    = pos.capture_stage(move);
         movedPiece = pos.moved_piece(move);
+        movedPieceId = pos.piece_id(move.from_sq());
         givesCheck = pos.gives_check(move);
 
         // Calculate new depth for this move
@@ -1098,7 +1100,7 @@ moves_loop:  // When in check, search starts here
             if (capture || givesCheck)
             {
                 Piece capturedPiece = pos.piece_on(move.to_sq());
-                int   captHist = captureHistory[movedPiece][move.to_sq()][type_of(capturedPiece)];
+                int   captHist = captureHistory[movedPieceId][move.to_sq()][type_of(capturedPiece)];
 
                 // Futility pruning for captures
                 if (!givesCheck && lmrDepth < 7)
@@ -1254,7 +1256,7 @@ moves_loop:  // When in check, search starts here
 
         if (capture)
             ss->statScore = 809 * int(PieceValue[pos.captured_piece()]) / 128
-                          + captureHistory[movedPiece][move.to_sq()][type_of(pos.captured_piece())];
+                          + captureHistory[movedPieceId][move.to_sq()][type_of(pos.captured_piece())];
         else
             ss->statScore = 2 * mainHistory[us][move.raw()]
                           + (*contHist[0])[movedPiece][move.to_sq()]
@@ -1489,7 +1491,7 @@ moves_loop:  // When in check, search starts here
     {
         Piece capturedPiece = pos.captured_piece();
         assert(capturedPiece != NO_PIECE);
-        captureHistory[pos.piece_on(prevSq)][prevSq][type_of(capturedPiece)] << 901;
+        captureHistory[pos.piece_id(prevSq)][prevSq][type_of(capturedPiece)] << 901;
     }
 
     if (PvNode)
@@ -1853,6 +1855,7 @@ void update_all_stats(const Position& pos,
 
     CapturePieceToHistory& captureHistory = workerThread.captureHistory;
     Piece                  movedPiece     = pos.moved_piece(bestMove);
+    uint8_t movedPieceId = pos.piece_id(bestMove.from_sq());
     PieceType              capturedPiece;
 
     int bonus =
@@ -1875,7 +1878,7 @@ void update_all_stats(const Position& pos,
     {
         // Increase stats for the best move in case it was a capture move
         capturedPiece = type_of(pos.piece_on(bestMove.to_sq()));
-        captureHistory[movedPiece][bestMove.to_sq()][capturedPiece] << bonus * 1366 / 1024;
+        captureHistory[movedPieceId][bestMove.to_sq()][capturedPiece] << bonus * 1366 / 1024;
     }
 
     // Extra penalty for a quiet early move that was not a TT move in
@@ -1888,7 +1891,7 @@ void update_all_stats(const Position& pos,
     {
         movedPiece    = pos.moved_piece(move);
         capturedPiece = type_of(pos.piece_on(move.to_sq()));
-        captureHistory[movedPiece][move.to_sq()][capturedPiece] << -malus * 1518 / 1024;
+        captureHistory[movedPieceId][move.to_sq()][capturedPiece] << -malus * 1518 / 1024;
     }
 }
 
