@@ -730,7 +730,8 @@ bool Position::pseudo_legal(const Move m) const {
 
             CastlingRights cr = us & (from < to ? KING_SIDE : QUEEN_SIDE);
 
-            return cr && !castling_impeded(cr) && can_castle(cr) && m.to_sq() == castling_rook_square(cr);
+            return cr && !castling_impeded(cr) && can_castle(cr)
+                && m.to_sq() == castling_rook_square(cr);
         }
         case PROMOTION :
             if (pc != make_piece(us, PAWN))
