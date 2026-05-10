@@ -367,8 +367,6 @@ class FeatureTransformer {
             }
 
 #endif
-
-            cursor.finalize();
         }
 
         return psqt;

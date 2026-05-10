@@ -90,7 +90,7 @@ namespace Stockfish::Eval::NNUE {
 #endif
             }
 
-            ~NNZCursor() const {
+            ~NNZCursor() {
                 info.count = count;
             }
         };
@@ -136,8 +136,6 @@ namespace Stockfish::Eval::NNUE {
                 }
 #endif
             }
-
-            void finalize() { }
         };
 
         NNZCursor make_cursor(bool perspective) {
