@@ -1282,41 +1282,41 @@ void write_multiple_dirties(const Position& p,
     static_assert((SqShift == 0 && PcShift == 20) || (SqShift == 8 && PcShift == 16),
                   "SVE2 fast path expects byte-aligned squares + pieces in nibble 4 or 5");
 
-    constexpr uint8_t Z = 0xFF;  // any index ≥ 32 → zero byte
+    const uint8x16_t tmpl_v    = vreinterpretq_u8_u32(vdupq_n_u32(dt_template.raw()));
 
-    uint8x16_t pieces_for_tbl;
-    if constexpr (PcShift == 20)
-        pieces_for_tbl = vshlq_n_u8(pieces, 4);
-    else
-        pieces_for_tbl = pieces;
-    const uint8x16x2_t tbl = {squares, pieces_for_tbl};
+    // Build the byte-2 column of every output lane: low nibble holds the
+    // dynamic piece value, high nibble holds the field that lives in the
+    // template (pc for the first call, threatened_pc for the second).  For
+    // PcShift == 20 we shift pieces into the high nibble first.  Either way,
+    // the OR with broadcast tmpl_v[2] supplies the template's contribution.
+    uint8x16_t pieces_for_tbl =
+      (PcShift == 20) ? vshlq_n_u8(pieces, 4) : pieces;
+    pieces_for_tbl = vorrq_u8(pieces_for_tbl, vdupq_laneq_u8(tmpl_v, 2));
+    const uint8x16x3_t tbl = {squares, pieces_for_tbl, tmpl_v};
 
     uint8x16_t idx_0, idx_1, idx_2, idx_3;
     if constexpr (SqShift == 8)  // first call: sq → byte 1 of each u32 lane
     {
-        idx_0 = uint8x16_t{Z,  0, 16, Z, Z,  1, 17, Z, Z,  2, 18, Z, Z,  3, 19, Z};
-        idx_1 = uint8x16_t{Z,  4, 20, Z, Z,  5, 21, Z, Z,  6, 22, Z, Z,  7, 23, Z};
-        idx_2 = uint8x16_t{Z,  8, 24, Z, Z,  9, 25, Z, Z, 10, 26, Z, Z, 11, 27, Z};
-        idx_3 = uint8x16_t{Z, 12, 28, Z, Z, 13, 29, Z, Z, 14, 30, Z, Z, 15, 31, Z};
+        idx_0 = uint8x16_t{32,  0, 16, 35, 32,  1, 17, 35, 32,  2, 18, 35, 32,  3, 19, 35};
+        idx_1 = uint8x16_t{32,  4, 20, 35, 32,  5, 21, 35, 32,  6, 22, 35, 32,  7, 23, 35};
+        idx_2 = uint8x16_t{32,  8, 24, 35, 32,  9, 25, 35, 32, 10, 26, 35, 32, 11, 27, 35};
+        idx_3 = uint8x16_t{32, 12, 28, 35, 32, 13, 29, 35, 32, 14, 30, 35, 32, 15, 31, 35};
     }
     else  // SqShift == 0: sq → byte 0 of each u32 lane
     {
-        idx_0 = uint8x16_t{ 0, Z, 16, Z,  1, Z, 17, Z,  2, Z, 18, Z,  3, Z, 19, Z};
-        idx_1 = uint8x16_t{ 4, Z, 20, Z,  5, Z, 21, Z,  6, Z, 22, Z,  7, Z, 23, Z};
-        idx_2 = uint8x16_t{ 8, Z, 24, Z,  9, Z, 25, Z, 10, Z, 26, Z, 11, Z, 27, Z};
-        idx_3 = uint8x16_t{12, Z, 28, Z, 13, Z, 29, Z, 14, Z, 30, Z, 15, Z, 31, Z};
+        idx_0 = uint8x16_t{ 0, 33, 16, 35,  1, 33, 17, 35,  2, 33, 18, 35,  3, 33, 19, 35};
+        idx_1 = uint8x16_t{ 4, 33, 20, 35,  5, 33, 21, 35,  6, 33, 22, 35,  7, 33, 23, 35};
+        idx_2 = uint8x16_t{ 8, 33, 24, 35,  9, 33, 25, 35, 10, 33, 26, 35, 11, 33, 27, 35};
+        idx_3 = uint8x16_t{12, 33, 28, 35, 13, 33, 29, 35, 14, 33, 30, 35, 15, 33, 31, 35};
     }
 
-    const uint32x4_t tmpl_v    = vdupq_n_u32(dt_template.raw());
-    auto* const      write_u32 = reinterpret_cast<uint32_t*>(write);
-    vst1q_u32(write_u32 + 0,
-              vorrq_u32(vreinterpretq_u32_u8(vqtbl2q_u8(tbl, idx_0)), tmpl_v));
-    vst1q_u32(write_u32 + 4,
-              vorrq_u32(vreinterpretq_u32_u8(vqtbl2q_u8(tbl, idx_1)), tmpl_v));
-    vst1q_u32(write_u32 + 8,
-              vorrq_u32(vreinterpretq_u32_u8(vqtbl2q_u8(tbl, idx_2)), tmpl_v));
-    vst1q_u32(write_u32 + 12,
-              vorrq_u32(vreinterpretq_u32_u8(vqtbl2q_u8(tbl, idx_3)), tmpl_v));
+    uint8x16x4_t out;
+    out.val[0] = vqtbl3q_u8(tbl, idx_0);
+    out.val[1] = vqtbl3q_u8(tbl, idx_1);
+    out.val[2] = vqtbl3q_u8(tbl, idx_2);
+    out.val[3] = vqtbl3q_u8(tbl, idx_3);
+
+    vst1q_u8_x4((uint8_t*) write, out);
     #endif
 }
 #endif
