@@ -259,7 +259,7 @@ Position::set(const string& fenStr, bool isChess960, StateInfo* si) {
                 return PositionSetError("Invalid FEN. More than 32 pieces on the board.");
 
             const Square sq = make_square(File(file), Rank(rank));
-            put_piece(Piece(idx), sq);
+            put_piece(Piece(idx), numPieces, sq);
 
             ++file;
         }
@@ -858,7 +858,9 @@ void Position::do_move(Move                      m,
     Square from     = m.from_sq();
     Square to       = m.to_sq();
     Piece  pc       = piece_on(from);
+    uint8_t pcId = pieceIds[from];
     Piece  captured = m.type_of() == EN_PASSANT ? make_piece(them, PAWN) : piece_on(to);
+    uint8_t capturedPcId = pieceIds[to];  // wrong for e.p., but fixed later
 
     dp.pc       = pc;
     dp.from     = from;
@@ -894,6 +896,7 @@ void Position::do_move(Move                      m,
             if (m.type_of() == EN_PASSANT)
             {
                 capsq -= pawn_push(us);
+                capturedPcId = pieceIds[capsq];
 
                 assert(pc == make_piece(us, PAWN));
                 assert(to == st->epSquare);
@@ -954,14 +957,14 @@ void Position::do_move(Move                      m,
         if (captured && m.type_of() != EN_PASSANT)
         {
             remove_piece(from, &dts);
-            swap_piece(to, toPc, &dts);
+            swap_piece(to, toPc, pcId, &dts);
         }
         else if (pc == toPc)
             move_piece(from, to, &dts);
         else
         {
             remove_piece(from, &dts);
-            put_piece(toPc, to, &dts);
+            put_piece(toPc, pcId, to, &dts);
         }
     }
 
@@ -1050,6 +1053,7 @@ void Position::do_move(Move                      m,
 
     // Set capture piece
     st->capturedPiece = captured;
+    st->capturedPieceId = capturedPcId;
 
     // Calculate checkers bitboard (if move gives check)
     st->checkersBB = givesCheck ? attackers_to(square<KING>(them)) & pieces(us) : 0;
@@ -1112,7 +1116,7 @@ void Position::undo_move(Move m) {
         assert(type_of(pc) >= KNIGHT && type_of(pc) <= QUEEN);
 
         pc = make_piece(us, PAWN);
-        swap_piece(to, pc);
+        swap_piece(to, pc, pieceIds[to]);
     }
 
     if (m.type_of() == CASTLING)
@@ -1139,7 +1143,7 @@ void Position::undo_move(Move m) {
                 assert(st->capturedPiece == make_piece(~us, PAWN));
             }
 
-            put_piece(st->capturedPiece, capsq);  // Restore the captured piece
+            put_piece(st->capturedPiece, st->capturedPieceId, capsq);  // Restore the captured piece
         }
     }
 
@@ -1343,11 +1347,14 @@ void Position::do_castling(Color               us,
         dp->add_sq                 = rto;
     }
 
+    uint8_t kingId = pieceIds[Do ? from : to];
+    uint8_t rookId = pieceIds[Do ? rfrom : rto];
+
     // Remove both pieces first since squares could overlap in Chess960
     remove_piece(Do ? from : to, dts);
     remove_piece(Do ? rfrom : rto, dts);
-    put_piece(make_piece(us, KING), Do ? to : from, dts);
-    put_piece(make_piece(us, ROOK), Do ? rto : rfrom, dts);
+    put_piece(make_piece(us, KING), kingId, Do ? to : from, dts);
+    put_piece(make_piece(us, ROOK), rookId, Do ? rto : rfrom, dts);
 }
 
 

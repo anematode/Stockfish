@@ -62,6 +62,7 @@ struct StateInfo {
     Bitboard   pinners[COLOR_NB];
     Bitboard   checkSquares[PIECE_TYPE_NB];
     Piece      capturedPiece;
+    uint8_t capturedPieceId;
     int        repetition;
 };
 
@@ -183,9 +184,9 @@ class Position {
 
     StateInfo* state() const;
 
-    void put_piece(Piece pc, Square s, DirtyThreats* const dts = nullptr);
+    void put_piece(Piece pc, uint8_t pcId, Square s, DirtyThreats* const dts = nullptr);
     void remove_piece(Square s, DirtyThreats* const dts = nullptr);
-    void swap_piece(Square s, Piece pc, DirtyThreats* const dts = nullptr);
+    void swap_piece(Square s, Piece pc, uint8_t pcId, DirtyThreats* const dts = nullptr);
 
    private:
     // Initialization helpers (used while setting up a position)
@@ -214,6 +215,7 @@ class Position {
 
     // Data members
     std::array<Piece, SQUARE_NB>        board;
+    std::array<uint8_t, SQUARE_NB>      pieceIds;
     std::array<Bitboard, PIECE_TYPE_NB> byTypeBB;
     std::array<Bitboard, COLOR_NB>      byColorBB;
 
@@ -355,8 +357,9 @@ inline bool Position::capture_stage(Move m) const {
 
 inline Piece Position::captured_piece() const { return st->capturedPiece; }
 
-inline void Position::put_piece(Piece pc, Square s, DirtyThreats* const dts) {
+inline void Position::put_piece(Piece pc, uint8_t pcId, Square s, DirtyThreats* const dts) {
     board[s] = pc;
+    pieceIds[s] = pcId;
     byTypeBB[ALL_PIECES] |= byTypeBB[type_of(pc)] |= s;
     byColorBB[color_of(pc)] |= s;
     pieceCount[pc]++;
@@ -376,12 +379,14 @@ inline void Position::remove_piece(Square s, DirtyThreats* const dts) {
     byTypeBB[type_of(pc)] ^= s;
     byColorBB[color_of(pc)] ^= s;
     board[s] = NO_PIECE;
+    pieceIds[s] = 0;
     pieceCount[pc]--;
     pieceCount[make_piece(color_of(pc), ALL_PIECES)]--;
 }
 
 inline void Position::move_piece(Square from, Square to, DirtyThreats* const dts) {
     Piece    pc     = board[from];
+    uint8_t pcId = pieceIds[from];
     Bitboard fromTo = from | to;
 
     if (dts)
@@ -390,6 +395,8 @@ inline void Position::move_piece(Square from, Square to, DirtyThreats* const dts
     byTypeBB[ALL_PIECES] ^= fromTo;
     byTypeBB[type_of(pc)] ^= fromTo;
     byColorBB[color_of(pc)] ^= fromTo;
+    pieceIds[from] = 0;
+    pieceIds[to] = pcId;
     board[from] = NO_PIECE;
     board[to]   = pc;
 
@@ -397,7 +404,7 @@ inline void Position::move_piece(Square from, Square to, DirtyThreats* const dts
         update_piece_threats(pc, true, to, dts, fromTo);
 }
 
-inline void Position::swap_piece(Square s, Piece pc, DirtyThreats* const dts) {
+inline void Position::swap_piece(Square s, Piece pc, uint8_t pcId, DirtyThreats* const dts) {
     Piece old = board[s];
 
     remove_piece(s);
@@ -405,7 +412,7 @@ inline void Position::swap_piece(Square s, Piece pc, DirtyThreats* const dts) {
     if (dts)
         update_piece_threats<false>(old, false, s, dts);
 
-    put_piece(pc, s);
+    put_piece(pc, pcId, s);
 
     if (dts)
         update_piece_threats<false>(pc, true, s, dts);
