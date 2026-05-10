@@ -474,7 +474,7 @@ ifeq ($(COMP),gcc)
 	CXX=g++
 	CXXFLAGS += -pedantic -Wextra -Wshadow -Wmissing-declarations
 
-	ifeq ($(arch),$(filter $(arch),armv7 armv8 riscv64))
+	ifeq ($(arch),$(filter $(arch),armv7 armv8 arm64 riscv64))
 		ifeq ($(OS),Android)
 			CXXFLAGS += -m$(bits)
 			LDFLAGS += -m$(bits)
@@ -546,7 +546,7 @@ ifeq ($(COMP),clang)
 	endif
 	endif
 
-	ifeq ($(arch),$(filter $(arch),armv7 armv8 riscv64))
+	ifeq ($(arch),$(filter $(arch),armv7 armv8 arm64 riscv64))
 		ifeq ($(OS),Android)
 			CXXFLAGS += -m$(bits)
 			LDFLAGS += -m$(bits)
@@ -824,7 +824,9 @@ ifeq ($(neon),yes)
 	ifeq ($(KERNEL),Linux)
 	ifneq ($(COMP),ndk)
 	ifneq ($(arch),armv8)
+	ifneq ($(arch),arm64)
 		CXXFLAGS += -mfpu=neon
+	endif
 	endif
 	endif
 	endif

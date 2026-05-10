@@ -39,6 +39,12 @@
 #include "tt.h"
 #include "uci.h"
 
+#ifdef USE_SVE2
+    #include <arm_neon.h>
+    #include <arm_neon_sve_bridge.h>
+    #include <arm_sve.h>
+#endif
+
 using std::string;
 
 namespace Stockfish {
@@ -1159,7 +1165,7 @@ inline void add_dirty_threat(DirtyThreats* const dts,
     dts->list.push_back({pc, threatened, s, threatenedSq, putPiece});
 }
 
-#ifdef USE_AVX512ICL
+#if defined(USE_AVX512ICL) || defined(USE_SVE2)
 // Given a DirtyThreat template and bit offsets to insert the piece type and square, write the threats
 // present at the given bitboard.
 template<int SqShift, int PcShift>
@@ -1169,12 +1175,14 @@ void write_multiple_dirties(const Position& p,
                             DirtyThreats*   dts) {
     static_assert(sizeof(DirtyThreat) == 4);
 
-    const __m512i board    = _mm512_loadu_si512(p.piece_array().data());
-    const int     dt_count = popcount(mask);
+    const int dt_count = popcount(mask);
     assert(dt_count <= 16);
 
+    auto* write = dts->list.make_space(dt_count);
+
+    #if defined(USE_AVX512ICL)
+    const __m512i board      = _mm512_loadu_si512(p.piece_array().data());
     const __m512i template_v = _mm512_set1_epi32(dt_template.raw());
-    auto*         write      = dts->list.make_space(dt_count);
 
     // Extract the list of squares and upconvert to 32 bits. There are never more than 16
     // incoming threats so this is sufficient.
@@ -1191,6 +1199,103 @@ void write_multiple_dirties(const Position& p,
     const __m512i dirties =
       _mm512_ternarylogic_epi32(template_v, threat_squares, threat_pieces, 254 /* A | B | C */);
     _mm512_storeu_si512(write, dirties);
+    #else  // USE_SVE2
+    // Step 1: Three SVE2 BEXT instructions extract six bit planes from `mask`.
+    // For each set bit at position k in `mask`, BEXT(M_i, mask) packs M_i[k]
+    // into the next low bit of the result; choosing M_i so that M_i[k] is bit
+    // i of k yields bp_i — bit i of every set position, packed contiguously
+    // in 16 bits.  With 128-bit SVE we run two BEXTs in parallel per
+    // instruction (one per 64-bit lane), so 3 instructions cover bp_0..bp_5.
+    constexpr uint64_t M0 = 0xAAAAAAAAAAAAAAAAULL;
+    constexpr uint64_t M1 = 0xCCCCCCCCCCCCCCCCULL;
+    constexpr uint64_t M2 = 0xF0F0F0F0F0F0F0F0ULL;
+    constexpr uint64_t M3 = 0xFF00FF00FF00FF00ULL;
+    constexpr uint64_t M4 = 0xFFFF0000FFFF0000ULL;
+    constexpr uint64_t M5 = 0xFFFFFFFF00000000ULL;
+
+    const svuint64_t mask_v = svdup_n_u64(mask);
+    const svuint64_t bp_01  = svbext_u64(svdupq_n_u64(M0, M1), mask_v);
+    const svuint64_t bp_23  = svbext_u64(svdupq_n_u64(M2, M3), mask_v);
+    const svuint64_t bp_45  = svbext_u64(svdupq_n_u64(M4, M5), mask_v);
+
+    // Step 2: Spread each 16-bit bit plane via PMULL128 self.  For value x
+    // with bits b_k at position k, the carry-less product x*x is
+    // Σ b_k * 2^(2k) (cross terms cancel under XOR), so each bit moves from
+    // position k to 2k.  PMULLB takes lane 0 of each operand; PMULLT, lane 1.
+    const svuint64_t s0 = svpmullb_pair_u64(bp_01, bp_01);
+    const svuint64_t s1 = svpmullt_pair_u64(bp_01, bp_01);
+    const svuint64_t s2 = svpmullb_pair_u64(bp_23, bp_23);
+    const svuint64_t s3 = svpmullt_pair_u64(bp_23, bp_23);
+    const svuint64_t s4 = svpmullb_pair_u64(bp_45, bp_45);
+    const svuint64_t s5 = svpmullt_pair_u64(bp_45, bp_45);
+
+    // Step 3: Combine the six stride-2 spreads into a uint8x16_t with one
+    // 6-bit square index per byte.  Each spread occupies bytes 0..3 with 4
+    // stride-2 bits per byte (bits 0,2,4,6 of byte j hold squares 4j..4j+3).
+    // Replicate every input byte 4 times, test against [1,4,16,64,…] to pull
+    // out the right stride-2 bit (0xFF or 0), mask to a single bit at bit
+    // position i within the byte, then OR the six contributions.
+    const uint8x16_t replicate_idx =
+      {0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3};
+    const uint8x16_t bit_in_byte_mask =
+      {1, 4, 16, 64, 1, 4, 16, 64, 1, 4, 16, 64, 1, 4, 16, 64};
+
+    auto extract = [&](svuint64_t spread, uint8_t bit_value) {
+        const uint8x16_t s          = svget_neonq_u8(svreinterpret_u8_u64(spread));
+        const uint8x16_t replicated = vqtbl1q_u8(s, replicate_idx);
+        const uint8x16_t tested     = vtstq_u8(replicated, bit_in_byte_mask);
+        return vandq_u8(tested, vdupq_n_u8(bit_value));
+    };
+
+    uint8x16_t squares = extract(s0, 0x01);
+    squares            = vorrq_u8(squares, extract(s1, 0x02));
+    squares            = vorrq_u8(squares, extract(s2, 0x04));
+    squares            = vorrq_u8(squares, extract(s3, 0x08));
+    squares            = vorrq_u8(squares, extract(s4, 0x10));
+    squares            = vorrq_u8(squares, extract(s5, 0x20));
+
+    // Step 4: One TBL4 over the 64-byte board fetches a piece per square.
+    uint8x16x4_t board;
+    const auto* piece_data =
+      reinterpret_cast<const uint8_t*>(p.piece_array().data());
+    board.val[0] = vld1q_u8(piece_data + 0);
+    board.val[1] = vld1q_u8(piece_data + 16);
+    board.val[2] = vld1q_u8(piece_data + 32);
+    board.val[3] = vld1q_u8(piece_data + 48);
+    const uint8x16_t pieces = vqtbl4q_u8(board, squares);
+
+    // Step 5: Zero-extend bytewise squares/pieces to four uint32x4_t each,
+    // shift into place, OR with the broadcast template, and unconditionally
+    // store all four 16-byte chunks (= 16 DirtyThreats).
+    const uint16x8_t sq_lo = vmovl_u8(vget_low_u8(squares));
+    const uint16x8_t sq_hi = vmovl_high_u8(squares);
+    const uint16x8_t pc_lo = vmovl_u8(vget_low_u8(pieces));
+    const uint16x8_t pc_hi = vmovl_high_u8(pieces);
+
+    uint32x4_t sq32[4] = {vmovl_u16(vget_low_u16(sq_lo)), vmovl_high_u16(sq_lo),
+                          vmovl_u16(vget_low_u16(sq_hi)), vmovl_high_u16(sq_hi)};
+    uint32x4_t pc32[4] = {vmovl_u16(vget_low_u16(pc_lo)), vmovl_high_u16(pc_lo),
+                          vmovl_u16(vget_low_u16(pc_hi)), vmovl_high_u16(pc_hi)};
+
+    if constexpr (SqShift > 0)
+    {
+        sq32[0] = vshlq_n_u32(sq32[0], SqShift);
+        sq32[1] = vshlq_n_u32(sq32[1], SqShift);
+        sq32[2] = vshlq_n_u32(sq32[2], SqShift);
+        sq32[3] = vshlq_n_u32(sq32[3], SqShift);
+    }
+    pc32[0] = vshlq_n_u32(pc32[0], PcShift);
+    pc32[1] = vshlq_n_u32(pc32[1], PcShift);
+    pc32[2] = vshlq_n_u32(pc32[2], PcShift);
+    pc32[3] = vshlq_n_u32(pc32[3], PcShift);
+
+    const uint32x4_t tmpl_v   = vdupq_n_u32(dt_template.raw());
+    auto* const      write_u32 = reinterpret_cast<uint32_t*>(write);
+    vst1q_u32(write_u32 + 0,  vorrq_u32(vorrq_u32(sq32[0], pc32[0]), tmpl_v));
+    vst1q_u32(write_u32 + 4,  vorrq_u32(vorrq_u32(sq32[1], pc32[1]), tmpl_v));
+    vst1q_u32(write_u32 + 8,  vorrq_u32(vorrq_u32(sq32[2], pc32[2]), tmpl_v));
+    vst1q_u32(write_u32 + 12, vorrq_u32(vorrq_u32(sq32[3], pc32[3]), tmpl_v));
+    #endif
 }
 #endif
 
@@ -1267,7 +1372,7 @@ void Position::update_piece_threats(Piece               pc,
           (attacks_bb<PAWN>(s, WHITE) & blackPawns) | (attacks_bb<PAWN>(s, BLACK) & whitePawns);
     }
 
-#ifdef USE_AVX512ICL
+#if defined(USE_AVX512ICL) || defined(USE_SVE2)
     DirtyThreat dt_template{pc, NO_PIECE, s, Square(0), putPiece};
     write_multiple_dirties<DirtyThreat::ThreatenedSqOffset, DirtyThreat::ThreatenedPcOffset>(
       *this, threatened, dt_template, dts);
@@ -1292,9 +1397,9 @@ void Position::update_piece_threats(Piece               pc,
 
     if constexpr (ComputeRay)
     {
-#ifndef USE_AVX512ICL
+#if !defined(USE_AVX512ICL) && !defined(USE_SVE2)
         process_sliders(true);
-#else  // for ICL, direct threats were processed earlier (all_attackers)
+#else  // for the vectorized path, direct threats were processed earlier (all_attackers)
         process_sliders(false);
 #endif
     }
@@ -1303,7 +1408,7 @@ void Position::update_piece_threats(Piece               pc,
         incoming_threats |= sliders;
     }
 
-#ifndef USE_AVX512ICL
+#if !defined(USE_AVX512ICL) && !defined(USE_SVE2)
     while (incoming_threats)
     {
         Square srcSq = pop_lsb(incoming_threats);
