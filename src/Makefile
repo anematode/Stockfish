@@ -121,6 +121,7 @@ VPATH = syzygy:nnue:nnue/features
 # vsx = yes/no        --- -mvsx              --- Use POWER VSX SIMD extension
 # neon = yes/no       --- -DUSE_NEON         --- Use ARM SIMD architecture
 # dotprod = yes/no    --- -DUSE_NEON_DOTPROD --- Use ARM advanced SIMD Int8 dot product instructions
+# sve2 = yes/no       --- -DUSE_SVE2         --- Use ARM Scalable Vector Extension 2 (implies SVE BitPerm and SVE PMULL128)
 # lsx = yes/no        --- -mlsx              --- Use Loongson SIMD eXtension
 # lasx = yes/no       --- -mlasx             --- use Loongson Advanced SIMD eXtension
 #
@@ -148,7 +149,7 @@ ifeq ($(ARCH), $(filter $(ARCH), \
                  x86-64-universal x86-64-avx512icl x86-64-vnni512 x86-64-avx512 x86-64-avxvnni \
                  x86-64-bmi2 x86-64-avx2 x86-64-sse41-popcnt x86-64-modern x86-64-ssse3 x86-64-sse3-popcnt \
                  x86-64 x86-32-sse41-popcnt x86-32-sse2 x86-32 ppc-64 ppc-64-altivec ppc-64-vsx ppc-32 e2k \
-                 armv7 armv7-neon armv8 armv8-dotprod apple-silicon general-64 general-32 riscv64 \
+                 armv7 armv7-neon armv8 armv8-dotprod arm64-sve2 apple-silicon general-64 general-32 riscv64 \
                  loongarch64 loongarch64-lsx loongarch64-lasx))
    SUPPORTED_ARCH=true
 else
@@ -183,6 +184,7 @@ altivec = no
 vsx = no
 neon = no
 dotprod = no
+sve2 = no
 arm_version = 0
 lsx = no
 lasx = no
@@ -378,6 +380,16 @@ ifeq ($(ARCH),apple-silicon)
 	popcnt = yes
 	neon = yes
 	dotprod = yes
+	arm_version = 8
+endif
+
+ifeq ($(ARCH),arm64-sve2)
+	arch = arm64
+	prefetch = yes
+	popcnt = yes
+	neon = yes
+	dotprod = yes
+	sve2 = yes
 	arm_version = 8
 endif
 
@@ -822,6 +834,10 @@ ifeq ($(dotprod),yes)
 	CXXFLAGS += -march=armv8.2-a+dotprod -DUSE_NEON_DOTPROD
 endif
 
+ifeq ($(sve2),yes)
+	CXXFLAGS += -march=armv9-a+sve2-bitperm+sve2-aes -DUSE_SVE2
+endif
+
 ifeq ($(lasx),yes)
 	ifeq ($(comp),$(filter $(comp),gcc clang mingw icx))
 		CXXFLAGS += -mlasx
@@ -976,6 +992,7 @@ help:
 	echo "armv7-neon              > ARMv7 32-bit with popcnt and neon" && \
 	echo "armv8                   > ARMv8 64-bit with popcnt and neon" && \
 	echo "armv8-dotprod           > ARMv8 64-bit with popcnt, neon and dot product support" && \
+	echo "arm64-sve2              > ARM 64-bit with SVE2, SVE BitPerm and SVE PMULL128 (e.g. Neoverse V2)" && \
 	echo "e2k                     > Elbrus 2000" && \
 	echo "apple-silicon           > Apple silicon ARM64" && \
 	echo "general-64              > unspecified 64-bit" && \
@@ -1140,6 +1157,7 @@ config-sanity: net
 	echo "vsx: '$(vsx)'" && \
 	echo "neon: '$(neon)'" && \
 	echo "dotprod: '$(dotprod)'" && \
+	echo "sve2: '$(sve2)'" && \
 	echo "arm_version: '$(arm_version)'" && \
 	echo "lsx: '$(lsx)'" && \
 	echo "lasx: '$(lasx)'" && \
@@ -1175,6 +1193,7 @@ config-sanity: net
 	(test "$(altivec)" = "yes" || test "$(altivec)" = "no") && \
 	(test "$(vsx)" = "yes" || test "$(vsx)" = "no") && \
 	(test "$(neon)" = "yes" || test "$(neon)" = "no") && \
+	(test "$(sve2)" = "yes" || test "$(sve2)" = "no") && \
 	(test "$(lsx)" = "yes" || test "$(lsx)" = "no") && \
 	(test "$(lasx)" = "yes" || test "$(lasx)" = "no") && \
 	(test "$(comp)" = "gcc" || test "$(comp)" = "icx" || test "$(comp)" = "mingw" || \

@@ -259,6 +259,9 @@ std::string compiler_info() {
 #if defined(USE_SSE2)
     compiler += " SSE2";
 #endif
+#if defined(USE_SVE2)
+    compiler += " SVE2";
+#endif
 #if defined(USE_NEON_DOTPROD)
     compiler += " NEON_DOTPROD";
 #elif defined(USE_NEON)
