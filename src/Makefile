@@ -835,7 +835,7 @@ ifeq ($(dotprod),yes)
 endif
 
 ifeq ($(sve2),yes)
-	CXXFLAGS += -march=armv9-a+sve2-bitperm+sve2-aes -DUSE_SVE2
+	CXXFLAGS += -march=armv9-a+sve2-bitperm+sve2-aes -msve-vector-bits=128 -DUSE_SVE2
 endif
 
 ifeq ($(lasx),yes)
