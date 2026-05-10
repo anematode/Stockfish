@@ -1218,41 +1218,53 @@ void write_multiple_dirties(const Position& p,
     const svuint64_t bp_23  = svbext_u64(svdupq_n_u64(M2, M3), mask_v);
     const svuint64_t bp_45  = svbext_u64(svdupq_n_u64(M4, M5), mask_v);
 
-    // Step 2: Spread each 16-bit bit plane via PMULL128 self.  For value x
-    // with bits b_k at position k, the carry-less product x*x is
-    // Σ b_k * 2^(2k) (cross terms cancel under XOR), so each bit moves from
-    // position k to 2k.  PMULLB takes lane 0 of each operand; PMULLT, lane 1.
-    const svuint64_t s0 = svpmullb_pair_u64(bp_01, bp_01);
-    const svuint64_t s1 = svpmullt_pair_u64(bp_01, bp_01);
-    const svuint64_t s2 = svpmullb_pair_u64(bp_23, bp_23);
-    const svuint64_t s3 = svpmullt_pair_u64(bp_23, bp_23);
-    const svuint64_t s4 = svpmullb_pair_u64(bp_45, bp_45);
-    const svuint64_t s5 = svpmullt_pair_u64(bp_45, bp_45);
+    // Step 2: Stage-1 widen via the SVE2 32×32→64 PMULL.  Each BEXT result
+    // already places bp_i in u32 lane 0 and bp_{i+1} in u32 lane 2 (since
+    // u32 lanes 1, 3 are the high halves of the BEXT-zeroed u64 lanes), so a
+    // single pmullb spreads two bit planes at once: for value x with bits at
+    // positions p, the carry-less product x*x is Σ 2^(2p) (cross terms cancel
+    // under XOR), so each bit moves from position p to 2p.  The two outputs
+    // [spread1_i, spread1_{i+1}] land in u64 lanes 0 and 1.
+    const svbool_t pg = svptrue_b64();
+    const svuint64_t w1_01 =
+      svpmullb_u64(svreinterpret_u32_u64(bp_01), svreinterpret_u32_u64(bp_01));
+    const svuint64_t w1_23 =
+      svpmullb_u64(svreinterpret_u32_u64(bp_23), svreinterpret_u32_u64(bp_23));
+    const svuint64_t w1_45 =
+      svpmullb_u64(svreinterpret_u32_u64(bp_45), svreinterpret_u32_u64(bp_45));
 
-    // Step 3: Combine the six stride-2 spreads into a uint8x16_t with one
-    // 6-bit square index per byte.  Each spread occupies bytes 0..3 with 4
-    // stride-2 bits per byte (bits 0,2,4,6 of byte j hold squares 4j..4j+3).
-    // Replicate every input byte 4 times, test against [1,4,16,64,…] to pull
-    // out the right stride-2 bit (0xFF or 0), mask to a single bit at bit
-    // position i within the byte, then OR the six contributions.
-    const uint8x16_t replicate_idx =
-      {0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3};
-    const uint8x16_t bit_in_byte_mask =
-      {1, 4, 16, 64, 1, 4, 16, 64, 1, 4, 16, 64, 1, 4, 16, 64};
+    // Step 3: Combine the (0,4) and (1,5) pairs by ORing bp_4/5 into the
+    // odd positions of bp_0/1's stride-2 cells.  Two more widenings double
+    // this offset of 1 first to 2 then to 4 — exactly the byte distance
+    // between bp_0 and bp_4 (resp. bp_1 and bp_5) in the final encoding.
+    const svuint64_t combined_0145 =
+      svorr_u64_x(pg, w1_01, svlsl_n_u64_x(pg, w1_45, 1));
 
-    auto extract = [&](svuint64_t spread, uint8_t bit_value) {
-        const uint8x16_t s          = svget_neonq_u8(svreinterpret_u8_u64(spread));
-        const uint8x16_t replicated = vqtbl1q_u8(s, replicate_idx);
-        const uint8x16_t tested     = vtstq_u8(replicated, bit_in_byte_mask);
-        return vandq_u8(tested, vdupq_n_u8(bit_value));
-    };
+    // Step 4: Stage-2 widen.  combined_0145 → [bp_0 4k | bp_4 4k+2,
+    // bp_1 4k | bp_5 4k+2] in u64 lanes; w1_23 widens separately to
+    // [bp_2 4k, bp_3 4k] (each 64-bit, stride-4 spread).
+    const svuint64_t w2_0145 = svpmullb_u64(svreinterpret_u32_u64(combined_0145),
+                                            svreinterpret_u32_u64(combined_0145));
+    const svuint64_t w2_23 =
+      svpmullb_u64(svreinterpret_u32_u64(w1_23), svreinterpret_u32_u64(w1_23));
 
-    uint8x16_t squares = extract(s0, 0x01);
-    squares            = vorrq_u8(squares, extract(s1, 0x02));
-    squares            = vorrq_u8(squares, extract(s2, 0x04));
-    squares            = vorrq_u8(squares, extract(s3, 0x08));
-    squares            = vorrq_u8(squares, extract(s4, 0x10));
-    squares            = vorrq_u8(squares, extract(s5, 0x20));
+    // Step 5: Insert bp_2/bp_3 between the two halves of each lane (offset 1
+    // within each stride-4 cell), so each lane now carries three bit planes
+    // at stride 1: [bp_0 4k, bp_2 4k+1, bp_4 4k+2] and [bp_1, bp_3, bp_5].
+    const svuint64_t combined_full =
+      svorr_u64_x(pg, w2_0145, svlsl_n_u64_x(pg, w2_23, 1));
+
+    // Step 6: Stage-3 widen via PMULL128, one per half.  Doubling positions
+    // gives lane 0 → bp_0 8k, bp_2 8k+2, bp_4 8k+4 (in 128 bits), and
+    // lane 1 → bp_1 8k, bp_3 8k+2, bp_5 8k+4.
+    const svuint64_t result_evens = svpmullb_pair_u64(combined_full, combined_full);
+    const svuint64_t result_odds  = svpmullt_pair_u64(combined_full, combined_full);
+
+    // Step 7: Final interleave: bp_i lands at byte-bit 8k+i for i=0..5,
+    // giving one 6-bit square index per byte.
+    const svuint64_t squares_sve =
+      svorr_u64_x(pg, result_evens, svlsl_n_u64_x(pg, result_odds, 1));
+    const uint8x16_t squares = svget_neonq_u8(svreinterpret_u8_u64(squares_sve));
 
     // Step 4: One TBL4 over the 64-byte board fetches a piece per square.
     uint8x16x4_t board;
