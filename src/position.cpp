@@ -1271,37 +1271,52 @@ void write_multiple_dirties(const Position& p,
       vld1q_u8_x4(reinterpret_cast<const uint8_t*>(p.piece_array().data()));
     const uint8x16_t pieces = vqtbl4q_u8(board, squares);
 
-    // Step 9: Zero-extend bytewise squares/pieces to four uint32x4_t each,
-    // shift into place, OR with the broadcast template, and unconditionally
-    // store all four 16-byte chunks (= 16 DirtyThreats).
-    const uint16x8_t sq_lo = vmovl_u8(vget_low_u8(squares));
-    const uint16x8_t sq_hi = vmovl_high_u8(squares);
-    const uint16x8_t pc_lo = vmovl_u8(vget_low_u8(pieces));
-    const uint16x8_t pc_hi = vmovl_high_u8(pieces);
+    // Step 9: Build the four DirtyThreats outputs by TBL2-shuffling
+    // squares/pieces directly into byte-aligned positions, replacing the
+    // widen+shift chain.  SqShift ∈ {0, 8} → squares lands at byte 0 or 1
+    // of each u32 lane; PcShift ∈ {16, 20} → pieces lands at byte 2.  For
+    // PcShift = 20 we pre-shift pieces by 4 per byte (legal because piece
+    // values fit in 4 bits) so the piece value already sits in the high
+    // nibble of byte 2.  Indices ≥ 32 produce a zero byte, leaving the
+    // template's bits untouched at the subsequent OR.
+    static_assert((SqShift == 0 && PcShift == 20) || (SqShift == 8 && PcShift == 16),
+                  "SVE2 fast path expects byte-aligned squares + pieces in nibble 4 or 5");
 
-    uint32x4_t sq32[4] = {vmovl_u16(vget_low_u16(sq_lo)), vmovl_high_u16(sq_lo),
-                          vmovl_u16(vget_low_u16(sq_hi)), vmovl_high_u16(sq_hi)};
-    uint32x4_t pc32[4] = {vmovl_u16(vget_low_u16(pc_lo)), vmovl_high_u16(pc_lo),
-                          vmovl_u16(vget_low_u16(pc_hi)), vmovl_high_u16(pc_hi)};
+    constexpr uint8_t Z = 0xFF;  // any index ≥ 32 → zero byte
 
-    if constexpr (SqShift > 0)
+    uint8x16_t pieces_for_tbl;
+    if constexpr (PcShift == 20)
+        pieces_for_tbl = vshlq_n_u8(pieces, 4);
+    else
+        pieces_for_tbl = pieces;
+    const uint8x16x2_t tbl = {squares, pieces_for_tbl};
+
+    uint8x16_t idx_0, idx_1, idx_2, idx_3;
+    if constexpr (SqShift == 8)  // first call: sq → byte 1 of each u32 lane
     {
-        sq32[0] = vshlq_n_u32(sq32[0], SqShift);
-        sq32[1] = vshlq_n_u32(sq32[1], SqShift);
-        sq32[2] = vshlq_n_u32(sq32[2], SqShift);
-        sq32[3] = vshlq_n_u32(sq32[3], SqShift);
+        idx_0 = uint8x16_t{Z,  0, 16, Z, Z,  1, 17, Z, Z,  2, 18, Z, Z,  3, 19, Z};
+        idx_1 = uint8x16_t{Z,  4, 20, Z, Z,  5, 21, Z, Z,  6, 22, Z, Z,  7, 23, Z};
+        idx_2 = uint8x16_t{Z,  8, 24, Z, Z,  9, 25, Z, Z, 10, 26, Z, Z, 11, 27, Z};
+        idx_3 = uint8x16_t{Z, 12, 28, Z, Z, 13, 29, Z, Z, 14, 30, Z, Z, 15, 31, Z};
     }
-    pc32[0] = vshlq_n_u32(pc32[0], PcShift);
-    pc32[1] = vshlq_n_u32(pc32[1], PcShift);
-    pc32[2] = vshlq_n_u32(pc32[2], PcShift);
-    pc32[3] = vshlq_n_u32(pc32[3], PcShift);
+    else  // SqShift == 0: sq → byte 0 of each u32 lane
+    {
+        idx_0 = uint8x16_t{ 0, Z, 16, Z,  1, Z, 17, Z,  2, Z, 18, Z,  3, Z, 19, Z};
+        idx_1 = uint8x16_t{ 4, Z, 20, Z,  5, Z, 21, Z,  6, Z, 22, Z,  7, Z, 23, Z};
+        idx_2 = uint8x16_t{ 8, Z, 24, Z,  9, Z, 25, Z, 10, Z, 26, Z, 11, Z, 27, Z};
+        idx_3 = uint8x16_t{12, Z, 28, Z, 13, Z, 29, Z, 14, Z, 30, Z, 15, Z, 31, Z};
+    }
 
-    const uint32x4_t tmpl_v   = vdupq_n_u32(dt_template.raw());
+    const uint32x4_t tmpl_v    = vdupq_n_u32(dt_template.raw());
     auto* const      write_u32 = reinterpret_cast<uint32_t*>(write);
-    vst1q_u32(write_u32 + 0,  vorrq_u32(vorrq_u32(sq32[0], pc32[0]), tmpl_v));
-    vst1q_u32(write_u32 + 4,  vorrq_u32(vorrq_u32(sq32[1], pc32[1]), tmpl_v));
-    vst1q_u32(write_u32 + 8,  vorrq_u32(vorrq_u32(sq32[2], pc32[2]), tmpl_v));
-    vst1q_u32(write_u32 + 12, vorrq_u32(vorrq_u32(sq32[3], pc32[3]), tmpl_v));
+    vst1q_u32(write_u32 + 0,
+              vorrq_u32(vreinterpretq_u32_u8(vqtbl2q_u8(tbl, idx_0)), tmpl_v));
+    vst1q_u32(write_u32 + 4,
+              vorrq_u32(vreinterpretq_u32_u8(vqtbl2q_u8(tbl, idx_1)), tmpl_v));
+    vst1q_u32(write_u32 + 8,
+              vorrq_u32(vreinterpretq_u32_u8(vqtbl2q_u8(tbl, idx_2)), tmpl_v));
+    vst1q_u32(write_u32 + 12,
+              vorrq_u32(vreinterpretq_u32_u8(vqtbl2q_u8(tbl, idx_3)), tmpl_v));
     #endif
 }
 #endif
