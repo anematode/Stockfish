@@ -154,7 +154,7 @@ class AffineTransformSparseInput {
         // If we're using high-latency dot product instructions, split the accumulators
         // to create 3 separate dependency chains and merge at the end
         constexpr IndexType NumRegs =
-    #if defined(USE_VNNI) || defined(USE_NEON_DOTPROD)
+    #if defined(USE_VNNI) && defined(USE_AVX512)
           3 * NumAccums;
     #else
           NumAccums;
@@ -168,7 +168,7 @@ class AffineTransformSparseInput {
         // convince GCC to not do weird pointer arithmetic in the following loops
         const std::int8_t* weights_cp = weights;
 
-    #if defined(USE_VNNI)
+    #if defined(USE_VNNI) && defined(USE_AVX512)
         const auto* start = nnzInfo.nnz;
         const auto* end   = nnzInfo.nnz + nnzInfo.count;
 
