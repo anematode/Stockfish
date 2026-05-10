@@ -218,7 +218,7 @@ ExtMove* MovePicker::score(const MoveList<Type>& ml) {
         const Square    from          = m.from_sq();
         const Square    to            = m.to_sq();
         const Piece     pc            = pos.moved_piece(m);
-        const uint8_t pcId = pos.piece_id(to);
+        const uint8_t pcId = pos.piece_id(from);
         const PieceType pt            = type_of(pc);
         const Piece     capturedPiece = pos.piece_on(to);
 
