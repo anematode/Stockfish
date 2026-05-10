@@ -82,15 +82,15 @@ namespace Stockfish::Eval::NNUE {
                     const __m512i       increment  = _mm512_set1_epi32(16);
                     // Get a bitmask and gather non zero indices
                     const __mmask16 nnzMask = _mm512_test_epi32_mask(neurons, neurons);
-                    const __m512i   nnzV    = _mm512_maskz_compress_epi32(nnzMask, base);
-                    _mm512_mask_cvtepi32_storeu_epi16(out + count, 0xFFFF, nnzV);
+                    const __m512i   nnzV    = _mm512_maskz_compress_epi32(nnzMask, indices);
+                    _mm512_mask_cvtepi32_storeu_epi16(info.nnz + count, 0xFFFF, nnzV);
                     count += popcount(nnzMask);
-                    base = _mm512_add_epi32(base, increment);
+                    indices = _mm512_add_epi32(indices, increment);
                 }
 #endif
             }
 
-            void finalize() const {
+            ~NNZCursor() const {
                 info.count = count;
             }
         };
