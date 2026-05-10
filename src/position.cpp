@@ -1266,17 +1266,12 @@ void write_multiple_dirties(const Position& p,
       svorr_u64_x(pg, result_evens, svlsl_n_u64_x(pg, result_odds, 1));
     const uint8x16_t squares = svget_neonq_u8(svreinterpret_u8_u64(squares_sve));
 
-    // Step 4: One TBL4 over the 64-byte board fetches a piece per square.
-    uint8x16x4_t board;
-    const auto* piece_data =
-      reinterpret_cast<const uint8_t*>(p.piece_array().data());
-    board.val[0] = vld1q_u8(piece_data + 0);
-    board.val[1] = vld1q_u8(piece_data + 16);
-    board.val[2] = vld1q_u8(piece_data + 32);
-    board.val[3] = vld1q_u8(piece_data + 48);
+    // Step 8: One TBL4 over the 64-byte board fetches a piece per square.
+    const uint8x16x4_t board =
+      vld1q_u8_x4(reinterpret_cast<const uint8_t*>(p.piece_array().data()));
     const uint8x16_t pieces = vqtbl4q_u8(board, squares);
 
-    // Step 5: Zero-extend bytewise squares/pieces to four uint32x4_t each,
+    // Step 9: Zero-extend bytewise squares/pieces to four uint32x4_t each,
     // shift into place, OR with the broadcast template, and unconditionally
     // store all four 16-byte chunks (= 16 DirtyThreats).
     const uint16x8_t sq_lo = vmovl_u8(vget_low_u8(squares));
