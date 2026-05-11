@@ -112,6 +112,7 @@ namespace Stockfish::Eval::NNUE {
                 out = info.bitset + perspective * Dimensions / 64;
             }
 
+#if (USE_SSSE3 | (USE_NEON >= 8))
             void record2(SIMD::vec_t neurons1, SIMD::vec_t neurons2) {
                 using namespace SIMD;
 
@@ -143,6 +144,9 @@ namespace Stockfish::Eval::NNUE {
                 }
 #endif
             }
+#else
+            void record2(SIMD::vec_t, SIMD::vec_t) {}
+#endif
         };
 
         NNZCursor make_cursor(bool perspective) {

@@ -117,8 +117,9 @@ class AffineTransformSparseInput {
     }
 
     // Forward propagation
-    void
-    propagate(const InputType* input, OutputType* output, const NNZInfo<InDims>& nnzInfo) const {
+    void propagate(const InputType*                        input,
+                   OutputType*                             output,
+                   [[maybe_unused]] const NNZInfo<InDims>& nnzInfo) const {
 
 #if (USE_SSSE3 | (USE_NEON >= 8))
     #if defined(USE_AVX512)
