@@ -241,7 +241,29 @@ class AffineTransform {
                 acc[k] = vec_set_32(0);
 
             IndexType i = 0;
-    #if defined(USE_VNNI)
+    #if defined(USE_NEON_DOTPROD)
+            for (; i < NumChunks; i += 4)
+            {
+                const auto in = load_as<int8x16_t>(input + i * sizeof(std::int32_t));
+                const auto col0 =
+                  reinterpret_cast<const int8x16_t*>(&weights[i * OutputDimensions * 4]);
+                const auto col1 =
+                    reinterpret_cast<const int8x16_t*>(&weights[(i + 1) * OutputDimensions * 4]);
+                const auto col2 =
+                    reinterpret_cast<const int8x16_t*>(&weights[(i + 2) * OutputDimensions * 4]);
+                const auto col3 =
+                  reinterpret_cast<const int8x16_t*>(&weights[(i + 3) * OutputDimensions * 4]);
+
+                for (IndexType k = 0; k < NumAccums; ++k)
+                    acc[k] = vdotq_laneq_s32(acc[k], col0[k], in, 0);
+                for (IndexType k = 0; k < NumAccums; ++k)
+                    acc[k] = vdotq_laneq_s32(acc[k], col1[k], in, 1);
+                for (IndexType k = 0; k < NumAccums; ++k)
+                    acc[k] = vdotq_laneq_s32(acc[k], col2[k], in, 2);
+                for (IndexType k = 0; k < NumAccums; ++k)
+                    acc[k] = vdotq_laneq_s32(acc[k], col3[k], in, 3);
+            }
+    #elif defined(USE_VNNI)
             for (; i < NumChunks; i += 2)
             {
                 const vec_t in0 =
