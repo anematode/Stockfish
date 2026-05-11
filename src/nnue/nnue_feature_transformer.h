@@ -233,7 +233,7 @@ class FeatureTransformer {
         {
             const IndexType offset = (HalfDimensions / 2) * p;
 
-            auto cursor = nnzInfo.make_cursor(p);
+            [[maybe_unused]] auto cursor = nnzInfo.make_cursor(p);
 
 #if defined(VECTOR)
 
