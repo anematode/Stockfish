@@ -150,7 +150,7 @@ struct NNZInfo {
             }
         #endif
         }
-    #else
+    #elif defined(VECTOR)
         void record2(SIMD::vec_t, SIMD::vec_t) {}
     #endif
     };
