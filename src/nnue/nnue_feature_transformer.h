@@ -315,37 +315,28 @@ class FeatureTransformer {
               &(threatAccumulation[perspectives[p]][HalfDimensions / 2]));
             for (IndexType j = 0; j < NumOutputChunks; j += 2)
             {
-                vec_t acc0a = vec_add_16(in0[j * 2 + 0], tin0[j * 2 + 0]);
-                vec_t acc0b = vec_add_16(in0[j * 2 + 1], tin0[j * 2 + 1]);
-                vec_t acc1a = vec_add_16(in1[j * 2 + 0], tin1[j * 2 + 0]);
-                vec_t acc1b = vec_add_16(in1[j * 2 + 1], tin1[j * 2 + 1]);
+                vec_t packed[2];
+                for (IndexType k = 0; k < 2; ++k)
+                {
+                    const IndexType i = (j + k) * 2;
 
-                vec_t sum0a = vec_slli_16(vec_max_16(vec_min_16(acc0a, One), Zero), shift);
-                vec_t sum0b = vec_slli_16(vec_max_16(vec_min_16(acc0b, One), Zero), shift);
-                vec_t sum1a = vec_min_16(acc1a, One);
-                vec_t sum1b = vec_min_16(acc1b, One);
+                    vec_t acc0a = vec_add_16(in0[i + 0], tin0[i + 0]);
+                    vec_t acc0b = vec_add_16(in0[i + 1], tin0[i + 1]);
+                    vec_t acc1a = vec_add_16(in1[i + 0], tin1[i + 0]);
+                    vec_t acc1b = vec_add_16(in1[i + 1], tin1[i + 1]);
 
-                vec_t pa = vec_mulhi_16(sum0a, sum1a);
-                vec_t pb = vec_mulhi_16(sum0b, sum1b);
+                    vec_t sum0a = vec_slli_16(vec_max_16(vec_min_16(acc0a, One), Zero), shift);
+                    vec_t sum0b = vec_slli_16(vec_max_16(vec_min_16(acc0b, One), Zero), shift);
+                    vec_t sum1a = vec_min_16(acc1a, One);
+                    vec_t sum1b = vec_min_16(acc1b, One);
 
-                vec_t packed1 = out[j] = vec_packus_16(pa, pb);
+                    vec_t pa = vec_mulhi_16(sum0a, sum1a);
+                    vec_t pb = vec_mulhi_16(sum0b, sum1b);
 
-                acc0a = vec_add_16(in0[j * 2 + 2], tin0[j * 2 + 2]);
-                acc0b = vec_add_16(in0[j * 2 + 3], tin0[j * 2 + 3]);
-                acc1a = vec_add_16(in1[j * 2 + 2], tin1[j * 2 + 2]);
-                acc1b = vec_add_16(in1[j * 2 + 3], tin1[j * 2 + 3]);
+                    packed[k] = out[j + k] = vec_packus_16(pa, pb);
+                }
 
-                sum0a = vec_slli_16(vec_max_16(vec_min_16(acc0a, One), Zero), shift);
-                sum0b = vec_slli_16(vec_max_16(vec_min_16(acc0b, One), Zero), shift);
-                sum1a = vec_min_16(acc1a, One);
-                sum1b = vec_min_16(acc1b, One);
-
-                pa = vec_mulhi_16(sum0a, sum1a);
-                pb = vec_mulhi_16(sum0b, sum1b);
-
-                vec_t packed2 = out[j + 1] = vec_packus_16(pa, pb);
-
-                cursor.record2(packed1, packed2);
+                cursor.record2(packed[0], packed[1]);
             }
 
 #else
