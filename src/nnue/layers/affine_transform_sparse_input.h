@@ -169,13 +169,13 @@ class AffineTransformSparseInput {
         // convince GCC to not do weird pointer arithmetic in the following loops
         const std::int8_t* weights_cp = weights;
 
-    #if defined(USE_VNNI) && defined(USE_AVX512)
+    #if defined(USE_AVX512)
         const auto* start = nnzInfo.nnz;
         const auto* end   = nnzInfo.nnz + nnzInfo.count;
 
         for (IndexType k = NumAccums; k < NumRegs; ++k)
             acc[k] = vec_zero();
-
+        #if defined(USE_VNNI)
         while (start < end - 2)
         {
             const std::ptrdiff_t i0 = *start++;
@@ -203,6 +203,7 @@ class AffineTransformSparseInput {
 
         for (IndexType k = 0; k < NumAccums; ++k)
             acc[k] = vec_add_32(vec_add_32(acc[k], acc[k + NumAccums]), acc[k + 2 * NumAccums]);
+        #endif
 
         while (start < end)
         {

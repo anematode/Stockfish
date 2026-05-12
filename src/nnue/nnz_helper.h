@@ -29,7 +29,7 @@ namespace Stockfish::Eval::NNUE {
 template<size_t Dimensions>
 struct NNZInfo {
 
-#if defined(USE_VNNI) && defined(USE_AVX512)
+#if defined(USE_AVX512)
     unsigned count = 0;
     // indices of non-zero chunks
     uint16_t nnz[Dimensions / 4];
