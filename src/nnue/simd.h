@@ -240,6 +240,14 @@ using vec128_t   = __m128i;
 using psqt_vec_t = __m256i;
 using vec_uint_t = __m256i;
 
+    #if defined(__loongarch_asx) && !defined(__loongarch_asx_sx_conv)
+inline __m256i __lasx_cast_128(__m128i a) {
+    __m256i r;
+    __asm__("" : "=f"(r) : "0"(a));
+    return r;
+}
+    #endif
+
 inline __m256i lasx_load256(const __m256i* a) {
     return __lasx_xvld(reinterpret_cast<const void*>(a), 0);
 }
@@ -278,19 +286,14 @@ inline void lasx_store256(__m256i* a, __m256i b) {
     #define MaxChunkSize 32
 
 inline __m256i lasx_cvtepi8_epi16(__m128i a) {
-    int64_t lo = (int64_t) __lsx_vpickve2gr_d(a, 0);
-    int64_t hi = (int64_t) __lsx_vpickve2gr_d(a, 1);
-    __m256i v  = __lasx_xvldi(0);
-    v = __lasx_xvinsgr2vr_d(v, lo, 0);
-    v = __lasx_xvinsgr2vr_d(v, hi, 2);
-    return __lasx_xvsllwil_h_b(v, 0);
+    return __lasx_vext2xv_h_b(__lasx_cast_128(a));
 }
 
 inline int lasx_vec_nnz(__m256i a) {
     const __m256i cmp = __lasx_xvslt_w(__lasx_xvldi(0), a);
     const __m256i msk = __lasx_xvmskltz_w(cmp);
-    return ((int) __lasx_xvpickve2gr_wu(msk, 0) & 0xF)
-         | (((int) __lasx_xvpickve2gr_wu(msk, 4) & 0xF) << 4);
+    return (int) __lasx_xvpickve2gr_wu(msk, 0)
+         | ((int) __lasx_xvpickve2gr_wu(msk, 4) << 4);
 }
 
 #elif USE_LSX
@@ -320,7 +323,7 @@ using vec_uint_t = __m128i;
         ((int) __lsx_vpickve2gr_wu(__lsx_vmskltz_w(__lsx_vslt_w(__lsx_vldi(0), (a))), 0) & 0xF)
 
 inline __m128i vec_convert_8_16(std::uint64_t x) {
-    __m128i v = __lsx_vinsgr2vr_d(__lsx_vldi(0), static_cast<long long>(x), 0);
+    __m128i v = __lsx_vldrepl_d(reinterpret_cast<const void*>(&x), 0);
     return __lsx_vsllwil_h_b(v, 0);
 }
 
