@@ -33,7 +33,7 @@ namespace Stockfish {
 class Position;
 class Move;
 class Score;
-enum Square : uint8_t;
+enum Square : unsigned;
 using Value = int;
 
 constexpr auto StartFEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
