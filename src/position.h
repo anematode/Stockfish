@@ -211,6 +211,7 @@ class Position {
                      DirtyThreats* const dts = nullptr,
                      DirtyPiece* const   dp  = nullptr);
     Key  adjust_key50(Key k) const;
+    bool see_ge_inner(int swap, Square from, Square to) const;
 
     // Data members
     std::array<Piece, SQUARE_NB>        board;
@@ -417,6 +418,32 @@ inline void Position::do_move(Move m, StateInfo& newSt, const TranspositionTable
 }
 
 inline StateInfo* Position::state() const { return st; }
+
+// Tests if the SEE (Static Exchange Evaluation)
+// value of the move is greater or equal to the given threshold. We'll use an
+// algorithm similar to alpha-beta pruning with a null window.
+inline sf_always_inline bool Position::see_ge(Move m, int threshold) const {
+
+    assert(m.is_ok());
+
+    // Only deal with normal moves, assume others pass a simple SEE
+    if (m.type_of() != NORMAL)
+        return VALUE_ZERO >= threshold;
+
+    Square from = m.from_sq(), to = m.to_sq();
+
+    assert(piece_on(from) != NO_PIECE);
+
+    int swap = PieceValue[piece_on(to)] - threshold;
+    if (swap < 0)
+        return false;
+
+    swap = PieceValue[piece_on(from)] - swap;
+    if (swap <= 0)
+        return true;
+
+    return see_ge_inner(swap, from, to);
+}
 
 }  // namespace Stockfish
 
