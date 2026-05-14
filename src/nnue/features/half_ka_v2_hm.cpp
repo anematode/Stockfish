@@ -30,18 +30,18 @@ namespace Stockfish::Eval::NNUE::Features {
 #if defined(USE_AVX512ICL)
 void HalfKAv2_hm::write_indices(const std::array<Piece, SQUARE_NB>& oldPieces,
                                 const std::array<Piece, SQUARE_NB>& newPieces,
-                                Bitboard                            removedBB,
-                                Bitboard                            addedBB,
                                 Color                               perspective,
                                 Square                              ksq,
                                 IndexList&                          removed,
                                 IndexList&                          added) {
 
-    auto* write_removed = removed.make_space(popcount(removedBB));
-    auto* write_added   = added.make_space(popcount(addedBB));
-
     const __m512i vecOldPieces = _mm512_loadu_si512(oldPieces.data());
     const __m512i vecNewPieces = _mm512_loadu_si512(newPieces.data());
+
+    Bitboard changedBB = _mm512_cmpneq_epi8_mask(vecOldPieces, vecNewPieces);
+
+    Bitboard removedBB = _mm512_mask_test_epi8_mask(changedBB, vecOldPieces, vecOldPieces);
+    Bitboard addedBB = _mm512_mask_test_epi8_mask(changedBB, vecNewPieces, vecNewPieces);
 
     alignas(64) static constexpr uint16_t psiTable[COLOR_NB][16] = {
       {PS_NONE, PS_W_PAWN, PS_W_KNIGHT, PS_W_BISHOP, PS_W_ROOK, PS_W_QUEEN, PS_KING, PS_NONE,
@@ -72,6 +72,9 @@ void HalfKAv2_hm::write_indices(const std::array<Piece, SQUARE_NB>& oldPieces,
     const __m512i added_indices =
       _mm512_or_si512(_mm512_xor_si512(added_squares, orient),
                       _mm512_permutexvar_epi16(added_pieces, psi_plus_bucket));
+
+    auto* write_removed = removed.make_space(popcount(removedBB));
+    auto* write_added   = added.make_space(popcount(addedBB));
 
     _mm512_storeu_si512(write_removed,
                         _mm512_cvtepu16_epi32(_mm512_castsi512_si256(removed_indices)));

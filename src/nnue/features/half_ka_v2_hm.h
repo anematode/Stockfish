@@ -107,11 +107,10 @@ class HalfKAv2_hm {
     using DiffType                                 = DirtyPiece;
 
 #if defined(USE_AVX512ICL)
-    // Compute all changed feature indices and write them to the given lists
+    // Compute all changed feature indices and write them to the given lists;
+    // also, compute changed bitboards
     static void write_indices(const std::array<Piece, SQUARE_NB>& oldPieces,
                               const std::array<Piece, SQUARE_NB>& newPieces,
-                              Bitboard                            removedBB,
-                              Bitboard                            addedBB,
                               Color                               perspective,
                               Square                              ksq,
                               IndexList&                          removed,

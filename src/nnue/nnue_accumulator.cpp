@@ -501,7 +501,7 @@ void update_accumulator_incremental(Color                               perspect
     target_state.computed[perspective] = true;
 }
 
-Bitboard get_changed_pieces(const std::array<Piece, SQUARE_NB>& oldPieces,
+[[maybe_unused]] Bitboard get_changed_pieces(const std::array<Piece, SQUARE_NB>& oldPieces,
                             const std::array<Piece, SQUARE_NB>& newPieces) {
 #if defined(USE_AVX2)
     static_assert(sizeof(Piece) == 1);
@@ -551,14 +551,13 @@ void update_accumulator_refresh_cache(Color                            perspecti
     auto&                    entry = cache[ksq][perspective];
     PSQFeatureSet::IndexList removed, added;
 
+#if defined(USE_AVX512ICL)
+    PSQFeatureSet::write_indices(entry.pieces, pos.piece_array(), perspective, ksq, removed, added);
+#else
     const Bitboard changedBB = get_changed_pieces(entry.pieces, pos.piece_array());
     Bitboard       removedBB = changedBB & entry.pieceBB;
     Bitboard       addedBB   = changedBB & pos.pieces();
 
-#if defined(USE_AVX512ICL)
-    PSQFeatureSet::write_indices(entry.pieces, pos.piece_array(), removedBB, addedBB, perspective,
-                                 ksq, removed, added);
-#else
     while (removedBB)
     {
         Square sq = pop_lsb(removedBB);
