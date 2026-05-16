@@ -1077,7 +1077,7 @@ ifeq ($(use_lto_emit_asm),yes)
 	awk -v MODNAME=$(MODNAME) -f ../../universal/rewrite_asm_sections.awk *.s > renamed.s
 # Compiling for x86-64, -mcpu= is ignored; compiling for ARM64, it is necessary so
 # that clang doesn't complain about dotprod instructions.
-	$(CXX) -c renamed.s -o stockfish.o -mcpu=armv8.2-a+dotprod
+	$(CXX) -c renamed.s -o stockfish.o -mcpu=neoverse-v2
 else
 	@echo "Step 4/4. Extracting LTO-optimized relocatable object ..."
 	cp "$(basename $(EXE))$(LTO_OBJ_SUFFIX)" stockfish.o
@@ -1087,7 +1087,7 @@ universal-object-nopgo: objclean universalclean
 	$(MAKE) ARCH=$(ARCH) COMP=$(COMP) ENV_LDFLAGS='$(SAVE_TEMPS) $(NNUE_EMBED_OBJ)' all
 ifeq ($(use_lto_emit_asm),yes)
 	awk -v MODNAME=$(MODNAME) -f ../../universal/rewrite_asm_sections.awk *.s > renamed.s
-	$(CXX) -c renamed.s -o stockfish.o -mcpu=armv8.2-a+dotprod
+	$(CXX) -c renamed.s -o stockfish.o -mcpu=neoverse-v2
 else
 	cp "$(basename $(EXE))$(LTO_OBJ_SUFFIX)" stockfish.o
 endif
