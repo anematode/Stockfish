@@ -1057,6 +1057,10 @@ else
   SAVE_TEMPS     := -save-temps
 endif
 
+ifeq ($(arch),armv8-universal)
+  ASM_FLAGS := -mcpu=neoverse-v2
+endif
+
 MODNAME := $(subst -,_,$(notdir $(CURDIR)))
 
 universal-object-pgo: objclean profileclean universalclean
@@ -1074,10 +1078,10 @@ universal-object-pgo: objclean profileclean universalclean
 	@echo ""
 ifeq ($(use_lto_emit_asm),yes)
 	@echo "Step 4/4. Renaming ctors and extracting LTO-optimized relocatable object ..."
-	awk -v MODNAME=$(MODNAME) -f ../../universal/rewrite_asm_sections.awk *.s > renamed.s
-# Compiling for x86-64, -mcpu= is ignored; compiling for ARM64, it is necessary so
-# that clang doesn't complain about dotprod instructions.
-	$(CXX) -c renamed.s -o stockfish.o -mcpu=neoverse-v2
+	awk -v MODNAME=$(MODNAME) -f ../../universal/rewrite_asm_sections.awk $(basename $(EXE)).lto.s > renamed.s
+# -mcpu=neoverse-v2 (or another CPU supporting dotprod) is required for clang
+# to not complain when assembling
+	$(CXX) -c renamed.s -o stockfish.o $(ASM_FLAGS)
 else
 	@echo "Step 4/4. Extracting LTO-optimized relocatable object ..."
 	cp "$(basename $(EXE))$(LTO_OBJ_SUFFIX)" stockfish.o
@@ -1086,8 +1090,8 @@ endif
 universal-object-nopgo: objclean universalclean
 	$(MAKE) ARCH=$(ARCH) COMP=$(COMP) ENV_LDFLAGS='$(SAVE_TEMPS) $(NNUE_EMBED_OBJ)' all
 ifeq ($(use_lto_emit_asm),yes)
-	awk -v MODNAME=$(MODNAME) -f ../../universal/rewrite_asm_sections.awk *.s > renamed.s
-	$(CXX) -c renamed.s -o stockfish.o -mcpu=neoverse-v2
+	awk -v MODNAME=$(MODNAME) -f ../../universal/rewrite_asm_sections.awk $(basename $(EXE)).lto.s > renamed.s
+	$(CXX) -c renamed.s -o stockfish.o $(ASM_FLAGS)
 else
 	cp "$(basename $(EXE))$(LTO_OBJ_SUFFIX)" stockfish.o
 endif
