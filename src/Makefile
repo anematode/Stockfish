@@ -1057,7 +1057,7 @@ else
   SAVE_TEMPS     := -save-temps
 endif
 
-ifeq ($(arch),armv8-universal)
+ifeq ($(arch),armv8)
   ASM_FLAGS := -mcpu=neoverse-v2
 endif
 
@@ -1078,7 +1078,7 @@ universal-object-pgo: objclean profileclean universalclean
 	@echo ""
 ifeq ($(use_lto_emit_asm),yes)
 	@echo "Step 4/4. Renaming ctors and extracting LTO-optimized relocatable object ..."
-	awk -v MODNAME=$(MODNAME) -f ../../universal/rewrite_asm_sections.awk $(basename $(EXE)).lto.s > renamed.s
+	awk -v MODNAME=$(MODNAME) -f ../../universal/rewrite_asm_sections.awk *.lto.s > renamed.s
 # -mcpu=neoverse-v2 (or another CPU supporting dotprod) is required for clang
 # to not complain when assembling
 	$(CXX) -c renamed.s -o stockfish.o $(ASM_FLAGS)
@@ -1090,7 +1090,7 @@ endif
 universal-object-nopgo: objclean universalclean
 	$(MAKE) ARCH=$(ARCH) COMP=$(COMP) ENV_LDFLAGS='$(SAVE_TEMPS) $(NNUE_EMBED_OBJ)' all
 ifeq ($(use_lto_emit_asm),yes)
-	awk -v MODNAME=$(MODNAME) -f ../../universal/rewrite_asm_sections.awk $(basename $(EXE)).lto.s > renamed.s
+	awk -v MODNAME=$(MODNAME) -f ../../universal/rewrite_asm_sections.awk *.lto.s > renamed.s
 	$(CXX) -c renamed.s -o stockfish.o $(ASM_FLAGS)
 else
 	cp "$(basename $(EXE))$(LTO_OBJ_SUFFIX)" stockfish.o
