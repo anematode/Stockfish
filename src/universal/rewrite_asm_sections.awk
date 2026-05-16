@@ -57,3 +57,11 @@ in_ctors && /^[[:space:]]*\.section/ {
 {
     print
 }
+
+END {
+    if (in_ctors) {
+        section = MODNAME "_init"
+        printf "\t.globl\t__stop_%s\n", section
+        printf "__stop_%s:\n", section
+    }
+}
