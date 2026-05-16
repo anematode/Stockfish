@@ -4,7 +4,6 @@ on:
 jobs:
   UniversalLinux:
     name: Linux
-    if: false
     runs-on: ubuntu-22.04
     defaults:
       run:
@@ -59,7 +58,6 @@ jobs:
 
   UniversalWindows:
     name: Windows
-    if: false
     runs-on: windows-2022
     defaults:
       run:
@@ -117,7 +115,6 @@ jobs:
 
   UniversalLinuxARM64:
     name: Linux arm64
-    if: false
     runs-on: ubuntu-22.04-arm
     defaults:
       run:
