@@ -138,6 +138,9 @@ class FeatureTransformer {
         permute<16>(weights, PackusEpi16Order);
 
         permute<8>(threatWeights, PackusEpi16Order);
+#if defined(USE_LASX)
+        permute<8>(threatWeights, std::array<size_t, 4>{ 0, 2, 1, 3 });
+#endif
     }
 
     void unpermute_weights() {

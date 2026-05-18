@@ -235,7 +235,7 @@ inline int16x8_t vsubw_high_s8(int16x8_t a, int8x16_t b) { return vsubw_s8(a, vg
 
 #elif USE_LASX
 using vec_t      = __m256i;
-using vec_i8_t   = __m128i;
+using vec_i8_t   = __m256i;
 using vec128_t   = __m128i;
 using psqt_vec_t = __m256i;
 using vec_uint_t = __m256i;
@@ -280,7 +280,8 @@ inline __m256i lasx_packus_32(__m256i a, __m256i b) {
     #define vec_sub_psqt_32(a, b) __lasx_xvsub_w(a, b)
     #define vec_zero_psqt() __lasx_xvldi(0)
     #define vec_nnz(a) lasx_vec_nnz(a)
-    #define vec_convert_8_16(a) lasx_cvtepi8_epi16(a)
+    #define vec_convert_8_16_lo(a) __lasx_xvsllwil_h_b(a, 0)
+    #define vec_convert_8_16_hi(a) __lasx_xvexth_h_b(a)
 
     #define vec128_zero __lsx_vldi(0)
     #define vec128_set_16(a) __lsx_vreplgr2vr_h(a)
@@ -290,23 +291,6 @@ inline __m256i lasx_packus_32(__m256i a, __m256i b) {
 
     #define NumRegistersSIMD 24
     #define MaxChunkSize 32
-
-inline __m256i lasx_cvtepi8_epi16(__m128i a) {
-    #if defined(__has_builtin) && __has_builtin(__builtin_lasx_cast_128)
-    return __lasx_vext2xv_h_b(__lasx_cast_128(a));
-    #elif defined(__GNUC__) && !defined(__clang__)
-    __m256i out;
-    __asm__("vext2xv.h.b %u0, %u1" : "=f"(out) : "f"(a));
-    return out;
-    #else
-    int64_t lo = (int64_t) __lsx_vpickve2gr_d(a, 0);
-    int64_t hi = (int64_t) __lsx_vpickve2gr_d(a, 1);
-    __m256i v  = __lasx_xvldi(0);
-    v          = __lasx_xvinsgr2vr_d(v, lo, 0);
-    v          = __lasx_xvinsgr2vr_d(v, hi, 2);
-    return __lasx_xvsllwil_h_b(v, 0);
-    #endif
-}
 
 inline int lasx_vec_nnz(__m256i a) {
     const __m256i cmp = __lasx_xvslt_w(__lasx_xvldi(0), a);

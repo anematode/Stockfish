@@ -309,6 +309,12 @@ struct AccumulatorUpdateContext {
                     acc[k]     = vsubw_s8(acc[k], vget_low_s8(column[k / 2]));
                     acc[k + 1] = vsubw_high_s8(acc[k + 1], column[k / 2]);
                 }
+    #elif defined(USE_LASX)
+                for (IndexType k = 0; k < Tiling::NumRegs; k += 2)
+                {
+                    acc[k]     = vec_sub_16(acc[k], vec_convert_8_16_lo(column[k / 2]));
+                    acc[k + 1] = vec_sub_16(acc[k + 1], vec_convert_8_16_hi(column[k / 2]));
+                }
     #else
                 for (IndexType k = 0; k < Tiling::NumRegs; ++k)
                     acc[k] = vec_sub_16(acc[k], vec_convert_8_16(column[k]));
@@ -326,6 +332,12 @@ struct AccumulatorUpdateContext {
                 {
                     acc[k]     = vaddw_s8(acc[k], vget_low_s8(column[k / 2]));
                     acc[k + 1] = vaddw_high_s8(acc[k + 1], column[k / 2]);
+                }
+    #elif defined(USE_LASX)
+                for (IndexType k = 0; k < Tiling::NumRegs; k += 2)
+                {
+                    acc[k]     = vec_add_16(acc[k], vec_convert_8_16_lo(column[k / 2]));
+                    acc[k + 1] = vec_add_16(acc[k + 1], vec_convert_8_16_hi(column[k / 2]));
                 }
     #else
                 for (IndexType k = 0; k < Tiling::NumRegs; ++k)
@@ -756,6 +768,12 @@ void update_threats_accumulator_full(Color                               perspec
             {
                 acc[k]     = vaddw_s8(acc[k], vget_low_s8(column[k / 2]));
                 acc[k + 1] = vaddw_high_s8(acc[k + 1], column[k / 2]);
+            }
+    #elif defined(USE_LASX)
+            for (IndexType k = 0; k < Tiling::NumRegs; k += 2)
+            {
+                acc[k]     = vec_add_16(acc[k], vec_convert_8_16_lo(column[k / 2]));
+                acc[k + 1]     = vec_add_16(acc[k + 1], vec_convert_8_16_hi(column[k / 2]));
             }
     #else
             for (IndexType k = 0; k < Tiling::NumRegs; ++k)
