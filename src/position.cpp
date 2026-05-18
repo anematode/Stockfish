@@ -1181,12 +1181,11 @@ void write_multiple_dirties(const Position& p,
     __m512i threat_squares = _mm512_maskz_compress_epi8(mask, AllSquares);
     threat_squares         = _mm512_cvtepi8_epi32(_mm512_castsi512_si128(threat_squares));
 
-    __m512i threat_pieces =
-      _mm512_maskz_permutexvar_epi8(0x1111111111111111ULL, threat_squares, board);
+    __m512i threat_pieces = _mm512_permutexvar_epi8(threat_squares, board);
 
     // Shift the piece and square into place
     threat_squares = _mm512_slli_epi32(threat_squares, SqShift);
-    threat_pieces  = _mm512_slli_epi32(threat_pieces, PcShift);
+    threat_pieces  = _mm512_srli_epi32(_mm512_slli_epi32(threat_pieces, 24), 24 - PcShift);
 
     const __m512i dirties =
       _mm512_ternarylogic_epi32(template_v, threat_squares, threat_pieces, 254 /* A | B | C */);
