@@ -25,6 +25,7 @@
 #include "bitboard.h"
 #include "misc.h"
 #include "position.h"
+#include "tt.h"
 
 namespace Stockfish {
 
@@ -108,7 +109,8 @@ struct MoveSorter {
 
 // Sort moves in descending order up to and including a given limit.
 // The order of moves smaller than the limit is left unspecified.
-void partial_insertion_sort(ExtMove* begin, ExtMove* end, int limit) {
+template <typename L>
+void partial_insertion_sort(ExtMove* begin, ExtMove* end, int limit, L&& callback) {
     ExtMove *sortedEnd = begin, *p = begin + 1;
 
 #ifdef USE_AVX512ICL
@@ -124,6 +126,7 @@ void partial_insertion_sort(ExtMove* begin, ExtMove* end, int limit) {
                 break;
 
             sorter.insert(*p);
+            callback(*p);
             *p = *++sortedEnd;
         }
     }
@@ -135,11 +138,16 @@ void partial_insertion_sort(ExtMove* begin, ExtMove* end, int limit) {
         if (p->value >= limit)
         {
             ExtMove tmp = *p, *q;
+            callback(*p);
             *p          = *++sortedEnd;
             for (q = sortedEnd; q != begin && *(q - 1) < tmp; --q)
                 *q = *(q - 1);
             *q = tmp;
         }
+}
+
+void partial_insertion_sort(ExtMove* begin, ExtMove* end, int limit) {
+    partial_insertion_sort(begin, end, limit, [] (ExtMove m) {});
 }
 
 }  // namespace
@@ -158,7 +166,8 @@ MovePicker::MovePicker(const Position&              p,
                        const CapturePieceToHistory* cph,
                        const PieceToHistory**       ch,
                        const SharedHistories*       sh,
-                       int                          pl) :
+                       int                          pl,
+                       const TranspositionTable* tt_) :
     pos(p),
     mainHistory(mh),
     lowPlyHistory(lph),
@@ -167,7 +176,8 @@ MovePicker::MovePicker(const Position&              p,
     sharedHistory(sh),
     ttMove(ttm),
     depth(d),
-    ply(pl) {
+    ply(pl),
+    tt(tt_){
 
     if (pos.checkers())
         stage = EVASION_TT + !(ttm && pos.pseudo_legal(ttm));
@@ -321,7 +331,10 @@ top:
 
             endCur = endGenerated = score<QUIETS>(ml);
 
-            partial_insertion_sort(cur, endCur, -3560 * depth);
+            Key k = pos.key();
+            partial_insertion_sort(cur, endCur, -3560 * depth, [&] (ExtMove mv) {
+                prefetch(tt->first_entry(k ^ pos.quiet_zobrist(mv)));
+            });
         }
 
         ++stage;

@@ -163,6 +163,7 @@ class Position {
     Key pawn_key() const;
     Key minor_piece_key() const;
     Key non_pawn_key(Color c) const;
+    Key quiet_zobrist(Move m) const;
 
     // Other properties of the position
     Color side_to_move() const;

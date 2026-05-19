@@ -1689,4 +1689,11 @@ bool Position::pos_is_ok() const {
     return true;
 }
 
+Key Position::quiet_zobrist(Move m) const {
+    Square from = m.from_sq(), to = m.to_sq();
+    Piece pc = piece_on(from);
+
+    return Zobrist::psq[pc][from] ^ Zobrist::psq[pc][to];
+}
+
 }  // namespace Stockfish
