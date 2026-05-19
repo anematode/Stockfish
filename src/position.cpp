@@ -867,6 +867,11 @@ void Position::do_move(Move                      m,
     dts.us      = us;
     dts.prevKsq = square<KING>(us);
 
+    // Compute the entire DirtyThreats list from pre-move state in one sweep;
+    // the bitboard updates below pass nullptr so they no longer dispatch
+    // per-piece threat recomputation.
+    update_threats_for_move(m, dts);
+
     assert(color_of(pc) == us);
     assert(captured == NO_PIECE || color_of(captured) == (m.type_of() != CASTLING ? them : us));
     assert(type_of(captured) != KING);
@@ -877,7 +882,7 @@ void Position::do_move(Move                      m,
         assert(captured == make_piece(us, ROOK));
 
         Square rfrom, rto;
-        do_castling<true>(us, from, to, rfrom, rto, &dts, &dp);
+        do_castling<true>(us, from, to, rfrom, rto, nullptr, &dp);
 
         k ^= Zobrist::psq[captured][rfrom] ^ Zobrist::psq[captured][rto];
         st->nonPawnKey[us] ^= Zobrist::psq[captured][rfrom] ^ Zobrist::psq[captured][rto];
@@ -902,7 +907,7 @@ void Position::do_move(Move                      m,
                 assert(piece_on(capsq) == make_piece(them, PAWN));
 
                 // Update board and piece lists in ep case, normal captures are updated later
-                remove_piece(capsq, &dts);
+                remove_piece(capsq);
             }
 
             st->pawnKey ^= Zobrist::psq[captured][capsq];
@@ -953,15 +958,15 @@ void Position::do_move(Move                      m,
 
         if (captured && m.type_of() != EN_PASSANT)
         {
-            remove_piece(from, &dts);
-            swap_piece(to, toPc, &dts);
+            remove_piece(from);
+            swap_piece(to, toPc);
         }
         else if (pc == toPc)
-            move_piece(from, to, &dts);
+            move_piece(from, to);
         else
         {
-            remove_piece(from, &dts);
-            put_piece(toPc, to, &dts);
+            remove_piece(from);
+            put_piece(toPc, to);
         }
     }
 
@@ -1161,15 +1166,18 @@ inline void add_dirty_threat(DirtyThreats* const dts,
 
 #ifdef USE_AVX512ICL
 // Given a DirtyThreat template and bit offsets to insert the piece type and square, write the threats
-// present at the given bitboard.
+// present at the given bitboard. `board_ptr` is the 64-byte piece array used to gather
+// the attacker/attacked piece at each set bit; passing it as a pointer (rather than reading
+// pos.piece_array()) lets update_threats_for_move emit threats against an intermediate
+// board state without mutating the Position.
 template<int SqShift, int PcShift>
-void write_multiple_dirties(const Position& p,
-                            Bitboard        mask,
-                            DirtyThreat     dt_template,
-                            DirtyThreats*   dts) {
+void write_multiple_dirties(const Piece*  board_ptr,
+                            Bitboard      mask,
+                            DirtyThreat   dt_template,
+                            DirtyThreats* dts) {
     static_assert(sizeof(DirtyThreat) == 4);
 
-    const __m512i board    = _mm512_loadu_si512(p.piece_array().data());
+    const __m512i board    = _mm512_loadu_si512(board_ptr);
     const int     dt_count = popcount(mask);
     assert(dt_count <= 16);
 
@@ -1194,19 +1202,33 @@ void write_multiple_dirties(const Position& p,
 }
 #endif
 
+// Bundle of position-wide bitboards used by emit_threats_for_square. Threading these
+// through a struct lets update_threats_for_move compute them once per move and patch
+// them with cheap XORs between transitions, instead of re-reading them from byTypeBB
+// for each of the 2-4 piece changes a do_move can involve.
+struct ThreatBbs {
+    Bitboard occupied;
+    Bitboard kings;
+    Bitboard knights;
+    Bitboard whitePawns, blackPawns;
+    Bitboard rookQueens, bishopQueens;
+};
+
 template<bool ComputeRay>
-void Position::update_piece_threats(Piece               pc,
+static void emit_threats_for_square(const Piece*        board,
+                                    const ThreatBbs&    bbs,
+                                    Piece               pc,
                                     bool                putPiece,
                                     Square              s,
                                     DirtyThreats* const dts,
                                     // Silence spurious warning on GCC 10
-                                    [[maybe_unused]] Bitboard noRaysContaining) const {
-    const Bitboard occupied     = pieces();
-    const Bitboard rookQueens   = pieces(ROOK, QUEEN);
-    const Bitboard bishopQueens = pieces(BISHOP, QUEEN);
+                                    [[maybe_unused]] Bitboard noRaysContaining) {
+    const Bitboard occupied     = bbs.occupied;
+    const Bitboard rookQueens   = bbs.rookQueens;
+    const Bitboard bishopQueens = bbs.bishopQueens;
     const Bitboard rAttacks     = attacks_bb<ROOK>(s, occupied);
     const Bitboard bAttacks     = attacks_bb<BISHOP>(s, occupied);
-    const Bitboard kings        = pieces(KING);
+    const Bitboard kings        = bbs.kings;
     Bitboard       occupiedNoK  = occupied ^ kings;
 
     Bitboard sliders         = (rookQueens & rAttacks) | (bishopQueens & bAttacks);
@@ -1214,16 +1236,16 @@ void Position::update_piece_threats(Piece               pc,
         while (sliders)
         {
             Square sliderSq = pop_lsb(sliders);
-            Piece  slider   = piece_on(sliderSq);
+            Piece  slider   = board[sliderSq];
 
             const Bitboard ray        = RayPassBB[sliderSq][s];
             const Bitboard discovered = ray & (rAttacks | bAttacks) & occupiedNoK;
 
             assert(!more_than_one(discovered));
-            if (discovered && (RayPassBB[sliderSq][s] & noRaysContaining) != noRaysContaining)
+            if (discovered && (ray & noRaysContaining) != noRaysContaining)
             {
                 const Square threatenedSq = lsb(discovered);
-                const Piece  threatenedPc = piece_on(threatenedSq);
+                const Piece  threatenedPc = board[threatenedSq];
                 add_dirty_threat(dts, !putPiece, slider, threatenedPc, sliderSq, threatenedSq);
             }
 
@@ -1240,12 +1262,30 @@ void Position::update_piece_threats(Piece               pc,
     }
 
 
-    const Bitboard knights    = pieces(KNIGHT);
-    const Bitboard whitePawns = pieces(WHITE, PAWN);
-    const Bitboard blackPawns = pieces(BLACK, PAWN);
+    const Bitboard knights    = bbs.knights;
+    const Bitboard whitePawns = bbs.whitePawns;
+    const Bitboard blackPawns = bbs.blackPawns;
 
 
-    Bitboard threatened = attacks_bb(pc, s, occupied) & occupiedNoK;
+    // For slider pc, attacks_bb(pc, s, occupied) is exactly rAttacks/bAttacks/(rA|bA);
+    // skip the redundant magic probe.
+    Bitboard threatened;
+    switch (type_of(pc))
+    {
+    case BISHOP :
+        threatened = bAttacks & occupiedNoK;
+        break;
+    case ROOK :
+        threatened = rAttacks & occupiedNoK;
+        break;
+    case QUEEN :
+        threatened = (rAttacks | bAttacks) & occupiedNoK;
+        break;
+    default :
+        threatened = attacks_bb(pc, s, occupied) & occupiedNoK;
+        break;
+    }
+
     Bitboard incoming_threats =
       (PseudoAttacks[KNIGHT][s] & knights) | (PseudoAttacks[KING][s] & kings);
 
@@ -1256,7 +1296,8 @@ void Position::update_piece_threats(Piece               pc,
         Bitboard whiteAttacks = PawnPushOrAttacks[WHITE][s];
         Bitboard blackAttacks = PawnPushOrAttacks[BLACK][s];
 
-        threatened |= (color_of(pc) == WHITE ? whiteAttacks : blackAttacks) & pieces(PAWN);
+        threatened |=
+          (color_of(pc) == WHITE ? whiteAttacks : blackAttacks) & (whitePawns | blackPawns);
 
         incoming_threats |= whiteAttacks & blackPawns;
         incoming_threats |= blackAttacks & whitePawns;
@@ -1270,18 +1311,18 @@ void Position::update_piece_threats(Piece               pc,
 #ifdef USE_AVX512ICL
     DirtyThreat dt_template{pc, NO_PIECE, s, Square(0), putPiece};
     write_multiple_dirties<DirtyThreat::ThreatenedSqOffset, DirtyThreat::ThreatenedPcOffset>(
-      *this, threatened, dt_template, dts);
+      board, threatened, dt_template, dts);
 
     Bitboard all_attackers = sliders | incoming_threats;
 
     dt_template = {NO_PIECE, pc, Square(0), s, putPiece};
-    write_multiple_dirties<DirtyThreat::PcSqOffset, DirtyThreat::PcOffset>(*this, all_attackers,
+    write_multiple_dirties<DirtyThreat::PcSqOffset, DirtyThreat::PcOffset>(board, all_attackers,
                                                                            dt_template, dts);
 #else
     while (threatened)
     {
         Square threatenedSq = pop_lsb(threatened);
-        Piece  threatenedPc = piece_on(threatenedSq);
+        Piece  threatenedPc = board[threatenedSq];
 
         assert(threatenedSq != s);
         assert(threatenedPc);
@@ -1307,7 +1348,7 @@ void Position::update_piece_threats(Piece               pc,
     while (incoming_threats)
     {
         Square srcSq = pop_lsb(incoming_threats);
-        Piece  srcPc = piece_on(srcSq);
+        Piece  srcPc = board[srcSq];
 
         assert(srcSq != s);
         assert(srcPc != NO_PIECE);
@@ -1315,6 +1356,164 @@ void Position::update_piece_threats(Piece               pc,
         add_dirty_threat(dts, putPiece, srcPc, pc, srcSq, s);
     }
 #endif
+}
+
+static ThreatBbs build_threat_bbs(const Position& pos) {
+    return {pos.pieces(),          pos.pieces(KING),       pos.pieces(KNIGHT),
+            pos.pieces(WHITE, PAWN), pos.pieces(BLACK, PAWN),
+            pos.pieces(ROOK, QUEEN), pos.pieces(BISHOP, QUEEN)};
+}
+
+template<bool ComputeRay>
+void Position::update_piece_threats(Piece               pc,
+                                    bool                putPiece,
+                                    Square              s,
+                                    DirtyThreats* const dts,
+                                    Bitboard            noRaysContaining) const {
+    emit_threats_for_square<ComputeRay>(piece_array().data(), build_threat_bbs(*this), pc, putPiece,
+                                        s, dts, noRaysContaining);
+}
+
+// Applies the bitboard delta of placing/removing piece `pc` at square `sq` to a
+// ThreatBbs cache. Used to thread the cache through the sequence of piece
+// transitions that constitute a single do_move.
+static void toggle_threat_bbs(ThreatBbs& bbs, Piece pc, Square sq) {
+    const Bitboard b = square_bb(sq);
+    bbs.occupied ^= b;
+    switch (type_of(pc))
+    {
+    case PAWN :
+        (color_of(pc) == WHITE ? bbs.whitePawns : bbs.blackPawns) ^= b;
+        break;
+    case KNIGHT :
+        bbs.knights ^= b;
+        break;
+    case BISHOP :
+        bbs.bishopQueens ^= b;
+        break;
+    case ROOK :
+        bbs.rookQueens ^= b;
+        break;
+    case QUEEN :
+        bbs.rookQueens ^= b;
+        bbs.bishopQueens ^= b;
+        break;
+    case KING :
+        bbs.kings ^= b;
+        break;
+    default :
+        break;
+    }
+}
+
+// Reproduces the exact sequence of update_piece_threats calls (and the bitboard
+// state visible to each) that the per-piece put/remove/move/swap wrappers would
+// have made during do_move, but in a single function with the position bitboards
+// computed once and patched via cheap XORs between transitions. A local board
+// copy is patched in lock-step so emit_threats_for_square (and the AVX-512
+// gather inside write_multiple_dirties) sees the same per-transition board
+// state the per-piece path would have seen.
+void Position::update_threats_for_move(Move m, DirtyThreats& dts) const {
+    const Color    us   = sideToMove;
+    const Square   from = m.from_sq();
+    const Square   to   = m.to_sq();
+    const auto     mt   = m.type_of();
+
+    ThreatBbs bbs = build_threat_bbs(*this);
+    alignas(64) Piece board_local[SQUARE_NB];
+    std::memcpy(board_local, piece_array().data(), SQUARE_NB);
+
+    auto apply = [&](Piece pc, Square sq, Piece newPc) {
+        toggle_threat_bbs(bbs, pc, sq);
+        board_local[sq] = newPc;
+    };
+
+    if (mt == CASTLING)
+    {
+        const bool   kingSide = to > from;
+        const Square rfrom    = to;  // Chess960: "king captures friendly rook"
+        const Square rto      = relative_square(us, kingSide ? SQ_F1 : SQ_D1);
+        const Square kto      = relative_square(us, kingSide ? SQ_G1 : SQ_C1);
+        const Piece  king     = make_piece(us, KING);
+        const Piece  rook     = make_piece(us, ROOK);
+
+        // Matches do_castling's order: remove king from `from`, remove rook from
+        // rfrom, put king at kto, put rook at rto.
+        emit_threats_for_square<true>(board_local, bbs, king, false, from, &dts, -1ULL);
+        apply(king, from, NO_PIECE);
+
+        emit_threats_for_square<true>(board_local, bbs, rook, false, rfrom, &dts, -1ULL);
+        apply(rook, rfrom, NO_PIECE);
+
+        // put_piece updates bitboards before invoking update_piece_threats, so
+        // the king must be on kto in both bbs and board_local before emitting.
+        apply(king, kto, king);
+        emit_threats_for_square<true>(board_local, bbs, king, true, kto, &dts, -1ULL);
+
+        apply(rook, rto, rook);
+        emit_threats_for_square<true>(board_local, bbs, rook, true, rto, &dts, -1ULL);
+        return;
+    }
+
+    const Piece    pc     = piece_on(from);
+    const Bitboard fromTo = square_bb(from) | square_bb(to);
+
+    if (mt == EN_PASSANT)
+    {
+        // Sequence: remove_piece(capsq, &dts) then move_piece(from, to, &dts).
+        const Square capsq      = to - pawn_push(us);
+        const Piece  capturedPc = make_piece(~us, PAWN);
+
+        emit_threats_for_square<true>(board_local, bbs, capturedPc, false, capsq, &dts, -1ULL);
+        apply(capturedPc, capsq, NO_PIECE);
+
+        emit_threats_for_square<true>(board_local, bbs, pc, false, from, &dts, fromTo);
+        apply(pc, from, NO_PIECE);
+        apply(pc, to, pc);
+        emit_threats_for_square<true>(board_local, bbs, pc, true, to, &dts, fromTo);
+        return;
+    }
+
+    const Piece capturedPc = piece_on(to);
+    const Piece toPc       = mt == PROMOTION ? make_piece(us, m.promotion_type()) : pc;
+
+    if (capturedPc != NO_PIECE)
+    {
+        // Sequence: remove_piece(from, &dts) then swap_piece(to, toPc, &dts).
+        // remove_piece uses default noRaysContaining=-1ULL. swap_piece's two
+        // emits use ComputeRay=false because rays through `to` don't change
+        // when the occupancy bit at `to` stays set across both halves of the
+        // swap.
+        emit_threats_for_square<true>(board_local, bbs, pc, false, from, &dts, -1ULL);
+        apply(pc, from, NO_PIECE);
+
+        // swap_piece's internal remove_piece(to) updates bitboards first, then
+        // emits — so toggle off captured before emitting.
+        apply(capturedPc, to, NO_PIECE);
+        emit_threats_for_square<false>(board_local, bbs, capturedPc, false, to, &dts, -1ULL);
+
+        // Then internal put_piece(toPc, to) updates first, then emits.
+        apply(toPc, to, toPc);
+        emit_threats_for_square<false>(board_local, bbs, toPc, true, to, &dts, -1ULL);
+        return;
+    }
+
+    if (mt == PROMOTION)
+    {
+        // Sequence: remove_piece(from, &dts) then put_piece(toPc, to, &dts).
+        emit_threats_for_square<true>(board_local, bbs, pc, false, from, &dts, -1ULL);
+        apply(pc, from, NO_PIECE);
+
+        apply(toPc, to, toPc);
+        emit_threats_for_square<true>(board_local, bbs, toPc, true, to, &dts, -1ULL);
+        return;
+    }
+
+    // Quiet move: move_piece(from, to, &dts) — fromTo is passed to both halves.
+    emit_threats_for_square<true>(board_local, bbs, pc, false, from, &dts, fromTo);
+    apply(pc, from, NO_PIECE);
+    apply(pc, to, pc);
+    emit_threats_for_square<true>(board_local, bbs, pc, true, to, &dts, fromTo);
 }
 
 // Helper used to do/undo a castling move. This is a bit

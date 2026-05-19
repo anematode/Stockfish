@@ -201,6 +201,11 @@ class Position {
                               Square              s,
                               DirtyThreats* const dts,
                               Bitboard            noRaysContaining = -1ULL) const;
+    // Fused entry point: emits the full DirtyThreats list for an entire move in a
+    // single sweep, sharing position bitboards across the 2-4 piece transitions a
+    // do_move would otherwise dispatch through per-piece update_piece_threats calls.
+    // Must be invoked while the position is still in pre-move state.
+    void update_threats_for_move(Move m, DirtyThreats& dts) const;
     void move_piece(Square from, Square to, DirtyThreats* const dts = nullptr);
     template<bool Do>
     void do_castling(Color               us,
