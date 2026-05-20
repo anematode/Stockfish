@@ -365,8 +365,8 @@ class FeatureTransformer {
 
     alignas(CacheLineSize) std::array<BiasType, HalfDimensions> biases;
     alignas(
-      CacheLineSize) std::array<WeightType, HalfDimensions * PSQFeatureSet::Dimensions> weights;
-    alignas(CacheLineSize)
+      4096) std::array<WeightType, HalfDimensions * PSQFeatureSet::Dimensions> weights;
+    alignas(4096)
       std::array<ThreatWeightType, HalfDimensions * ThreatFeatureSet::Dimensions> threatWeights;
     alignas(CacheLineSize)
       std::array<PSQTWeightType, PSQFeatureSet::Dimensions * PSQTBuckets> psqtWeights;
