@@ -209,32 +209,46 @@ ExtMove* MovePicker::score(const MoveList<Type>& ml) {
         threatByLesser[KING]  = 0;
     }
 
+    auto captHist  = (Type == CAPTURES) ? captureHistory : nullptr;
+    auto mainHist  = (Type == QUIETS || Type == EVASIONS) ? &(*mainHistory)[us] : nullptr;
+    auto pawnEntry = (Type == QUIETS) ? &sharedHistory->pawn_entry(pos) : nullptr;
+    auto ch0       = (Type == QUIETS || Type == EVASIONS) ? continuationHistory[0] : nullptr;
+    auto ch1       = (Type == QUIETS) ? continuationHistory[1] : nullptr;
+    auto ch2       = (Type == QUIETS) ? continuationHistory[2] : nullptr;
+    auto ch3       = (Type == QUIETS) ? continuationHistory[3] : nullptr;
+    auto ch5       = (Type == QUIETS) ? continuationHistory[5] : nullptr;
+    auto lph = (Type == QUIETS && ply < LOW_PLY_HISTORY_SIZE) ? &(*lowPlyHistory)[ply] : nullptr;
+    const int lphDivisor = 1 + ply;
+
+    [](...) {}(captHist, mainHist, pawnEntry, ch0, ch1, ch2, ch3, ch5, lph, lphDivisor);
+
     ExtMove* it = cur;
     for (auto move : ml)
     {
         ExtMove& m = *it++;
         m          = move;
 
-        const Square    from          = m.from_sq();
-        const Square    to            = m.to_sq();
-        const Piece     pc            = pos.moved_piece(m);
-        const PieceType pt            = type_of(pc);
-        const Piece     capturedPiece = pos.piece_on(to);
+        const Square                     from = m.from_sq();
+        const Square                     to   = m.to_sq();
+        const Piece                      pc   = pos.moved_piece(m);
+        [[maybe_unused]] const PieceType pt   = type_of(pc);
+        [[maybe_unused]] const Piece     capturedPiece =
+          (Type == CAPTURES || Type == EVASIONS) ? pos.piece_on(to) : NO_PIECE;
 
         if constexpr (Type == CAPTURES)
-            m.value = (*captureHistory)[pc][to][type_of(capturedPiece)]
-                    + 7 * int(PieceValue[capturedPiece]);
+            m.value =
+              (*captHist)[pc][to][type_of(capturedPiece)] + 7 * int(PieceValue[capturedPiece]);
 
         else if constexpr (Type == QUIETS)
         {
             // histories
-            m.value = 2 * (*mainHistory)[us][m.raw()];
-            m.value += 2 * sharedHistory->pawn_entry(pos)[pc][to];
-            m.value += (*continuationHistory[0])[pc][to];
-            m.value += (*continuationHistory[1])[pc][to];
-            m.value += (*continuationHistory[2])[pc][to];
-            m.value += (*continuationHistory[3])[pc][to];
-            m.value += (*continuationHistory[5])[pc][to];
+            m.value = 2 * (*mainHist)[m.raw()];
+            m.value += 2 * (*pawnEntry)[pc][to];
+            m.value += (*ch0)[pc][to];
+            m.value += (*ch1)[pc][to];
+            m.value += (*ch2)[pc][to];
+            m.value += (*ch3)[pc][to];
+            m.value += (*ch5)[pc][to];
 
             // bonus for checks
             m.value += ((pos.check_squares(pt) & to) && pos.see_ge(m, -75)) * 16384;
@@ -245,8 +259,8 @@ ExtMove* MovePicker::score(const MoveList<Type>& ml) {
             m.value += PieceValue[pt] * v;
 
 
-            if (ply < LOW_PLY_HISTORY_SIZE)
-                m.value += 8 * (*lowPlyHistory)[ply][m.raw()] / (1 + ply);
+            if (lph)
+                m.value += 8 * (*lph)[m.raw()] / lphDivisor;
         }
 
         else  // Type == EVASIONS
@@ -254,7 +268,7 @@ ExtMove* MovePicker::score(const MoveList<Type>& ml) {
             if (pos.capture_stage(m))
                 m.value = PieceValue[capturedPiece] + (1 << 28);
             else
-                m.value = (*mainHistory)[us][m.raw()] + (*continuationHistory[0])[pc][to];
+                m.value = (*mainHist)[m.raw()] + (*ch0)[pc][to];
         }
     }
     return it;
