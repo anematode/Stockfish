@@ -131,11 +131,11 @@ class AccumulatorStack {
     [[nodiscard]] std::array<AccumulatorState<T>, MaxSize>& mut_accumulators() noexcept;
 
     template<typename FeatureSet>
-    void evaluate_side(Color                     perspective,
-                       const Position&           pos,
-                       const FeatureTransformer& featureTransformer,
-                       // Silence spurious warning on GCC 10
-                       [[maybe_unused]] AccumulatorCaches& cache) noexcept;
+    inline sf_always_inline void evaluate_side(Color                     perspective,
+                                               const Position&           pos,
+                                               const FeatureTransformer& featureTransformer,
+                                               // Silence spurious warning on GCC 10
+                                               [[maybe_unused]] AccumulatorCaches& cache) noexcept;
 
     template<typename FeatureSet>
     [[nodiscard]] std::size_t find_last_usable_accumulator(Color perspective) const noexcept;

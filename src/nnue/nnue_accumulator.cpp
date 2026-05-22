@@ -129,10 +129,11 @@ void AccumulatorStack::evaluate(const Position&           pos,
 }
 
 template<typename FeatureSet>
-void AccumulatorStack::evaluate_side(Color                     perspective,
-                                     const Position&           pos,
-                                     const FeatureTransformer& featureTransformer,
-                                     AccumulatorCaches&        cache) noexcept {
+inline sf_always_inline void
+AccumulatorStack::evaluate_side(Color                     perspective,
+                                const Position&           pos,
+                                const FeatureTransformer& featureTransformer,
+                                AccumulatorCaches&        cache) noexcept {
 
     const auto last_usable_accum = find_last_usable_accumulator<FeatureSet>(perspective);
 
@@ -248,9 +249,7 @@ struct AccumulatorUpdateContext {
         from{accF},
         to{accT} {}
 
-    template<UpdateOperation... ops,
-             typename... Ts,
-             std::enable_if_t<is_all_same_v<IndexType, Ts...>, bool> = true>
+    template<UpdateOperation... ops, typename... Ts>
     void apply(const Ts... indices) {
         constexpr IndexType Dimensions = FeatureTransformer::OutputDimensions;
 
@@ -583,7 +582,7 @@ void update_accumulator_refresh_cache(Color                            perspecti
 
     const Square             ksq   = pos.square<KING>(perspective);
     auto&                    entry = cache[ksq][perspective];
-    PSQFeatureSet::IndexList removed, added;
+    alignas(64) PSQFeatureSet::IndexList removed, added;
 
     const Bitboard changedBB = get_changed_pieces(entry.pieces, pos.piece_array());
     Bitboard       removedBB = changedBB & entry.pieceBB;

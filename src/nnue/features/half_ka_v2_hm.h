@@ -103,7 +103,7 @@ class HalfKAv2_hm {
 
     // Maximum number of simultaneously active features.
     static constexpr IndexType MaxActiveDimensions = 32;
-    using IndexList                                = ValueList<IndexType, MaxActiveDimensions>;
+    using IndexList                                = ValueList<uint16_t, MaxActiveDimensions>;
     using DiffType                                 = DirtyPiece;
 
 #if defined(USE_AVX512ICL)
