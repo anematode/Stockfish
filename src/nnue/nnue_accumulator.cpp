@@ -519,7 +519,7 @@ Bitboard get_changed_pieces(const std::array<Piece, SQUARE_NB>& oldPieces,
 #elif defined(USE_LASX)
     static_assert(sizeof(Piece) == 1);
 
-    Bitboard changed = 0;
+    __m256i combinedMask;
 
     for (int i = 0; i < 64; i += 32)
     {
@@ -527,13 +527,13 @@ Bitboard get_changed_pieces(const std::array<Piece, SQUARE_NB>& oldPieces,
         const __m256i new_v = __lasx_xvld(reinterpret_cast<const void*>(&newPieces[i]), 0);
         const __m256i diff  = __lasx_xvxor_v(old_v, new_v);
         const __m256i mask  = __lasx_xvmsknz_b(diff);
-        const auto    lo    = __lasx_xvpickve2gr_d(mask, 0);
-        const auto    hi    = __lasx_xvpickve2gr_d(mask, 2);
-
-        changed |= (static_cast<Bitboard>(lo) | (static_cast<Bitboard>(hi) << 16)) << i;
+        combinedMask = i == 0 ? mask : __lasx_xvor_v(combinedMask, __lasx_xvslli_d(mask, 32));
     }
 
-    return changed;
+    const auto lo = __lasx_xvpickve2gr_d(combinedMask, 0);
+    const auto hi = __lasx_xvpickve2gr_d(combinedMask, 2);
+
+    return (static_cast<Bitboard>(lo) | (static_cast<Bitboard>(hi) << 16));
 #elif defined(USE_LSX)
     static_assert(sizeof(Piece) == 1);
 

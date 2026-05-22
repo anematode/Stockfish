@@ -132,6 +132,15 @@ struct NNZInfo {
             const uint16x8_t bits = vandq_u16(packed, vld1q_u16(Mask8));
 
             *out++ = vaddvq_u16(bits);
+        #elif defined(USE_LASX)
+            __m256i narrowed = __lasx_xvssrlni_hu_w(neurons1, neurons2, 0);
+            narrowed         = __lasx_xvpermi_d(narrowed, 0x8D);
+            narrowed         = __lasx_xvssrlni_bu_h(narrowed, narrowed, 0);
+
+            __m256i mask = __lasx_xvmsknz_b(narrowed);
+            __lasx_xvstelm_b(mask, out, 0, 0);
+            __lasx_xvstelm_b(mask, out, 1, 16);
+            out += 2;
         #else
             auto m1 = vec_nnz(neurons1);
             auto m2 = vec_nnz(neurons2);
