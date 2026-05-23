@@ -847,9 +847,8 @@ endif
 
 ### 3.7 pext
 ifeq ($(pext),yes)
-	CXXFLAGS += -DUSE_PEXT
 	ifeq ($(comp),$(filter $(comp),gcc clang mingw icx))
-		CXXFLAGS += -mbmi2 -DUSE_COMPTIME_ATTACKS
+		CXXFLAGS += -mbmi2
 	endif
 endif
 
