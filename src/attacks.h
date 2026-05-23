@@ -79,24 +79,30 @@ const Magic& magic(Square s, PieceType pt);
 
 struct DualMagic {
     // file, diagonal, unused, antidiagonal
-    Bitboard maskFile, maskDiag, maskNone, maskAntidiag;
+    Bitboard maskFile, maskDiag, maskRank, maskAntidiag;
     // Precomputed 2 * square_bb(sq), 2 * reverse(square_bb(sq))
     Bitboard r, rr;
-
-    const uint8_t* RESTRICT rankAttacksLookup;
-    // 8 * rank_of(sq)
-    int shift;
+    char padding[16];
 
     // We always compute [bishop, rook] attacks at once, then rely on
     // compiler's DCE and CSE to eliminate unneeded re-computations or extractions.
-    //
-    // When using hyperbola quintessence, file, diagonal and antidiagonal attacks
-    // can use a byte reversal rather than a full bit reversal (because all squares
-    // reside in different bytes). Rank atttacks cannot. Thus, for rank attacks
-    // only, we use a compact lookup table indexed by the 8 bits of the rank's occupancy.
     std::pair<Bitboard, Bitboard> both_attacks_bb(Bitboard occupied) const {
-        // Byteswap within 64-bit elements
-        const auto bswap = [](__m256i v) {
+        // Bit reverse within 64-bit elements
+        const auto brev = [](__m256i v) {
+            __m256i lo = _mm256_and_si256(v, _mm256_set1_epi8(15));
+            __m256i hi = _mm256_and_si256(_mm256_srli_epi16(v, 4), _mm256_set1_epi8(15));
+            __m256i hi_lut = _mm256_setr_epi8(
+                0, 8, 4, 12, 2, 10, 6, 14, 1, 9, 5, 13, 3, 11, 7, 15,
+                0, 8, 4, 12, 2, 10, 6, 14, 1, 9, 5, 13, 3, 11, 7, 15
+            );
+            __m256i lo_lut = _mm256_setr_epi8(
+                0, -128, 64, -64, 32, -96, 96, -32, 16, -112, 80, -48, 48, -80, 112, -16,
+                0, -128, 64, -64, 32, -96, 96, -32, 16, -112, 80, -48, 48, -80, 112, -16
+            );
+            lo = _mm256_shuffle_epi8(lo_lut, lo);
+            hi = _mm256_shuffle_epi8(hi_lut, hi);
+
+            v = _mm256_or_si256(lo, hi);
             return _mm256_shuffle_epi8(v, _mm256_set_epi8(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12,
                                                           13, 14, 15, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
                                                           10, 11, 12, 13, 14, 15));
@@ -110,18 +116,15 @@ struct DualMagic {
 
         __m256i o      = _mm256_and_si256(mask, _mm256_set1_epi64x(occupied));
         __m256i fwd    = _mm256_sub_epi64(o, rs);
-        __m256i rev    = bswap(_mm256_sub_epi64(bswap(o), rrs));
+        __m256i rev    = brev(_mm256_sub_epi64(brev(o), rrs));
         __m256i result = _mm256_and_si256(_mm256_xor_si256(fwd, rev), mask);
 
         // Lane 0: rook attacks (file only); lane 1: bishop attacks
         __m128i rookBishop =
           _mm_or_si128(_mm256_extracti128_si256(result, 1), _mm256_castsi256_si128(result));
 
-        Bitboard rowOccupancy = rankAttacksLookup[(occupied >> shift) & 0xff];
-        Bitboard rankAttacks  = rowOccupancy << shift;
-
         // [bishop, rook]
-        return {_mm_extract_epi64(rookBishop, 1), _mm_cvtsi128_si64(rookBishop) + rankAttacks};
+        return {_mm_extract_epi64(rookBishop, 1), _mm_cvtsi128_si64(rookBishop)};
     }
 };
 
