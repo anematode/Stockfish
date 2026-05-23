@@ -537,6 +537,12 @@ void move_to_front(std::vector<T>& vec, Predicate pred) {
 #endif
 
 #ifdef __GNUC__
+#define NO_CLONE __attribute__((noclone))
+#else
+#define NO_CLONE 
+#endif
+
+#ifdef __GNUC__
     #define sf_unreachable() __builtin_unreachable()
 #elif defined(_MSC_VER)
     #define sf_unreachable() __assume(0)
