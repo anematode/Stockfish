@@ -111,7 +111,7 @@ static void init_dual_magics(DualMagic magics[]) {
         m.maskNone          = 0;
         m.maskAntidiag      = line_mask(s, NORTH_WEST, SOUTH_EAST);
         m.r                 = square_bb(s) * 2;
-        m.rr                = square_bb(Square(63 - int(s)));
+        m.rr                = square_bb(Square(63 - int(s))) * 2;
         m.rankAttacksLookup = RankAttacks[int(file_of(s))].data();
         m.shift             = 8 * int(rank_of(s));
     }
