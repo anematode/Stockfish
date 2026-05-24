@@ -590,6 +590,8 @@ class SharedMemory: public detail::SharedMemoryBase {
         }
 
 #ifdef MADV_POPULATE_WRITE
+        prctl(PR_SET_THP_DISABLE, 0);
+
         // Pre-populate, attempting first with THP, to guarantee that the memory
         // is allocated and avoid crashing on the first write.
         madvise(mapped_ptr_, total_size_, MADV_HUGEPAGE);

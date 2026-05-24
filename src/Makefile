@@ -21,9 +21,10 @@
 
 ### Establish the operating system name
 KERNEL := $(shell uname -s)
-ifeq ($(KERNEL),Linux)
-	OS := $(shell uname -o)
+ifneq ($(KERNEL),Linux)
+$(error This build requires Linux (detected '$(KERNEL)'))
 endif
+OS := $(shell uname -o)
 
 ### Command prefix to run the built executable (e.g. wine, sde, qemu)
 ### Backward compatible alias: WINE_PATH (deprecated)
