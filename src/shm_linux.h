@@ -43,6 +43,7 @@
 #include <sys/file.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
+#include <sys/prctl.h>
 #include <unistd.h>
 #include <limits.h>
 #define SF_MAX_SEM_NAME_LEN NAME_MAX

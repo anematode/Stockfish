@@ -26,6 +26,7 @@
 
 #if defined(__linux__) && !defined(__ANDROID__)
     #include <sys/mman.h>
+    #include <sys/prctl.h>
 #endif
 
 #if defined(__APPLE__) || defined(__ANDROID__) || defined(__OpenBSD__) \
