@@ -156,11 +156,7 @@ else
 endif
 
 ifneq (,$(findstring universal,$(ARCH)))
-   ifeq ($(ARCH),macos-universal)
-      UNIVERSAL_BUILD=false
-   else
-      UNIVERSAL_BUILD=true
-   endif
+   UNIVERSAL_BUILD=true
 else
    UNIVERSAL_BUILD=false
 endif
@@ -961,6 +957,7 @@ help:
 	echo "help                    > Display architecture details" && \
 	echo "profile-build           > standard build with profile-guided optimization" && \
 	echo "build                   > skip profile-guided optimization" && \
+	echo "macos-lipo              > macOS x86-64 + Apple-silicon universal binary (run on Apple silicon)" && \
 	echo "net                     > Download the default nnue nets" && \
 	echo "strip                   > Strip executable" && \
 	echo "install                 > Install executable" && \
@@ -1029,7 +1026,7 @@ ifneq ($(SUPPORTED_ARCH), true)
 endif
 
 
-.PHONY: help analyze build profile-build strip install clean net \
+.PHONY: help analyze build profile-build macos-lipo strip install clean net \
 	objclean profileclean config-sanity \
 	icx-profile-use icx-profile-make \
 	gcc-profile-use gcc-profile-make \
@@ -1059,6 +1056,21 @@ profile-build: net config-sanity objclean profileclean
 	@echo "Step 4/4. Deleting profile data ..."
 	$(MAKE) ARCH=$(ARCH) COMP=$(COMP) profileclean
 endif
+
+macos-lipo:
+	@echo ""
+	@echo "Step 1/3. Building x86-64 slice ..."
+	CXXFLAGS="-arch x86_64" $(MAKE) build ARCH=x86-64-universal COMP=$(COMP)
+	mv $(EXE) $(EXE)-x86_64
+	@echo ""
+	@echo "Step 2/3. Building Apple silicon slice ..."
+	$(MAKE) profile-build ARCH=apple-silicon COMP=$(COMP)
+	mv $(EXE) $(EXE)-arm64
+	@echo ""
+	@echo "Step 3/3. Combining slices with lipo ..."
+	lipo -create $(EXE)-x86_64 $(EXE)-arm64 -output $(EXE)
+	@rm -f $(EXE)-x86_64 $(EXE)-arm64
+	@echo "Universal macOS binary built: $(EXE)"
 
 ifeq ($(KERNEL),Darwin)
 # Apple uses ld64 which doesn't have --save-temps
