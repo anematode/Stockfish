@@ -89,17 +89,37 @@ struct AccumulatorCaches {
 };
 
 
+// Per-state cache of the threat feature indices changed by this state's move.
+// The threat feature set updates both perspectives from the same dirty list,
+// so the indices are computed once and reused by the other.
 template<typename FeatureSet>
-struct AccumulatorState: public Accumulator {
+struct IncrementalIndexCache {
+    void reset_index_cache() noexcept {}
+};
+
+template<>
+struct IncrementalIndexCache<ThreatFeatureSet> {
+    mutable ThreatFeatureSet::IndexList removed[COLOR_NB];
+    mutable ThreatFeatureSet::IndexList added[COLOR_NB];
+
+    mutable Square cachedKsq[COLOR_NB] = {SQ_NONE, SQ_NONE};
+
+    void reset_index_cache() noexcept { cachedKsq[WHITE] = cachedKsq[BLACK] = SQ_NONE; }
+};
+
+template<typename FeatureSet>
+struct AccumulatorState: public Accumulator, public IncrementalIndexCache<FeatureSet> {
     typename FeatureSet::DiffType diff;
 
     void reset(const typename FeatureSet::DiffType& dp) noexcept {
         diff = dp;
         computed.fill(false);
+        this->reset_index_cache();
     }
 
     typename FeatureSet::DiffType& reset() noexcept {
         computed.fill(false);
+        this->reset_index_cache();
         return diff;
     }
 };

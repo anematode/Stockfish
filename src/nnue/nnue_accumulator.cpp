@@ -41,7 +41,8 @@ namespace {
 template<bool Forward, typename FeatureSet>
 void update_accumulator_incremental(Color                               perspective,
                                     const FeatureTransformer&           featureTransformer,
-                                    const Square                        ksq,
+                                    const Square                        whiteKsq,
+                                    const Square                        blackKsq,
                                     AccumulatorState<FeatureSet>&       target_state,
                                     const AccumulatorState<FeatureSet>& computed);
 
@@ -180,11 +181,12 @@ void AccumulatorStack::forward_update_incremental(Color                     pers
     assert(begin < accumulators<FeatureSet>().size());
     assert(accumulators<FeatureSet>()[begin].computed[perspective]);
 
-    const Square ksq = pos.square<KING>(perspective);
+    const Square whiteKsq = pos.square<KING>(WHITE);
+    const Square blackKsq = pos.square<KING>(BLACK);
 
     for (std::size_t next = begin + 1; next < size; next++)
     {
-        update_accumulator_incremental<true>(perspective, featureTransformer, ksq,
+        update_accumulator_incremental<true>(perspective, featureTransformer, whiteKsq, blackKsq,
                                              mut_accumulators<FeatureSet>()[next],
                                              accumulators<FeatureSet>()[next - 1]);
     }
@@ -203,10 +205,11 @@ void AccumulatorStack::backward_update_incremental(Color perspective,
     assert(end < size);
     assert(latest<FeatureSet>().computed[perspective]);
 
-    const Square ksq = pos.square<KING>(perspective);
+    const Square whiteKsq = pos.square<KING>(WHITE);
+    const Square blackKsq = pos.square<KING>(BLACK);
 
     for (std::int64_t next = std::int64_t(size) - 2; next >= std::int64_t(end); next--)
-        update_accumulator_incremental<false>(perspective, featureTransformer, ksq,
+        update_accumulator_incremental<false>(perspective, featureTransformer, whiteKsq, blackKsq,
                                               mut_accumulators<FeatureSet>()[next],
                                               accumulators<FeatureSet>()[next + 1]);
 
@@ -418,46 +421,53 @@ auto make_accumulator_update_context(Color                               perspec
 template<bool Forward, typename FeatureSet>
 void update_accumulator_incremental(Color                               perspective,
                                     const FeatureTransformer&           featureTransformer,
-                                    const Square                        ksq,
+                                    const Square                        whiteKsq,
+                                    const Square                        blackKsq,
                                     AccumulatorState<FeatureSet>&       target_state,
                                     const AccumulatorState<FeatureSet>& computed) {
 
     assert(computed.computed[perspective]);
     assert(!target_state.computed[perspective]);
 
-    // The size must be enough to contain the largest possible update.
-    // That might depend on the feature set and generally relies on the
-    // feature set's update cost calculation to be correct and never allow
-    // updates with more added/removed features than MaxActiveDimensions.
-    // In this case, the maximum size of both feature addition and removal
-    // is 2, since we are incrementally updating one move at a time.
-    typename FeatureSet::IndexList removed, added;
-    if constexpr (std::is_same_v<FeatureSet, ThreatFeatureSet>)
-    {
-        const auto* pfBase   = &featureTransformer.threatWeights[0];
-        IndexType   pfStride = FeatureTransformer::OutputDimensions;
-        if constexpr (Forward)
-            FeatureSet::append_changed_indices(perspective, ksq, target_state.diff, removed, added,
-                                               nullptr, false, pfBase, pfStride);
-        else
-            FeatureSet::append_changed_indices(perspective, ksq, computed.diff, added, removed,
-                                               nullptr, false, pfBase, pfStride);
-    }
-    else
-    {
-        if constexpr (Forward)
-            FeatureSet::append_changed_indices(perspective, ksq, target_state.diff, removed, added);
-        else
-            FeatureSet::append_changed_indices(perspective, ksq, computed.diff, added, removed);
-    }
-
     auto updateContext =
       make_accumulator_update_context(perspective, featureTransformer, computed, target_state);
 
     if constexpr (std::is_same_v<FeatureSet, ThreatFeatureSet>)
-        updateContext.apply(added, removed);
+    {
+        const AccumulatorState<FeatureSet>& owner = Forward ? target_state : computed;
+
+        if (owner.cachedKsq[WHITE] != whiteKsq || owner.cachedKsq[BLACK] != blackKsq)
+        {
+            for (Color c : {WHITE, BLACK})
+            {
+                owner.removed[c].clear();
+                owner.added[c].clear();
+            }
+
+            const auto*     pfBase   = &featureTransformer.threatWeights[0];
+            const IndexType pfStride = FeatureTransformer::OutputDimensions;
+            FeatureSet::append_changed_indices(whiteKsq, blackKsq, owner.diff, owner.removed[WHITE],
+                                               owner.added[WHITE], owner.removed[BLACK],
+                                               owner.added[BLACK], pfBase, pfStride);
+            owner.cachedKsq[WHITE] = whiteKsq;
+            owner.cachedKsq[BLACK] = blackKsq;
+        }
+
+        if constexpr (Forward)
+            updateContext.apply(owner.added[perspective], owner.removed[perspective]);
+        else
+            updateContext.apply(owner.removed[perspective], owner.added[perspective]);
+    }
     else
     {
+        typename FeatureSet::IndexList removed, added;
+
+        const Square ksq = perspective == WHITE ? whiteKsq : blackKsq;
+        if constexpr (Forward)
+            FeatureSet::append_changed_indices(perspective, ksq, target_state.diff, removed, added);
+        else
+            FeatureSet::append_changed_indices(perspective, ksq, computed.diff, added, removed);
+
         [[maybe_unused]] const int addedSize   = added.ssize();
         [[maybe_unused]] const int removedSize = removed.ssize();
 

@@ -67,13 +67,6 @@ class FullThreats {
     };
     // clang-format on
 
-    struct FusedUpdateData {
-        Bitboard dp2removedOriginBoard = 0;
-        Bitboard dp2removedTargetBoard = 0;
-
-        Square dp2removed;
-    };
-
     // Maximum number of simultaneously active features.
     static constexpr IndexType MaxActiveDimensions = 128;
     using IndexList                                = ValueList<IndexType, MaxActiveDimensions>;
@@ -86,13 +79,13 @@ class FullThreats {
     static void append_active_indices(Color perspective, const Position& pos, IndexList& active);
 
     // Get a list of indices for recently changed features
-    static void append_changed_indices(Color                   perspective,
-                                       Square                  ksq,
+    static void append_changed_indices(Square                  whiteKsq,
+                                       Square                  blackKsq,
                                        const DiffType&         diff,
-                                       IndexList&              removed,
-                                       IndexList&              added,
-                                       FusedUpdateData*        fd             = nullptr,
-                                       bool                    first          = false,
+                                       IndexList&              whiteRemoved,
+                                       IndexList&              whiteAdded,
+                                       IndexList&              blackRemoved,
+                                       IndexList&              blackAdded,
                                        const ThreatWeightType* prefetchBase   = nullptr,
                                        IndexType               prefetchStride = 0);
 

@@ -210,6 +210,7 @@ class ValueList {
     const T* begin() const { return values_; }
     const T* end() const { return values_ + size_; }
     const T& operator[](int index) const { return values_[index]; }
+    void     clear() { size_ = 0; }
 
     T* make_space(size_t count) {
         T* result = &values_[size_];

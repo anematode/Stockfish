@@ -189,20 +189,24 @@ constexpr auto index_lut1 = init_index_luts();
 // [attacker][from][to]
 constexpr auto index_lut2 = index_lut2_array();
 
-// Index of a feature for a given king position and another piece on some square
-inline sf_always_inline IndexType FullThreats::make_index(
-  Color perspective, Piece attacker, Square from, Square to, Piece attacked, Square ksq) {
-    const std::int8_t orientation   = OrientTBL[ksq] ^ (56 * perspective);
-    unsigned          from_oriented = uint8_t(from) ^ orientation;
-    unsigned          to_oriented   = uint8_t(to) ^ orientation;
+inline sf_always_inline IndexType make_index_oriented(
+  unsigned orientation, unsigned swap, Piece attacker, Square from, Square to, Piece attacked) {
+    unsigned from_oriented = uint8_t(from) ^ orientation;
+    unsigned to_oriented   = uint8_t(to) ^ orientation;
 
-    std::int8_t swap              = 8 * perspective;
-    unsigned    attacker_oriented = attacker ^ swap;
-    unsigned    attacked_oriented = attacked ^ swap;
+    unsigned attacker_oriented = attacker ^ swap;
+    unsigned attacked_oriented = attacked ^ swap;
 
     return index_lut1[attacker_oriented][attacked_oriented][from_oriented < to_oriented]
          + offsets[attacker_oriented][from_oriented]
          + index_lut2[attacker_oriented][from_oriented][to_oriented];
+}
+
+inline sf_always_inline IndexType FullThreats::make_index(
+  Color perspective, Piece attacker, Square from, Square to, Piece attacked, Square ksq) {
+    const unsigned orientation = uint8_t(OrientTBL[ksq]) ^ (56 * perspective);
+    const unsigned swap        = 8 * perspective;
+    return make_index_oriented(orientation, swap, attacker, from, to, attacked);
 }
 
 // Get a list of indices for active features in ascending order
@@ -270,61 +274,44 @@ void FullThreats::append_active_indices(Color perspective, const Position& pos, 
 
 // Get a list of indices for recently changed features
 
-void FullThreats::append_changed_indices(Color                   perspective,
-                                         Square                  ksq,
+void FullThreats::append_changed_indices(Square                  whiteKsq,
+                                         Square                  blackKsq,
                                          const DiffType&         diff,
-                                         IndexList&              removed,
-                                         IndexList&              added,
-                                         FusedUpdateData*        fusedData,
-                                         bool                    first,
+                                         IndexList&              whiteRemoved,
+                                         IndexList&              whiteAdded,
+                                         IndexList&              blackRemoved,
+                                         IndexList&              blackAdded,
                                          const ThreatWeightType* prefetchBase,
                                          IndexType               prefetchStride) {
 
-    for (const auto& dirty : diff.list)
-    {
-        auto attacker = dirty.pc();
-        auto attacked = dirty.threatened_pc();
-        auto from     = dirty.pc_sq();
-        auto to       = dirty.threatened_sq();
-        auto add      = dirty.add();
-
-        if (fusedData)
-        {
-            if (from == fusedData->dp2removed)
-            {
-                if (add)
-                {
-                    if (first)
-                    {
-                        fusedData->dp2removedOriginBoard |= to;
-                        continue;
-                    }
-                }
-                else if (fusedData->dp2removedOriginBoard & to)
-                    continue;
-            }
-            else if (to != SQ_NONE && to == fusedData->dp2removed)
-            {
-                if (add)
-                {
-                    if (first)
-                    {
-                        fusedData->dp2removedTargetBoard |= from;
-                        continue;
-                    }
-                }
-                else if (fusedData->dp2removedTargetBoard & from)
-                    continue;
-            }
-        }
-
-        auto&           insert = add ? added : removed;
-        const IndexType index  = make_index(perspective, attacker, from, to, attacked, ksq);
-
+    auto prefetch_row = [&](IndexType index) {
         if (prefetchBase)
             prefetch<PrefetchRw::READ, PrefetchLoc::LOW>(reinterpret_cast<const void*>(
               reinterpret_cast<uintptr_t>(prefetchBase) + index * prefetchStride));
-        insert.push_back_if_lt(index, Dimensions);
+    };
+
+    // Hoist by petard
+    const unsigned whiteOrientation = uint8_t(OrientTBL[whiteKsq]);
+    const unsigned blackOrientation = uint8_t(OrientTBL[blackKsq]) ^ 56;
+
+    for (const auto& dirty : diff.list)
+    {
+        const auto attacker = dirty.pc();
+        const auto attacked = dirty.threatened_pc();
+        const auto from     = dirty.pc_sq();
+        const auto to       = dirty.threatened_sq();
+        const auto add      = dirty.add();
+
+        const IndexType whiteIndex =
+          make_index_oriented(whiteOrientation, 0, attacker, from, to, attacked);
+        const IndexType blackIndex =
+          make_index_oriented(blackOrientation, 8, attacker, from, to, attacked);
+
+        prefetch_row(whiteIndex);
+        prefetch_row(blackIndex);
+
+        (add ? whiteAdded : whiteRemoved).push_back_if_lt(whiteIndex, Dimensions);
+        (add ? blackAdded : blackRemoved).push_back_if_lt(blackIndex, Dimensions);
     }
 }
 
