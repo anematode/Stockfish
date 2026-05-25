@@ -156,7 +156,11 @@ else
 endif
 
 ifneq (,$(findstring universal,$(ARCH)))
-   UNIVERSAL_BUILD=true
+   ifeq ($(ARCH),macos-universal)
+      UNIVERSAL_BUILD=false
+   else
+      UNIVERSAL_BUILD=true
+   endif
 else
    UNIVERSAL_BUILD=false
 endif
@@ -640,6 +644,7 @@ ifeq ($(COMP),gcc)
 	ifneq ($(gccisclang),)
 		profile_make = clang-profile-make
 		profile_use = clang-profile-use
+		CXXFLAGS += -fconstexpr-steps=500000000
 	else
 		CXXFLAGS += -Wstack-usage=128000 -fno-ipa-cp-clone -fconstexpr-ops-limit=500000000
 	endif
@@ -1055,7 +1060,11 @@ profile-build: net config-sanity objclean profileclean
 	$(MAKE) ARCH=$(ARCH) COMP=$(COMP) profileclean
 endif
 
-ifeq ($(comp), clang)
+ifeq ($(KERNEL),Darwin)
+# Apple uses ld64 which doesn't have --save-temps
+  LTO_OBJ_SUFFIX := .lto.o
+  SAVE_TEMPS := -Wl,-object_path_lto,stockfish.lto.o
+else ifeq ($(comp), clang)
   LTO_OBJ_SUFFIX := .lto.o
   ifeq ($(target_windows),yes)
     SAVE_TEMPS := -Wl,--lto-emit-asm  # ld.lld doesn't have a save temps functionality
@@ -1319,7 +1328,9 @@ ARCH_OBJS := $(TEMP_DIR)/$(BASELINE_ARCH)/stockfish.o \
 UNIVERSAL_FINAL_FLAGS := -fno-exceptions -Os \
 			 -Wno-c++26-extensions -Wno-c23-extensions # suppress #embed warnings
 
-ifeq ($(KERNEL),Linux)
+ifeq ($(KERNEL),Darwin)
+  UNIVERSAL_FINAL_FLAGS += -mmacosx-version-min=10.15 -arch $(arch)
+else ifeq ($(KERNEL),Linux)
   UNIVERSAL_FINAL_FLAGS += -static-libstdc++ -static-libgcc
   ifeq ($(COMP),ndk)
     UNIVERSAL_FINAL_FLAGS += -static
@@ -1337,11 +1348,16 @@ endif
 arch-suffix     = $(subst -,_,$(1))
 arch-namespace  = Stockfish_$(call arch-suffix,$(1))
 # Itanium ABI mangled name for Stockfish_<suffix>::main(int, char**)
-arch-mangled    = _ZN$(shell printf %s '$(call arch-namespace,$(1))' | wc -c)$(call arch-namespace,$(1))4mainEiPPc
+arch-mangled    = _ZN$(shell printf %s '$(call arch-namespace,$(1))' | wc -c | tr -d ' ')$(call arch-namespace,$(1))4mainEiPPc
+# Mach-O initializer section name: strip "x86-64" or "x86-64-" and prefix with "_i_"
+# (Mach-O section names are restricted to <=16 chars, hence this naming scheme)
+arch-mac-section = _i_$(subst -,_,$(patsubst x86-64,,$(patsubst x86-64-%,%,$(1))))
 
+ifeq ($(KERNEL),Darwin)
+  arch-defmain = -Wl,-alias,_$(call arch-mangled,$(1)),_main
 # lld-link, used on Windows+clang, doesn't accept --defsym, so
 # we define main directly in main.cpp instead and delete it later.
-ifeq ($(target_windows)+$(COMP),yes+clang)
+else ifeq ($(target_windows)+$(COMP),yes+clang)
   arch-defmain = -DUNIVERSAL_NEEDS_MAIN_SHIM
 else
   arch-defmain = -Wl,--defsym=main=$(call arch-mangled,$(1))
@@ -1373,10 +1389,10 @@ $(NET_SENTINEL): | $(TEMP_DIR)
 	@touch $@
 
 $(NNUE_EMBED_OBJ): $(UNIVERSAL_SRC_DIR)/nnue_embed.cpp $(NET_SENTINEL) | $(TEMP_DIR)
-	$(CXX) -O2 -Wno-c++26-extensions $(EMBED_DIR) -c $< -o $@
+	$(CXX) $(CXXFLAGS) -O2 -Wno-c++26-extensions $(EMBED_DIR) -c $< -o $@
 
 $(UNIVERSAL_ENTRY_OBJ): $(UNIVERSAL_ENTRY_SRC) | $(TEMP_DIR)
-	$(CXX) -O2 -c $< -o $@
+	$(CXX) $(CXXFLAGS) -O2 -c $< -o $@
 
 # Symlink tracked top-level items from src/ into temp_builds/<arch>/.
 $(TEMP_DIR)/%/.setup: | $(TEMP_DIR)
@@ -1393,6 +1409,11 @@ $(TEMP_DIR)/%/stockfish.o: $(TEMP_DIR)/%/.setup $(NNUE_EMBED_OBJ) $(NET_SENTINEL
 	    $(MAKE) -C $(TEMP_DIR)/$* $(UOBJ_TGT) \
 	        ARCH=$* CXX=$(CXX) COMP=$(COMP) \
 	        NNUE_EMBED_OBJ=$(NNUE_EMBED_OBJ)
+ifeq ($(KERNEL),Darwin)
+# Rename the initializer section
+	ld -r -rename_section __DATA __mod_init_func __DATA $(call arch-mac-section,$*) $@ -o $@.tmp
+	mv $@.tmp $@
+else
 # Drop COMDAT groups; clang LTO leaves them around internalized LOCAL
 # template instantiations which causes problems at the final link
 	$(OBJCOPY) -R .group $@
@@ -1405,6 +1426,7 @@ else
 	$(OBJCOPY) --rename-section .ctors=$(call arch-suffix,$*)_init $@
 # Make the array inert
 	$(OBJCOPY) --set-section-flags $(call arch-suffix,$*)_init=alloc,data $@
+endif
 endif
 
 $(UNIVERSAL_EXE): $(UNIVERSAL_ENTRY_OBJ) $(NNUE_EMBED_OBJ) $(ARCH_OBJS)
