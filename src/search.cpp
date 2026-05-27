@@ -697,7 +697,7 @@ Value Search::Worker::search(
     Value bestValue, value, eval, maxValue, probCutBeta;
     bool  givesCheck, improving, priorCapture, opponentWorsening;
     bool  capture, ttCapture;
-    int   priorReduction;
+    FractionalDepth   priorReduction;
     Piece movedPiece;
 
     SearchedList capturesSearched;
@@ -747,7 +747,7 @@ Value Search::Worker::search(
     Square prevSq  = ((ss - 1)->currentMove).is_ok() ? ((ss - 1)->currentMove).to_sq() : SQ_NONE;
     bestMove       = Move::none();
     priorReduction = (ss - 1)->reduction;
-    (ss - 1)->reduction = 0;
+    (ss - 1)->reduction = 0_fd;
     ss->statScore       = 0;
     (ss + 2)->cutoffCnt = 0;
 
@@ -806,9 +806,9 @@ Value Search::Worker::search(
     opponentWorsening = ss->staticEval > -(ss - 1)->staticEval;
 
     // Hindsight adjustment of reductions based on static evaluation difference.
-    if (priorReduction >= 3 && !opponentWorsening)
+    if (priorReduction >= 3_fd && !opponentWorsening)
         depth++;
-    if (priorReduction >= 2 && depth >= 2 && ss->staticEval + (ss - 1)->staticEval > 173)
+    if (priorReduction >= 2_fd && depth >= 2 && ss->staticEval + (ss - 1)->staticEval > 173)
         depth--;
 
     // At non-PV nodes we check for an early TT cutoff
@@ -990,7 +990,7 @@ Value Search::Worker::search(
     // Step 10. Internal iterative reductions
     // At sufficient depth, reduce depth for PV/Cut nodes without a TTMove.
     // (*Scaler) Making IIR more aggressive scales poorly.
-    if (!ss->followPV && !allNode && depth >= 6 && !ttData.move && priorReduction <= 3)
+    if (!ss->followPV && !allNode && depth >= 6 && !ttData.move && priorReduction <= 3_fd)
         depth--;
 
     // Step 11. ProbCut
@@ -1300,9 +1300,10 @@ moves_loop:  // When in check, search starts here
             // std::clamp has been replaced by a more robust implementation.
             FractionalDepth d = std::max(1_fd, std::min(newDepth - FractionalDepth::from_raw(r), newDepth + 2_fd)) + PvNode * 1_fd;
 
-            ss->reduction = Depth(newDepth - d);
+            ss->reduction = newDepth - d;
+            dbg_mean_of(ss->reduction.inner);
             value         = -search<NonPV>(pos, ss + 1, -(alpha + 1), -alpha, d, true);
-            ss->reduction = 0;
+            ss->reduction = 0_fd;
 
             // Do a full-depth search when reduced LMR search fails high
             // (*Scaler) Shallower searches here don't scale well

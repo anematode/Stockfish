@@ -117,7 +117,7 @@ struct Stack {
     bool                        ttHit;
     bool                        followPV;
     int                         cutoffCnt;
-    int                         reduction;
+    FractionalDepth             reduction;
 };
 
 
