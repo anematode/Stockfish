@@ -221,6 +221,60 @@ constexpr Value PieceValue[PIECE_NB] = {
 
 using Depth = int;
 
+struct FractionalDepth {
+    int inner;
+
+    static constexpr FractionalDepth from_raw(int r) {
+        return { r };
+    }
+    static constexpr FractionalDepth from_depth(Depth d) {
+        return { d << 10 };
+    }
+    constexpr FractionalDepth operator-() const { return { -inner }; }
+
+    constexpr FractionalDepth operator+(FractionalDepth other) const { return { inner + other.inner }; }
+    constexpr FractionalDepth operator-(FractionalDepth other) const { return { inner - other.inner }; }
+    constexpr FractionalDepth operator/(int d) const { return { inner / d }; }
+    constexpr FractionalDepth operator*(int d) const { return { inner * d }; }
+
+    constexpr FractionalDepth& operator+=(FractionalDepth other) { inner += other.inner; return *this; }
+    constexpr FractionalDepth& operator-=(FractionalDepth other) { inner -= other.inner; return *this; }
+
+    constexpr FractionalDepth& operator++() { inner += 1 << 10; return *this; }
+    constexpr FractionalDepth& operator--() { inner -= 1 << 10; return *this; }
+    constexpr FractionalDepth operator++(int) { FractionalDepth tmp = *this; ++*this; return tmp; }
+    constexpr FractionalDepth operator--(int) { FractionalDepth tmp = *this; --*this; return tmp; }
+
+    constexpr bool operator<(FractionalDepth other) const { return inner < other.inner; }
+    constexpr bool operator>(FractionalDepth other) const { return inner > other.inner; }
+    constexpr bool operator<=(FractionalDepth other) const { return inner <= other.inner; }
+    constexpr bool operator>=(FractionalDepth other) const { return inner >= other.inner; }
+    constexpr bool operator==(FractionalDepth other) const { return inner == other.inner; }
+    constexpr bool operator!=(FractionalDepth other) const { return inner != other.inner; }
+
+    constexpr bool operator<(int d) const { return inner < (d << 10); }
+    constexpr bool operator>(int d) const { return inner > (d << 10); }
+    constexpr bool operator<=(int d) const { return inner <= (d << 10); }
+    constexpr bool operator>=(int d) const { return inner >= (d << 10); }
+
+    explicit constexpr operator Depth() const { return inner >> 10; }
+};
+
+constexpr FractionalDepth operator*(int d, FractionalDepth fd) { return { d * fd.inner }; }
+
+constexpr bool operator<(int d, FractionalDepth fd) { return (d << 10) < fd.inner; }
+constexpr bool operator>(int d, FractionalDepth fd) { return (d << 10) > fd.inner; }
+constexpr bool operator<=(int d, FractionalDepth fd) { return (d << 10) <= fd.inner; }
+constexpr bool operator>=(int d, FractionalDepth fd) { return (d << 10) >= fd.inner; }
+
+constexpr FractionalDepth operator"" _fd(long double d) {
+    return { int(d * (1 << 10)) };
+}
+
+constexpr FractionalDepth operator"" _fd(unsigned long long d) {
+    return { int(d * (1 << 10)) };
+}
+
 // The following DEPTH_ constants are used for transposition table entries
 // and quiescence search move generation stages. In regular search, the
 // depth stored in the transposition table is literal: the search depth

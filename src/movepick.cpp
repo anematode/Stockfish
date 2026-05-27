@@ -152,7 +152,7 @@ void partial_insertion_sort(ExtMove* begin, ExtMove* end, int limit) {
 // MovePicker constructor for the main search and for the quiescence search
 MovePicker::MovePicker(const Position&              p,
                        Move                         ttm,
-                       Depth                        d,
+                       FractionalDepth                        d,
                        const ButterflyHistory*      mh,
                        const LowPlyHistory*         lph,
                        const CapturePieceToHistory* cph,
@@ -166,14 +166,14 @@ MovePicker::MovePicker(const Position&              p,
     continuationHistory(ch),
     sharedHistory(sh),
     ttMove(ttm),
-    depth(d),
+    fDepth(d),
     ply(pl) {
 
     if (pos.checkers())
         stage = EVASION_TT + !(ttm && pos.pseudo_legal(ttm));
 
     else
-        stage = (depth > 0 ? MAIN_TT : QSEARCH_TT) + !(ttm && pos.pseudo_legal(ttm));
+        stage = (fDepth > 0 ? MAIN_TT : QSEARCH_TT) + !(ttm && pos.pseudo_legal(ttm));
 }
 
 // MovePicker constructor for ProbCut: we generate captures with Static Exchange
@@ -321,7 +321,7 @@ top:
 
             endCur = endGenerated = score<QUIETS>(ml);
 
-            partial_insertion_sort(cur, endCur, -3560 * depth);
+            partial_insertion_sort(cur, endCur, Depth(-3560 * fDepth));
         }
 
         ++stage;

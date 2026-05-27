@@ -40,7 +40,7 @@ class MovePicker {
     MovePicker& operator=(const MovePicker&) = delete;
     MovePicker(const Position&,
                Move,
-               Depth,
+               FractionalDepth,
                const ButterflyHistory*,
                const LowPlyHistory*,
                const CapturePieceToHistory*,
@@ -69,7 +69,7 @@ class MovePicker {
     ExtMove *                    cur, *endCur, *endBadCaptures, *endCaptures, *endGenerated;
     int                          stage;
     int                          threshold;
-    Depth                        depth;
+    FractionalDepth                        fDepth;
     int                          ply;
     bool                         skipQuiets = false;
     ExtMove                      moves[MAX_MOVES];
