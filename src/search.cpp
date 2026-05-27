@@ -669,7 +669,7 @@ Value Search::Worker::search(
     const bool     allNode  = !(PvNode || cutNode);
 
     // Dive into quiescence search when the depth reaches zero
-    if (depth <= 0)
+    if (int(depth) <= 0)
         return qsearch<PvNode ? PV : NonPV>(pos, ss, alpha, beta);
 
     // Limit the depth if extensions made it too large
