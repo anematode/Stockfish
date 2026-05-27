@@ -1148,7 +1148,7 @@ moves_loop:  // When in check, search starts here
                             + sharedHistory.pawn_entry(pos)[movedPiece][move.to_sq()];
 
                 // Continuation history based pruning
-                if (history < int(-4313 * depth))
+                if (history < -4313 * int(depth))
                     continue;
 
                 history += 64 * mainHistory[us][move.raw()] / 32;
@@ -1540,7 +1540,7 @@ moves_loop:  // When in check, search starts here
         && (bestValue > ss->staticEval) == bool(bestMove))
     {
         auto bonus =
-          std::clamp(Depth(int(bestValue - ss->staticEval) * depth * (bestMove ? 12 : 18)) / 128,
+          std::clamp(int(bestValue - ss->staticEval) * Depth(depth) * (bestMove ? 12 : 18) / 128,
                      -CORRECTION_HISTORY_LIMIT / 4, CORRECTION_HISTORY_LIMIT / 4);
         update_correction_history(pos, ss, *this, 1114 * bonus / 1024);
     }
