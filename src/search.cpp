@@ -1255,7 +1255,7 @@ moves_loop:  // When in check, search starts here
             r -= 2766 + PvNode * 1017 + (ttData.value > alpha) * 838
                + (ttData.depth >= depth) * (923 + cutNode * 955);
 
-        r += 714;  // Base reduction offset to compensate for other tweaks
+        r += 421;  // Base reduction offset to compensate for other tweaks
         r -= moveCount * 62;
         r -= std::abs(correctionValue) / 26131;
 
@@ -1301,7 +1301,6 @@ moves_loop:  // When in check, search starts here
             FractionalDepth d = std::max(1_fd, std::min(newDepth - FractionalDepth::from_raw(r), newDepth + 2_fd)) + PvNode * 1_fd;
 
             ss->reduction = newDepth - d;
-            dbg_mean_of(ss->reduction.inner);
             value         = -search<NonPV>(pos, ss + 1, -(alpha + 1), -alpha, d, true);
             ss->reduction = 0_fd;
 
