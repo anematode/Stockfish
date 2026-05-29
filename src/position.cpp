@@ -472,6 +472,7 @@ void Position::set_castling_right(Color c, Square rfrom) {
 
 // Sets king attacks to detect if a move gives check
 void Position::set_check_info() const {
+    st->pinsKey = 0;
 
     update_slider_blockers(WHITE);
     update_slider_blockers(BLACK);
@@ -637,8 +638,14 @@ void Position::update_slider_blockers(Color c) const {
         if (b && !more_than_one(b))
         {
             st->blockersForKing[c] |= b;
+            Square blockerSq = lsb(b);
+            st->pinsKey ^= Zobrist::psq[piece_on(blockerSq)][blockerSq];
+
             if (b & pieces(c))
+            {
                 st->pinners[~c] |= sniperSq;
+                st->pinsKey ^= Zobrist::psq[piece_on(sniperSq)][sniperSq] >> 32;
+            }
         }
     }
 }

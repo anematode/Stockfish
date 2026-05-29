@@ -57,6 +57,7 @@ struct StateInfo {
 
     // Not copied when making a move (will be recomputed anyhow)
     Key        key;
+    uint32_t   pinsKey;
     Bitboard   checkersBB;
     StateInfo* previous;
     Bitboard   blockersForKing[COLOR_NB];
@@ -159,11 +160,12 @@ class Position {
     bool see_ge(Move m, int threshold = 0) const;
 
     // Accessing hash keys
-    Key key() const;
-    Key material_key() const;
-    Key pawn_key() const;
-    Key minor_piece_key() const;
-    Key non_pawn_key(Color c) const;
+    Key      key() const;
+    Key      material_key() const;
+    Key      pawn_key() const;
+    Key      minor_piece_key() const;
+    Key      non_pawn_key(Color c) const;
+    uint32_t pins_key() const;
 
     // Other properties of the position
     Color side_to_move() const;
@@ -326,6 +328,8 @@ inline Key Position::pawn_key() const { return st->pawnKey; }
 inline Key Position::material_key() const { return st->materialKey; }
 
 inline Key Position::minor_piece_key() const { return st->minorPieceKey; }
+
+inline uint32_t Position::pins_key() const { return st->pinsKey & 0xffff; }
 
 inline Key Position::non_pawn_key(Color c) const { return st->nonPawnKey[c]; }
 

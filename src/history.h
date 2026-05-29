@@ -160,6 +160,7 @@ using PawnHistory =
 enum CorrHistType {
     PieceTo,       // By [piece][to] move
     Continuation,  // Combined history of move pairs
+    Pins,
 };
 
 template<typename T, int D>
@@ -190,6 +191,11 @@ struct CorrHistTypedef<PieceTo> {
 template<>
 struct CorrHistTypedef<Continuation> {
     using type = MultiArray<CorrHistTypedef<PieceTo>::type, PIECE_NB, SQUARE_NB>;
+};
+
+template<>
+struct CorrHistTypedef<Pins> {
+    using type = Stats<std::int16_t, CORRECTION_HISTORY_LIMIT, UINT_16_HISTORY_SIZE, COLOR_NB>;
 };
 
 }
