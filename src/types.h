@@ -176,7 +176,10 @@ constexpr bool is_loss(Value value) {
     return value <= VALUE_TB_LOSS_IN_MAX_PLY;
 }
 
-constexpr bool is_decisive(Value value) { return is_win(value) || is_loss(value); }
+constexpr bool is_decisive(Value value) {
+    return unsigned(value - VALUE_TB_LOSS_IN_MAX_PLY - 1)
+        >= (VALUE_TB_WIN_IN_MAX_PLY - VALUE_TB_LOSS_IN_MAX_PLY - 1);
+}
 
 constexpr bool is_mate(Value value) {
     assert(is_valid(value));
