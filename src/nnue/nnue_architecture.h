@@ -128,12 +128,12 @@ struct NetworkArchitecture {
         // skip connections are trained with factor 2 to increase contribution.
         // first layer and last layer use `WeightScaleBits + 1`.
         // second layer uses `WeightScaleBits` -- thus the factor is 4.
-        static_assert(FC_0_OUTPUTS >= 2 && FC_0_OUTPUTS >= 2);
+        static_assert(FC_0_OUTPUTS >= 2 && FC_1_OUTPUTS >= 2);
         std::int32_t fwdOut = buffer.fc_2_out[0];
         std::int32_t skip_0 =
-          2 * buffer.fc_0_out[FC_0_OUTPUTS - 2] + 2 * buffer.fc_0_out[FC_0_OUTPUTS - 1];
+          2 * buffer.fc_0_out[FC_0_OUTPUTS - 2] - 2 * buffer.fc_0_out[FC_0_OUTPUTS - 1];
         std::int32_t skip_1 =
-          4 * buffer.fc_1_out[FC_1_OUTPUTS - 2] + 4 * buffer.fc_1_out[FC_1_OUTPUTS - 1];
+          4 * buffer.fc_1_out[FC_1_OUTPUTS - 2] - 4 * buffer.fc_1_out[FC_1_OUTPUTS - 1];
         fwdOut += skip_0 + skip_1;
 
         // fwdOut is such that 1.0 is equal to HiddenOneVal*(1<<WeightScaleBits)*2 in
