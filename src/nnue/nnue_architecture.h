@@ -122,9 +122,9 @@ struct NetworkArchitecture {
         ac_1.propagate(buffer.fc_1_out, buffer.ac_1_out);
         fc_2.propagate(buffer.ac_1_out, buffer.fc_2_out);
 
-        // max value for fwdOut is 4 * (L1 + L2 + L3) * HiddenMaxVal * WeightMaxVal
-        // for int8 activations and weights this is 4 * L1 * 16129 making
-        // fwdOut safe from overflow until L1 + L2 + L3 > 133,144 / 4 = 33k
+        // max value for fwdOut is 4 * (L1 + 2 * L2 + L3) * HiddenMaxVal * WeightMaxVal
+        // for int8 activations and weights this is 4 * (L1 + 2 * L2 + L3) * 16129 making
+        // fwdOut safe from overflow until L1 + 2 * L2 + L3 > 133,144 / 4 = 33k
         // skip connections are trained with factor 2 to increase contribution.
         // first layer and last layer use `WeightScaleBits + 1`.
         // second layer uses `WeightScaleBits` -- thus the factor is 4.
