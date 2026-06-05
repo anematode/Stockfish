@@ -1,0 +1,48 @@
+name: Setup Intel SDE
+description: Download Intel SDE from the Stockfish CI mirror and expose its directory
+
+inputs:
+  version:
+    description: SDE release as it appears in the mirror file name (version-date)
+    default: 9.58.0-2025-06-16
+  environmentVariableName:
+    description: Environment variable to export with the SDE directory
+    default: SDE_DIR
+
+runs:
+  using: composite
+  steps:
+    - name: Download Intel SDE (Linux)
+      if: runner.os == 'Linux'
+      shell: bash
+      run: |
+        set -eu
+        base="sde-external-${{ inputs.version }}-lin"
+        dest="${RUNNER_TEMP}/sde"
+        mkdir -p "$dest"
+        curl -fsSL --retry 3 --retry-all-errors "https://raw.githubusercontent.com/official-stockfish/ci-tools-mirror/main/${base}.tar.xz" -o "${RUNNER_TEMP}/${base}.tar.xz"
+        tar -xf "${RUNNER_TEMP}/${base}.tar.xz" -C "$dest"
+        echo "${{ inputs.environmentVariableName }}=${dest}/${base}" >> "$GITHUB_ENV"
+        echo "${dest}/${base}" >> "$GITHUB_PATH"
+
+    - name: Download Intel SDE (Windows)
+      if: runner.os == 'Windows'
+      shell: pwsh
+      run: |
+        $ErrorActionPreference = "Stop"
+        $base = "sde-external-${{ inputs.version }}-win"
+        $archive = Join-Path $env:RUNNER_TEMP "$base.tar.xz"
+        $tarball = Join-Path $env:RUNNER_TEMP "$base.tar"
+        $dest = Join-Path $env:RUNNER_TEMP "sde"
+        New-Item -ItemType Directory -Force -Path $dest | Out-Null
+        $url = "https://raw.githubusercontent.com/official-stockfish/ci-tools-mirror/main/$base.tar.xz"
+        curl.exe -fsSL --retry 3 --retry-all-errors "$url" -o $archive
+        # Windows' bundled tar (libarchive) hangs decompressing these .xz archives, so use 7-Zip
+        $7z = Join-Path $env:ProgramFiles "7-Zip\7z.exe"
+        & $7z x -y -bso0 -bsp0 "-o$env:RUNNER_TEMP" $archive
+        if ($LASTEXITCODE -ne 0) { throw "7z xz decompress failed ($LASTEXITCODE)" }
+        & $7z x -y -bso0 -bsp0 "-o$dest" $tarball
+        if ($LASTEXITCODE -ne 0) { throw "7z tar unpack failed ($LASTEXITCODE)" }
+        $sdeDir = Join-Path $dest $base
+        "${{ inputs.environmentVariableName }}=$sdeDir" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+        $sdeDir | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
