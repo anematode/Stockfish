@@ -624,7 +624,9 @@ ifeq ($(comp),icx)
 	profile_use = icx-profile-use
 else ifeq ($(comp),clang)
 	profile_make = clang-profile-make
+	profile_csmake = clang-profile-csmake
 	profile_use = clang-profile-use
+	cspgo = yes
 else
 	profile_make = gcc-profile-make
 	profile_use = gcc-profile-use
@@ -639,7 +641,9 @@ ifeq ($(COMP),gcc)
 	gccisclang := $(findstring clang,$(gccversion))
 	ifneq ($(gccisclang),)
 		profile_make = clang-profile-make
+		profile_csmake = clang-profile-csmake
 		profile_use = clang-profile-use
+		cspgo = yes
 		CXXFLAGS += -fconstexpr-steps=500000000
 	else
 		CXXFLAGS += -Wstack-usage=128000 -fno-ipa-cp-clone -fconstexpr-ops-limit=500000000
@@ -1030,7 +1034,7 @@ endif
 	objclean profileclean config-sanity \
 	icx-profile-use icx-profile-make \
 	gcc-profile-use gcc-profile-make \
-	clang-profile-use clang-profile-make FORCE \
+	clang-profile-use clang-profile-make clang-profile-csmake FORCE \
 	format analyze
 
 analyze: net config-sanity objclean
@@ -1048,6 +1052,15 @@ profile-build: net config-sanity objclean profileclean
 	@echo "Step 2/4. Running benchmark for pgo-build ..."
 	$(PGOBENCH) > PGOBENCH.out 2>&1
 	tail -n 4 PGOBENCH.out
+ifeq ($(cspgo),yes)
+	@echo ""
+	@echo "Step 2b/4. Building context-sensitive instrumented executable ..."
+	$(MAKE) ARCH=$(ARCH) COMP=$(COMP) $(profile_csmake)
+	@echo ""
+	@echo "Step 2c/4. Running benchmark for context-sensitive pgo-build ..."
+	$(PGOBENCH) > PGOBENCH.out 2>&1
+	tail -n 4 PGOBENCH.out
+endif
 	@echo ""
 	@echo "Step 3/4. Building optimized executable ..."
 	$(MAKE) ARCH=$(ARCH) COMP=$(COMP) objclean
@@ -1154,7 +1167,7 @@ objclean:
 profileclean:
 	@rm -rf profdir
 	@rm -f bench.txt *.gcda *.gcno ./syzygy/*.gcda ./nnue/*.gcda ./nnue/features/*.gcda *.s PGOBENCH.out
-	@rm -f stockfish.profdata *.profraw
+	@rm -f stockfish.profdata stockfish.cs.profdata *.profraw
 	@rm -f stockfish.*args*
 	@rm -f stockfish.*lt*
 	@rm -f stockfish.res
@@ -1260,10 +1273,19 @@ clang-profile-make:
 	EXTRALDFLAGS=' -fprofile-generate' \
 	all
 
-clang-profile-use:
+clang-profile-csmake:
 	$(XCRUN) $(LLVM_PROFDATA) merge -output=stockfish.profdata *.profraw
+	@rm -f *.profraw
+	$(MAKE) ARCH=$(ARCH) COMP=$(COMP) objclean
 	$(MAKE) ARCH=$(ARCH) COMP=$(COMP) \
-	EXTRACXXFLAGS='-fprofile-use=stockfish.profdata' \
+	EXTRACXXFLAGS='-fprofile-use=stockfish.profdata -fcs-profile-generate ' \
+	EXTRALDFLAGS=' -fprofile-use -fcs-profile-generate' \
+	all
+
+clang-profile-use:
+	$(XCRUN) $(LLVM_PROFDATA) merge -output=stockfish.cs.profdata *.profraw stockfish.profdata
+	$(MAKE) ARCH=$(ARCH) COMP=$(COMP) \
+	EXTRACXXFLAGS='-fprofile-use=stockfish.cs.profdata' \
 	EXTRALDFLAGS='-fprofile-use ' \
 	all
 
