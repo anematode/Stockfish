@@ -63,8 +63,9 @@ struct NetworkArchitecture {
     Layers::SqrClippedReLU<FC_0_OUTPUTS, WeightScaleBits + 1>                      ac_sqr_0;
     Layers::ClippedReLU<FC_0_OUTPUTS, WeightScaleBits + 1>                         ac_0;
     Layers::AffineTransform<FC_0_OUTPUTS * 2, FC_1_OUTPUTS>                        fc_1;
+    Layers::SqrClippedReLU<FC_1_OUTPUTS, WeightScaleBits>                          ac_sqr_1;
     Layers::ClippedReLU<FC_1_OUTPUTS, WeightScaleBits>                             ac_1;
-    Layers::AffineTransform<FC_1_OUTPUTS, 1>                                       fc_2;
+    Layers::AffineTransform<FC_0_OUTPUTS * 2 + FC_1_OUTPUTS * 2, 1>                fc_2;
 
     // Hash value embedded in the evaluation file
     static constexpr std::uint32_t get_hash_value() {
@@ -102,46 +103,54 @@ struct NetworkArchitecture {
         struct alignas(CacheLineSize) Buffer {
             alignas(CacheLineSize) typename decltype(fc_0)::OutputBuffer fc_0_out;
             alignas(CacheLineSize) typename decltype(ac_sqr_0)::OutputType
-              ac_sqr_0_out[ceil_to_multiple<IndexType>(FC_0_OUTPUTS * 2, 32)];
+              concat_buffer[ceil_to_multiple<IndexType>(FC_0_OUTPUTS * 2 + FC_1_OUTPUTS * 2, 32)];
             alignas(CacheLineSize) typename decltype(ac_0)::OutputBuffer ac_0_out;
             alignas(CacheLineSize) typename decltype(fc_1)::OutputBuffer fc_1_out;
             alignas(CacheLineSize) typename decltype(ac_1)::OutputBuffer ac_1_out;
             alignas(CacheLineSize) typename decltype(fc_2)::OutputBuffer fc_2_out;
 
-            Buffer() { std::memset(ac_sqr_0_out, 0, sizeof(ac_sqr_0_out)); }
+            Buffer() { std::memset(concat_buffer, 0, sizeof(concat_buffer)); }
         };
 
         Buffer buffer;
 
         fc_0.propagate(transformedFeatures, buffer.fc_0_out, nnzInfo);
-        ac_sqr_0.propagate(buffer.fc_0_out, buffer.ac_sqr_0_out);
+        ac_sqr_0.propagate(buffer.fc_0_out, buffer.concat_buffer);
         ac_0.propagate(buffer.fc_0_out, buffer.ac_0_out);
-        std::memcpy(buffer.ac_sqr_0_out + FC_0_OUTPUTS, buffer.ac_0_out,
+        std::memcpy(buffer.concat_buffer + FC_0_OUTPUTS, buffer.ac_0_out,
                     FC_0_OUTPUTS * sizeof(typename decltype(ac_0)::OutputType));
-        fc_1.propagate(buffer.ac_sqr_0_out, buffer.fc_1_out);
-        ac_1.propagate(buffer.fc_1_out, buffer.ac_1_out);
-        fc_2.propagate(buffer.ac_1_out, buffer.fc_2_out);
 
-        // max value for fwdOut is 4 * (L1 + 2 * L2 + L3) * HiddenMaxVal * WeightMaxVal
-        // for int8 activations and weights this is 4 * (L1 + 2 * L2 + L3) * 16129 making
-        // fwdOut safe from overflow until L1 + 2 * L2 + L3 > 133,144 / 4 = 33k
-        // skip connections are trained with factor 2 to increase contribution.
-        // first layer and last layer use `WeightScaleBits + 1`.
-        // second layer uses `WeightScaleBits` -- thus the factor is 4.
+        fc_1.propagate(buffer.concat_buffer, buffer.fc_1_out);
+        ac_sqr_1.propagate(buffer.fc_1_out, buffer.concat_buffer + FC_0_OUTPUTS * 2);
+        ac_1.propagate(buffer.fc_1_out, buffer.ac_1_out);
+        std::memcpy(buffer.concat_buffer + FC_0_OUTPUTS * 2 + FC_1_OUTPUTS, buffer.ac_1_out,
+                    FC_1_OUTPUTS * sizeof(typename decltype(ac_1)::OutputType));
+
+        for (int i = 0; i < FC_0_OUTPUTS * 2; ++i)
+        {
+            buffer.concat_buffer[i] *= 2;
+        }
+        for (int i = FC_0_OUTPUTS * 2 + FC_1_OUTPUTS; i < FC_0_OUTPUTS * 2 + FC_1_OUTPUTS * 2; ++i)
+        {
+            buffer.concat_buffer[i] *= 2;
+        }
+
+        fc_2.propagate(buffer.concat_buffer, buffer.fc_2_out);
+
         static_assert(FC_0_OUTPUTS >= 2 && FC_1_OUTPUTS >= 2);
         std::int32_t fwdOut = buffer.fc_2_out[0];
+
+        // Skip connection scaled by 4 to mathematically align with the 2x concat_buffer modification
         std::int32_t skip_0 =
-          2 * buffer.fc_0_out[FC_0_OUTPUTS - 2] - 2 * buffer.fc_0_out[FC_0_OUTPUTS - 1];
-        std::int32_t skip_1 =
-          4 * buffer.fc_1_out[FC_1_OUTPUTS - 2] - 4 * buffer.fc_1_out[FC_1_OUTPUTS - 1];
-        fwdOut += skip_0 + skip_1;
+          4 * buffer.fc_0_out[FC_0_OUTPUTS - 2] - 4 * buffer.fc_0_out[FC_0_OUTPUTS - 1];
+        fwdOut += skip_0;
 
         // fwdOut is such that 1.0 is equal to HiddenOneVal*(1<<WeightScaleBits)*2 in
         // quantized form, but we want 1.0 to be equal to 600*OutputScale
         // to make overflow impossible we cast to int64_t
         constexpr std::int64_t multiplier  = 600 * OutputScale;
         constexpr std::int64_t denominator = static_cast<std::int64_t>(HiddenOneVal)
-                                           * static_cast<std::int64_t>(1U << WeightScaleBits) * 2;
+                                           * static_cast<std::int64_t>(1U << WeightScaleBits) * 4;
 
         std::int32_t outputValue =
           static_cast<std::int32_t>((static_cast<std::int64_t>(fwdOut) * multiplier) / denominator);
@@ -154,6 +163,7 @@ struct NetworkArchitecture {
         hash_combine(h, ac_sqr_0.get_content_hash());
         hash_combine(h, ac_0.get_content_hash());
         hash_combine(h, fc_1.get_content_hash());
+        // hash_combine(h, ac_sqr_1.get_content_hash()); TODO
         hash_combine(h, ac_1.get_content_hash());
         hash_combine(h, fc_2.get_content_hash());
         hash_combine(h, get_hash_value());
