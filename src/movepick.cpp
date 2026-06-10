@@ -108,38 +108,41 @@ struct MoveSorter {
 
 // Sort moves in descending order up to and including a given limit.
 // The order of moves smaller than the limit is left unspecified.
-void partial_insertion_sort(ExtMove* begin, ExtMove* end, int limit) {
-    ExtMove *sortedEnd = begin, *p = begin + 1;
+void partial_insertion_sort(ExtMove* begin, ExtMove* end, int limit, Bitboard sortable) {
+    ExtMove* sortedEnd = begin;
+
+    // The first move starts out as the sorted prefix
+    sortable &= ~Bitboard(1);
+
+    auto insert = [&](ExtMove* p) {
+        ExtMove tmp = *p, *q;
+        *p          = *++sortedEnd;
+        for (q = sortedEnd; q != begin && *(q - 1) < tmp; --q)
+            *q = *(q - 1);
+        *q = tmp;
+    };
 
 #ifdef USE_AVX512ICL
     if (begin == end)
         return;
 
     MoveSorter sorter(*begin);
-    for (; p < end; ++p)
+    while (sortable && sortedEnd - begin + 1 < MoveSorter::MAX_ELEMENTS)
     {
-        if (p->value >= limit)
-        {
-            if (sortedEnd - begin + 1 >= MoveSorter::MAX_ELEMENTS)  // sorter full
-                break;
-
-            sorter.insert(*p);
-            *p = *++sortedEnd;
-        }
+        ExtMove* p = begin + pop_lsb(sortable);
+        sorter.insert(*p);
+        *p = *++sortedEnd;
     }
     sorter.write_sorted(begin, sortedEnd - begin + 1);
     // Use scalar implementation for any remaining elements
 #endif
 
-    for (; p < end; ++p)
+    while (sortable)
+        insert(begin + pop_lsb(sortable));
+
+    for (ExtMove* p = begin + 64; p < end; ++p)
         if (p->value >= limit)
-        {
-            ExtMove tmp = *p, *q;
-            *p          = *++sortedEnd;
-            for (q = sortedEnd; q != begin && *(q - 1) < tmp; --q)
-                *q = *(q - 1);
-            *q = tmp;
-        }
+            insert(p);
 }
 
 }  // namespace
@@ -192,7 +195,7 @@ MovePicker::MovePicker(const Position& p, Move ttm, int th, const CapturePieceTo
 // Captures are ordered by Most Valuable Victim (MVV), preferring captures
 // with a good history. Quiets moves are ordered using the history tables.
 template<GenType Type>
-ExtMove* MovePicker::score(const MoveList<Type>& ml) {
+ExtMove* MovePicker::score(const MoveList<Type>& ml, int limit) {
 
     static_assert(Type == CAPTURES || Type == QUIETS || Type == EVASIONS, "Wrong type");
 
@@ -209,7 +212,9 @@ ExtMove* MovePicker::score(const MoveList<Type>& ml) {
         threatByLesser[KING]  = 0;
     }
 
-    ExtMove* it = cur;
+    ExtMove* it  = cur;
+    Bitboard bit = 1, sortable = 0;
+
     for (auto move : ml)
     {
         ExtMove& m = *it++;
@@ -256,7 +261,12 @@ ExtMove* MovePicker::score(const MoveList<Type>& ml) {
             else
                 m.value = (*mainHistory)[us][m.raw()] + (*continuationHistory[0])[pc][to];
         }
+
+        sortable |= m.value >= limit ? bit : 0;
+        bit <<= 1;
     }
+
+    partial_insertion_sort(cur, it, limit, sortable);
     return it;
 }
 
@@ -295,9 +305,8 @@ top:
         MoveList<CAPTURES> ml(pos);
 
         cur = endBadCaptures = moves;
-        endCur = endCaptures = score<CAPTURES>(ml);
+        endCur = endCaptures = score<CAPTURES>(ml, std::numeric_limits<int>::min());
 
-        partial_insertion_sort(cur, endCur, std::numeric_limits<int>::min());
         ++stage;
         goto top;
     }
@@ -319,9 +328,7 @@ top:
         {
             MoveList<QUIETS> ml(pos);
 
-            endCur = endGenerated = score<QUIETS>(ml);
-
-            partial_insertion_sort(cur, endCur, -3560 * depth);
+            endCur = endGenerated = score<QUIETS>(ml, -3560 * depth);
         }
 
         ++stage;
@@ -359,9 +366,8 @@ top:
         MoveList<EVASIONS> ml(pos);
 
         cur    = moves;
-        endCur = endGenerated = score<EVASIONS>(ml);
+        endCur = endGenerated = score<EVASIONS>(ml, std::numeric_limits<int>::min());
 
-        partial_insertion_sort(cur, endCur, std::numeric_limits<int>::min());
         ++stage;
         [[fallthrough]];
     }
