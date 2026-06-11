@@ -29,7 +29,7 @@ namespace Stockfish::Eval::NNUE {
 template<size_t Dimensions>
 struct NNZInfo {
 
-#if defined(USE_AVX512)
+#if defined(USE_AVX512) || defined(USE_RVV)
     unsigned count = 0;
     // indices of non-zero chunks
     u16 nnz[Dimensions / 4];
@@ -60,17 +60,26 @@ struct NNZInfo {
     #endif
 
     struct NNZCursor {
-        NNZInfo& info;
-        __m512i  indices;
-        unsigned count;
+        NNZInfo&    info;
+        SIMD::vec_t indices;
+        unsigned    count;
 
         NNZCursor(NNZInfo& info_, bool perspective, unsigned count_) :
             info(info_),
             count(count_) {
+            using namespace SIMD;
+
+    #if defined(USE_RVV)
+            indices = FROM_RVV(__riscv_vid_v_u16m1(RVV_VLEN / 16));
+            indices += i16(perspective * Dimensions / 8);
+    #else
             indices = _mm512_load_si512(&Indices[perspective]);
+    #endif
         }
 
         void record2(SIMD::vec_t neurons1, SIMD::vec_t neurons2) {
+            using namespace SIMD;
+
     #if defined(USE_AVX512ICL)
             const __m512i increment = _mm512_set1_epi16(32);
 
@@ -84,6 +93,18 @@ struct NNZInfo {
 
             count += popcount(nnzMask);
             indices = _mm512_add_epi16(indices, increment);
+    #elif defined(USE_RVV)
+            vint32m2_t merged  = __riscv_vcreate_v_i32m1_i32m2(TO_RVV(_vint32m1_t, neurons1),
+                                                               TO_RVV(_vint32m1_t, neurons2));
+            vbool16_t  nonzero = __riscv_vmsne_vx_i32m2_b16(merged, 0, RVV_VLEN / 16);
+            vint16m1_t compressed =
+              __riscv_vcompress_vm_i16m1(TO_RVV(_vint16m1_t, indices), nonzero, RVV_VLEN / 16);
+
+            __riscv_vse16_v_u16m1(info.nnz + count, __riscv_vreinterpret_v_i16m1_u16m1(compressed),
+                                  RVV_VLEN / 16);
+
+            count += __riscv_vcpop_m_b16(nonzero, RVV_VLEN / 16);
+            indices += i16(sizeof(neurons1) / 2);
     #else
             for (auto neurons : {neurons1, neurons2})
             {
@@ -114,7 +135,8 @@ struct NNZInfo {
             out = info.bitset + perspective * Dimensions / 64;
         }
 
-    #if (defined(USE_SSSE3) || defined(USE_LSX) || defined(USE_LASX) || (USE_NEON >= 8))
+    #if (defined(USE_SSSE3) || defined(USE_LSX) || defined(USE_LASX) || (USE_NEON >= 8)) \
+      || defined(USE_RVV)
         void record2(SIMD::vec_t neurons1, SIMD::vec_t neurons2) {
             using namespace SIMD;
 

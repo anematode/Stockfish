@@ -324,6 +324,23 @@ class FeatureTransformer {
                     vec_t merged = wasm_i8x16_shuffle(low, hi, 1, 3, 5, 7, 9, 11, 13, 15, 17, 19,
                                                       21, 23, 25, 27, 29, 31);
                     vec_t result = wasm_u8x16_shr(merged, 1);
+    #elif defined(USE_RVV)
+
+                    auto mg1 = __riscv_vcreate_v_i16m1_i16m2(TO_RVV(_vint16m1_t, acc0a),
+                                                             TO_RVV(_vint16m1_t, acc0b));
+                    auto mg2 = __riscv_vcreate_v_i16m1_i16m2(TO_RVV(_vint16m1_t, acc1a),
+                                                             TO_RVV(_vint16m1_t, acc1b));
+
+                    mg1 = __riscv_vmax_vx_i16m2(mg1, 0, RVV_VLEN / 8);
+                    mg2 = __riscv_vmax_vx_i16m2(mg2, 0, RVV_VLEN / 8);
+
+                    auto pa = __riscv_vnclipu_wx_u8m1(__riscv_vreinterpret_v_i16m2_u16m2(mg1), 0,
+                                                      __RISCV_VXRM_RDN, RVV_VLEN / 8);
+                    auto pb = __riscv_vnclipu_wx_u8m1(__riscv_vreinterpret_v_i16m2_u16m2(mg2), 0,
+                                                      __RISCV_VXRM_RDN, RVV_VLEN / 8);
+
+                    auto  hi     = __riscv_vmulhu_vv_u8m1(pa, pb, RVV_VLEN / 8);
+                    vec_t result = FROM_RVV(__riscv_vsrl_vx_u8m1(hi, 1, RVV_VLEN / 8));
     #else
                     vec_t sum0a = vec_slli_16(vec_max_16(vec_min_16(acc0a, FtMax), Zero), shift);
                     vec_t sum0b = vec_slli_16(vec_max_16(vec_min_16(acc0b, FtMax), Zero), shift);

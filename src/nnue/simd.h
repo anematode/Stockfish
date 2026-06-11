@@ -38,6 +38,9 @@
     #include <lasxintrin.h>
     #include <lsxintrin.h>
 
+#elif defined(USE_RVV)
+    #include <riscv_vector.h>
+
 #elif defined(USE_LSX)
     #include <lsxintrin.h>
 #endif
@@ -55,9 +58,7 @@ namespace Stockfish::Eval::NNUE::SIMD {
 #ifdef USE_AVX512
 using vec_t      = __m512i;
 using vec_i8_t   = __m256i;
-using vec128_t   = __m128i;
 using psqt_vec_t = __m256i;
-using vec_uint_t = __m512i;
     #define vec_load(a) _mm512_load_si512(a)
     #define vec_store(a, b) _mm512_store_si512(a, b)
     #define vec_convert_8_16(a) _mm512_cvtepi8_epi16(a)
@@ -92,9 +93,7 @@ using vec_uint_t = __m512i;
 #elif USE_AVX2
 using vec_t      = __m256i;
 using vec_i8_t   = __m128i;
-using vec128_t   = __m128i;
 using psqt_vec_t = __m256i;
-using vec_uint_t = __m256i;
     #define vec_load(a) _mm256_load_si256(a)
     #define vec_store(a, b) _mm256_store_si256(a, b)
     #define vec_convert_8_16(a) _mm256_cvtepi8_epi16(a)
@@ -136,9 +135,7 @@ using vec_uint_t = __m256i;
 #elif USE_SSE2
 using vec_t      = __m128i;
 using vec_i8_t   = u64;  // for the correct size -- will be loaded into an xmm reg
-using vec128_t   = __m128i;
 using psqt_vec_t = __m128i;
-using vec_uint_t = __m128i;
     #define vec_load(a) (*(a))
     #define vec_store(a, b) *(a) = (b)
     #define vec_add_16(a, b) _mm_add_epi16(a, b)
@@ -202,8 +199,6 @@ using vec_i32x4_t __attribute__((may_alias)) = int32x4_t;
 using vec_t __attribute__((may_alias))      = int16x8_t;
 using vec_i8_t __attribute__((may_alias))   = int8x16_t;
 using psqt_vec_t __attribute__((may_alias)) = int32x4_t;
-using vec128_t __attribute__((may_alias))   = uint16x8_t;
-using vec_uint_t __attribute__((may_alias)) = uint32x4_t;
     #define vec_load(a) (*(a))
     #define vec_store(a, b) *(a) = (b)
     #define vec_add_16(a, b) vaddq_s16(a, b)
@@ -242,9 +237,7 @@ inline int16x8_t vsubw_high_s8(int16x8_t a, int8x16_t b) { return vsubw_s8(a, vg
 #elif USE_LASX
 using vec_t      = __m256i;
 using vec_i8_t   = __m128i;
-using vec128_t   = __m128i;
 using psqt_vec_t = __m256i;
-using vec_uint_t = __m256i;
 
 inline __m256i lasx_load256(const __m256i* a) {
     return __lasx_xvld(reinterpret_cast<const void*>(a), 0);
@@ -325,9 +318,7 @@ inline int lasx_vec_nnz(__m256i a) {
 #elif USE_LSX
 using vec_t      = __m128i;
 using vec_i8_t   = u64;
-using vec128_t   = __m128i;
 using psqt_vec_t = __m128i;
-using vec_uint_t = __m128i;
 
 inline __m128i lsx_packus_16(__m128i a, __m128i b) {
     #if defined(__clang__) && defined(__has_builtin) && __has_builtin(__builtin_lsx_vssrani_bu_h)
@@ -386,6 +377,41 @@ inline __m128i vec_convert_8_16(u64 x) {
 
     #define NumRegistersSIMD 24
     #define MaxChunkSize 16
+
+#elif USE_RVV
+
+// For RVV, we largely rely on GCC/clang's vector extension and pass
+// rvv-vector-bits=N to let it optimize based on a fixed length.
+// In a few places, where the vector extension is insufficiently
+// expressive, we convert to rvv-specific types and use those intrinsics.
+static_assert(__riscv_v_fixed_vlen == RVV_VLEN);
+
+using vec_t      = i16 __attribute__((vector_size(RVV_VLEN / 8)));
+using vec_i8_t   = i8 __attribute__((vector_size(RVV_VLEN / 16)));  // half width
+using psqt_vec_t = i32 __attribute__((vector_size(32)));
+
+    #define RVV_SIZED __attribute__((riscv_rvv_vector_bits(RVV_VLEN)))
+
+typedef vint8m1_t _vint8m1_t   RVV_SIZED;
+typedef vint16m1_t _vint16m1_t RVV_SIZED;
+typedef vint32m1_t _vint32m1_t RVV_SIZED;
+
+    #define TO_RVV(dst, v) (dst)(v)
+    #define FROM_RVV(v) (vec_t)(v)
+
+    #define vec_load(a) (*(a))
+    #define vec_store(a, b) *(a) = (b)
+    #define vec_add_16(a, b) ((a) + (b))
+    #define vec_convert_8_16(a) __builtin_convertvector((a), vec_t)
+    #define vec_sub_16(a, b) ((a) - (b))
+    #define vec_set_16(a) __riscv_vmv_v_x_i16m1(a, RVV_VLEN / 16)
+    #define vec_zero() (vec_t{})
+    #define vec_add_psqt_32(a, b) ((a) + (b))
+    #define vec_sub_psqt_32(a, b) ((a) - (b))
+    #define vec_store_psqt(a, b) *(a) = (b)
+
+    #define NumRegistersSIMD 24
+    #define MaxChunkSize (RVV_VLEN / 8)
 
 #else
     #undef VECTOR
@@ -581,6 +607,29 @@ dotprod_m128_add_dpbusd_epi32(int32x4_t& acc, int8x16_t a, int8x16_t b) {
 }
 
 #endif  // USE_LSX
+
+#if defined(USE_RVV)
+
+[[maybe_unused]] static void rvv_add_dpbusd_epi32(_vint32m1_t& acc, _vint8m1_t a, _vint8m1_t b) {
+    vint16m2_t prod =
+      __riscv_vwmulsu_vv_i16m2(b, __riscv_vreinterpret_v_i8m1_u8m1(a), RVV_VLEN / 8);
+    vuint32m2_t prod32 =
+      __riscv_vreinterpret_v_u16m2_u32m2(__riscv_vreinterpret_v_i16m2_u16m2(prod));
+    vint16m1_t even =
+      __riscv_vreinterpret_v_u16m1_i16m1(__riscv_vnsrl_wx_u16m1(prod32, 0, RVV_VLEN / 16));
+    vint16m1_t odd =
+      __riscv_vreinterpret_v_u16m1_i16m1(__riscv_vnsrl_wx_u16m1(prod32, 16, RVV_VLEN / 16));
+    vuint32m1_t pairs = __riscv_vreinterpret_v_u16m1_u32m1(__riscv_vreinterpret_v_i16m1_u16m1(
+      __riscv_vadd_vv_i16m1(even, odd, RVV_VLEN / 16)));
+    vint16mf2_t lo =
+      __riscv_vreinterpret_v_u16mf2_i16mf2(__riscv_vnsrl_wx_u16mf2(pairs, 0, RVV_VLEN / 32));
+    vint16mf2_t hi =
+      __riscv_vreinterpret_v_u16mf2_i16mf2(__riscv_vnsrl_wx_u16mf2(pairs, 16, RVV_VLEN / 32));
+    vint32m1_t sum = __riscv_vwadd_vv_i32m1(lo, hi, RVV_VLEN / 32);
+    acc            = __riscv_vadd_vv_i32m1(acc, sum, RVV_VLEN / 32);
+}
+
+#endif  // USE_RVV
 
 
 // Compute optimal SIMD register count for feature transformer accumulation.

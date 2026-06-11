@@ -153,7 +153,7 @@ ifeq ($(ARCH), $(filter $(ARCH), \
                  x86-64-bmi2 x86-64-avx2 x86-64-sse41-popcnt x86-64-modern x86-64-ssse3 x86-64-sse3-popcnt \
                  x86-64 x86-32-sse41-popcnt x86-32-sse2 x86-32 ppc-64 ppc-64-altivec ppc-64-vsx ppc-32 e2k \
                  armv7 armv7-neon armv8 armv8-dotprod arm64-universal apple-silicon general-64 general-32 riscv64 \
-                 loongarch64 loongarch64-lsx loongarch64-lasx wasm32 wasm32-relaxed-simd))
+                 riscv64-gcv loongarch64 loongarch64-lsx loongarch64-lasx wasm32 wasm32-relaxed-simd))
    SUPPORTED_ARCH=true
 else
    SUPPORTED_ARCH=false
@@ -191,6 +191,8 @@ arm_version = 0
 lsx = no
 lasx = no
 relaxedsimd = no
+rvv = no
+rvv_vlen = 128
 syzygy = yes
 STRIP = strip
 
@@ -454,6 +456,13 @@ endif
 
 ifeq ($(ARCH),riscv64)
 	arch = riscv64
+endif
+
+ifeq ($(ARCH),riscv64-gcv)
+	arch = riscv64
+	prefetch = yes
+	popcnt = yes
+	rvv = yes
 endif
 
 ifeq ($(findstring loongarch64,$(ARCH)),loongarch64)
@@ -764,7 +773,7 @@ else
 endif
 
 ifeq ($(popcnt),yes)
-	ifeq ($(arch),$(filter $(arch),ppc64 ppc64-altivec ppc64-vsx armv7 armv8 arm64))
+	ifeq ($(arch),$(filter $(arch),ppc64 ppc64-altivec ppc64-vsx armv7 armv8 arm64 riscv64))
 		CXXFLAGS += -DUSE_POPCNT
 	else
 		CXXFLAGS += -msse3 -mpopcnt -DUSE_POPCNT
@@ -861,6 +870,10 @@ endif
 
 ifeq ($(dotprod),yes)
 	CXXFLAGS += -march=armv8.2-a+dotprod -DUSE_NEON_DOTPROD
+endif
+
+ifeq ($(rvv),yes)
+	CXXFLAGS += -march=rv64gcv_zvl$(rvv_vlen)b -DUSE_RVV -DRVV_VLEN=$(rvv_vlen) -mrvv-vector-bits=zvl
 endif
 
 ifeq ($(lasx),yes)
@@ -1039,7 +1052,9 @@ help:
 	echo "apple-silicon           > Apple silicon ARM64" && \
 	echo "general-64              > unspecified 64-bit" && \
 	echo "general-32              > unspecified 32-bit" && \
+	echo "riscv64-universal       > RISC-V 64-bit with automatic runtime selection of the best architecture" && \
 	echo "riscv64                 > RISC-V 64-bit" && \
+	echo "riscv64-gcv             > RISC-V 64-bit with vector extension, set rvv_vlen=128|256|512" && \
 	echo "loongarch64             > LoongArch 64-bit" && \
 	echo "loongarch64-lsx         > LoongArch 64-bit with SIMD eXtension" && \
 	echo "loongarch64-lasx        > LoongArch 64-bit with Advanced SIMD eXtension" && \
@@ -1252,6 +1267,8 @@ config-sanity: net
 	echo "arm_version: '$(arm_version)'" && \
 	echo "lsx: '$(lsx)'" && \
 	echo "lasx: '$(lasx)'" && \
+	echo "rvv: '$(rvv)'" && \
+	echo "rvv_vlen: '$(rvv_vlen)'" && \
 	echo "syzygy: '$(syzygy)'" && \
 	echo "target_windows: '$(target_windows)'" && \
 	echo "" && \
@@ -1288,6 +1305,9 @@ config-sanity: net
 	(test "$(neon)" = "yes" || test "$(neon)" = "no") && \
 	(test "$(lsx)" = "yes" || test "$(lsx)" = "no") && \
 	(test "$(lasx)" = "yes" || test "$(lasx)" = "no") && \
+	(test "$(rvv)" = "yes" || test "$(rvv)" = "no") && \
+	(test "$(rvv)" = "no" || test "$(rvv_vlen)" = "128" || test "$(rvv_vlen)" = "256" || \
+	 test "$(rvv_vlen)" = "512") && \
 	(test "$(syzygy)" = "yes" || test "$(syzygy)" = "no") && \
 	(test "$(comp)" = "gcc" || test "$(comp)" = "icx" || test "$(comp)" = "mingw" || \
 	 test "$(comp)" = "clang" || test "$(comp)" = "armv7a-linux-androideabi16-clang" || \
