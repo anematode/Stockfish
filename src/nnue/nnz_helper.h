@@ -29,7 +29,7 @@ namespace Stockfish::Eval::NNUE {
 template<usize Dimensions>
 struct NNZInfo {
 
-#if defined(USE_AVX512)
+#if defined(USE_AVX512) || defined(USE_RVV)
     unsigned count = 0;
     // indices of non-zero chunks
     u16 nnz[Dimensions / 4];
@@ -39,6 +39,7 @@ struct NNZInfo {
         std::array<std::array<u16, 32>, 2> indices{};
         for (int i = 0; i < 2; ++i)
         {
+            // Inverse of packus order
             indices[i] = {0, 1, 2,  3,  16, 17, 18, 19, 4,  5,  6,  7,  20, 21, 22, 23,
                           8, 9, 10, 11, 24, 25, 26, 27, 12, 13, 14, 15, 28, 29, 30, 31};
             for (u16& m : indices[i])
@@ -60,17 +61,27 @@ struct NNZInfo {
     #endif
 
     struct NNZCursor {
-        NNZInfo& info;
-        __m512i  indices;
-        unsigned count;
+        NNZInfo&    info;
+        SIMD::vec_t indices;
+        unsigned    count;
 
         NNZCursor(NNZInfo& info_, bool perspective, unsigned count_) :
             info(info_),
             count(count_) {
+            using namespace SIMD;
+
+    #if defined(USE_RVV)
+            indices =
+              from_rvv(__riscv_vreinterpret_v_u16m1_i16m1(__riscv_vid_v_u16m1(RVV_VLEN / 16)));
+            indices += i16(perspective * Dimensions / 8);
+    #else
             indices = _mm512_load_si512(&Indices[perspective]);
+    #endif
         }
 
         void record2(SIMD::vec_t neurons1, SIMD::vec_t neurons2) {
+            using namespace SIMD;
+
     #if defined(USE_AVX512ICL)
             const __m512i increment = _mm512_set1_epi16(32);
 
@@ -84,6 +95,18 @@ struct NNZInfo {
 
             count += popcount(nnzMask);
             indices = _mm512_add_epi16(indices, increment);
+    #elif defined(USE_RVV)
+            vint32m2_t merged = __riscv_vreinterpret_v_i16m2_i32m2(
+              __riscv_vcreate_v_i16m1_i16m2(to_rvv(neurons1), to_rvv(neurons2)));
+            vbool16_t  nonzero = __riscv_vmsne_vx_i32m2_b16(merged, 0, RVV_VLEN / 16);
+            vint16m1_t compressed =
+              __riscv_vcompress_vm_i16m1(to_rvv(indices), nonzero, RVV_VLEN / 16);
+
+            __riscv_vse16_v_u16m1(info.nnz + count, __riscv_vreinterpret_v_i16m1_u16m1(compressed),
+                                  RVV_VLEN / 16);
+
+            count += __riscv_vcpop_m_b16(nonzero, RVV_VLEN / 16);
+            indices += i16(sizeof(neurons1) / 2);
     #else
             for (auto neurons : {neurons1, neurons2})
             {

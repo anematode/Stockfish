@@ -76,7 +76,7 @@ SRCS = attacks.cpp benchmark.cpp bitboard.cpp evaluate.cpp main.cpp \
 	nnue/features/half_ka_v2_hm.cpp nnue/features/full_threats.cpp \
 	engine.cpp score.cpp memory.cpp
 
-OTHER_SRCS = universal/entry_x86.cpp universal/entry_arm64.cpp universal/nnue_embed.cpp
+OTHER_SRCS = universal/entry_x86.cpp universal/entry_arm64.cpp universal/entry_riscv64.cpp universal/nnue_embed.cpp
 
 HEADERS = attacks.h benchmark.h bitboard.h evaluate.h misc.h movegen.h movepick.h history.h \
 		nnue/nnue_misc.h nnue/features/half_ka_v2_hm.h nnue/features/full_threats.h \
@@ -153,13 +153,14 @@ ifeq ($(ARCH), $(filter $(ARCH), \
                  x86-64-bmi2 x86-64-avx2 x86-64-sse41-popcnt x86-64-modern x86-64-ssse3 x86-64-sse3-popcnt \
                  x86-64 x86-32-sse41-popcnt x86-32-sse2 x86-32 ppc-64 ppc-64-altivec ppc-64-vsx ppc-32 e2k \
                  armv7 armv7-neon armv8 armv8-dotprod arm64-universal apple-silicon general-64 general-32 riscv64 \
-                 loongarch64 loongarch64-lsx loongarch64-lasx wasm32 wasm32-relaxed-simd))
+                 riscv64-gcv-zvl128 riscv64-gcv-zvl256 riscv64-gcv-zvl512 riscv64-gcv-zvl1024 riscv64-gcv-zvl1024plus \
+                 riscv64-universal loongarch64 loongarch64-lsx loongarch64-lasx wasm32 wasm32-relaxed-simd))
    SUPPORTED_ARCH=true
 else
    SUPPORTED_ARCH=false
 endif
 
-ifneq (,$(filter $(ARCH),x86-64-universal arm64-universal))
+ifneq (,$(filter $(ARCH),x86-64-universal arm64-universal riscv64-universal))
    UNIVERSAL_BUILD=true
 else
    UNIVERSAL_BUILD=false
@@ -191,6 +192,9 @@ arm_version = 0
 lsx = no
 lasx = no
 relaxedsimd = no
+rvv = no
+rvv_vlen = 128
+rvv_scalable = no
 syzygy = yes
 STRIP = strip
 
@@ -452,8 +456,21 @@ ifeq ($(findstring e2k,$(ARCH)),e2k)
 	popcnt = yes
 endif
 
-ifeq ($(ARCH),riscv64)
+ifeq ($(findstring riscv64,$(ARCH)),riscv64)
 	arch = riscv64
+ifeq ($(findstring -gcv,$(ARCH)),-gcv)
+	prefetch = yes
+	popcnt = yes
+	rvv = yes
+ifeq ($(ARCH),riscv64-gcv-zvl1024plus)
+	# Target RV64GCV machine with a minimum vlen of 1024 bits, using length
+	# -agnostic code
+	rvv_scalable = yes
+else
+	# Target RV64GCV machine with this exact vlen
+	rvv_vlen = $(patsubst riscv64-gcv-zvl%,%,$(ARCH))
+endif
+endif
 endif
 
 ifeq ($(findstring loongarch64,$(ARCH)),loongarch64)
@@ -501,9 +518,6 @@ ifeq ($(COMP),gcc)
 		ifeq ($(OS),Android)
 			CXXFLAGS += -m$(bits)
 			LDFLAGS += -m$(bits)
-		endif
-		ifeq ($(ARCH),riscv64)
-			CXXFLAGS += -latomic
 		endif
 	else ifeq ($(arch),loongarch64)
 		CXXFLAGS += -latomic
@@ -575,9 +589,6 @@ ifeq ($(COMP),clang)
 		ifeq ($(OS),Android)
 			CXXFLAGS += -m$(bits)
 			LDFLAGS += -m$(bits)
-		endif
-		ifeq ($(ARCH),riscv64)
-			CXXFLAGS += -latomic
 		endif
 	else ifeq ($(arch),loongarch64)
 		CXXFLAGS += -latomic
@@ -764,7 +775,7 @@ else
 endif
 
 ifeq ($(popcnt),yes)
-	ifeq ($(arch),$(filter $(arch),ppc64 ppc64-altivec ppc64-vsx armv7 armv8 arm64))
+	ifeq ($(arch),$(filter $(arch),ppc64 ppc64-altivec ppc64-vsx armv7 armv8 arm64 riscv64))
 		CXXFLAGS += -DUSE_POPCNT
 	else
 		CXXFLAGS += -msse3 -mpopcnt -DUSE_POPCNT
@@ -862,6 +873,17 @@ endif
 ifeq ($(dotprod),yes)
 	CXXFLAGS += -march=armv8.2-a+dotprod -DUSE_NEON_DOTPROD
 endif
+
+ifeq ($(arch),riscv64)
+ifneq ($(rvv),yes) # plain rv64gc
+	CXXFLAGS += -march=rv64gc
+else ifeq ($(rvv_scalable),no) # rv64gc, exact vlen
+	CXXFLAGS += -march=rv64gcv_zba_zbb_zbs_zicond_zicbop_zvl$(rvv_vlen)b -DUSE_RVV -DRVV_VLEN=$(rvv_vlen) -mrvv-vector-bits=zvl
+else # vlen >= 1024
+	CXXFLAGS += -march=rv64gcv_zba_zbb_zbs_zicond_zicbop_zvl1024b -DUSE_RVV -DRVV_VLEN=1024 -mrvv-vector-bits=scalable
+endif
+endif
+
 
 ifeq ($(lasx),yes)
 	CXXFLAGS += -DUSE_LASX
@@ -1039,7 +1061,13 @@ help:
 	echo "apple-silicon           > Apple silicon ARM64" && \
 	echo "general-64              > unspecified 64-bit" && \
 	echo "general-32              > unspecified 32-bit" && \
-	echo "riscv64                 > RISC-V 64-bit" && \
+	echo "riscv64-universal       > RISC-V 64-bit with automatic runtime selection of the best architecture (Linux only)" && \
+	echo "riscv64                 > RISC-V 64-bit RV64GC" && \
+	echo "riscv64-gcv-zvl128      > RISC-V 64-bit RV64GCV, 128-bit vlen" && \
+	echo "riscv64-gcv-zvl256      > RISC-V 64-bit RV64GCV, 256-bit vlen" && \
+	echo "riscv64-gcv-zvl512      > RISC-V 64-bit RV64GCV, 512-bit vlen" && \
+	echo "riscv64-gcv-zvl1024     > RISC-V 64-bit RV64GCV, 1024-bit vlen" && \
+	echo "riscv64-gcv-zvl1024plus > RISC-V 64-bit RV64GCV, minimum 1024-bit vlen" && \
 	echo "loongarch64             > LoongArch 64-bit" && \
 	echo "loongarch64-lsx         > LoongArch 64-bit with SIMD eXtension" && \
 	echo "loongarch64-lasx        > LoongArch 64-bit with Advanced SIMD eXtension" && \
@@ -1252,6 +1280,8 @@ config-sanity: net
 	echo "arm_version: '$(arm_version)'" && \
 	echo "lsx: '$(lsx)'" && \
 	echo "lasx: '$(lasx)'" && \
+	echo "rvv: '$(rvv)'" && \
+	echo "rvv_vlen: '$(rvv_vlen)'" && \
 	echo "syzygy: '$(syzygy)'" && \
 	echo "target_windows: '$(target_windows)'" && \
 	echo "" && \
@@ -1288,6 +1318,8 @@ config-sanity: net
 	(test "$(neon)" = "yes" || test "$(neon)" = "no") && \
 	(test "$(lsx)" = "yes" || test "$(lsx)" = "no") && \
 	(test "$(lasx)" = "yes" || test "$(lasx)" = "no") && \
+	(test "$(rvv)" = "yes" || test "$(rvv)" = "no") && \
+	(test "$(rvv_scalable)" = "yes" || test "$(rvv_scalable)" = "no") && \
 	(test "$(syzygy)" = "yes" || test "$(syzygy)" = "no") && \
 	(test "$(comp)" = "gcc" || test "$(comp)" = "icx" || test "$(comp)" = "mingw" || \
 	 test "$(comp)" = "clang" || test "$(comp)" = "armv7a-linux-androideabi16-clang" || \
@@ -1376,6 +1408,13 @@ ifeq ($(arch),x86_64)
   UNIVERSAL_ENTRY_OBJ  := $(TEMP_DIR)/entry_x86.o
   UNIVERSAL_ENTRY_SRC  := $(UNIVERSAL_SRC_DIR)/entry_x86.cpp
   BASELINE_ARCH := x86-64
+else ifeq ($(arch),riscv64)
+  UNIVERSAL_ARCHES := riscv64 \
+                      riscv64-gcv-zvl128 riscv64-gcv-zvl256 riscv64-gcv-zvl512 \
+                      riscv64-gcv-zvl1024 riscv64-gcv-zvl1024plus
+  UNIVERSAL_ENTRY_OBJ  := $(TEMP_DIR)/entry_riscv64.o
+  UNIVERSAL_ENTRY_SRC  := $(UNIVERSAL_SRC_DIR)/entry_riscv64.cpp
+  BASELINE_ARCH := riscv64
 else
   UNIVERSAL_ARCHES := armv8 armv8-dotprod
   UNIVERSAL_ENTRY_OBJ  := $(TEMP_DIR)/entry_arm64.o
@@ -1462,10 +1501,10 @@ $(NET_SENTINEL): | $(TEMP_DIR)
 	@touch $@
 
 $(NNUE_EMBED_OBJ): $(UNIVERSAL_SRC_DIR)/nnue_embed.cpp $(NET_SENTINEL) | $(TEMP_DIR)
-	$(CXX) -O2 -std=c++20 -Wno-c++26-extensions $(SLICE_DEF) $(mac_target_flags) $(EMBED_DIR) -c $< -o $@
+	$(CXX) -O2 -std=c++20 -Wno-c++26-extensions $(SLICE_DEF) $(mac_target_flags) $(EXTRACXXFLAGS) $(EMBED_DIR) -c $< -o $@
 
 $(UNIVERSAL_ENTRY_OBJ): $(UNIVERSAL_ENTRY_SRC) | $(TEMP_DIR)
-	$(CXX) -O2 -std=c++20 $(mac_target_flags) -c $< -o $@
+	$(CXX) -O2 -std=c++20 $(mac_target_flags) $(EXTRACXXFLAGS) -c $< -o $@
 
 # Symlink tracked top-level items from src/ into temp_builds/<arch>/.
 $(TEMP_DIR)/%/.setup: | $(TEMP_DIR)
@@ -1503,7 +1542,7 @@ endif
 endif
 
 $(UNIVERSAL_EXE): $(UNIVERSAL_ENTRY_OBJ) $(NNUE_EMBED_OBJ) $(ARCH_OBJS)
-	$(CXX) -o $@ $(UNIVERSAL_ENTRY_OBJ) $(NNUE_EMBED_OBJ) $(ARCH_OBJS) $(UNIVERSAL_FINAL_FLAGS)
+	$(CXX) -o $@ $(UNIVERSAL_ENTRY_OBJ) $(NNUE_EMBED_OBJ) $(ARCH_OBJS) $(UNIVERSAL_FINAL_FLAGS) $(EXTRALDFLAGS)
 	@echo "Universal binary built: $@"
 
 endif  # UNIVERSAL_BUILD

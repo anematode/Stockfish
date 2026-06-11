@@ -45,7 +45,7 @@ void init();
 inline Bitboard reverse_bb(Bitboard bb) {
     #ifdef __aarch64__
     return __rbitll(bb);
-    #else  // loongarch
+    #else // loongarch
     Bitboard out;
     asm("bitrev.d %0, %1" : "=r"(out) : "r"(bb));
     return out;

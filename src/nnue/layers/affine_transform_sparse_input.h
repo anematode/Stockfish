@@ -59,7 +59,8 @@ class AffineTransformSparseInput {
     static constexpr IndexType PaddedOutputDimensions =
       ceil_to_multiple<IndexType>(OutputDimensions, MaxSimdWidth);
 
-#if (defined(USE_SSSE3) || defined(USE_LSX) || defined(USE_LASX) || (USE_NEON >= 8))
+#if (defined(USE_SSSE3) || defined(USE_LSX) || defined(USE_LASX) || (USE_NEON >= 8) \
+     || defined(USE_RVV))
     static constexpr IndexType ChunkSize = 4;
 #else
     static constexpr IndexType ChunkSize = 1;
@@ -82,7 +83,8 @@ class AffineTransformSparseInput {
     }
 
     static constexpr IndexType get_weight_index(IndexType i) {
-#if (defined(USE_SSSE3) || defined(USE_LSX) || defined(USE_LASX) || (USE_NEON >= 8))
+#if (defined(USE_SSSE3) || defined(USE_LSX) || defined(USE_LASX) || (USE_NEON >= 8) \
+     || defined(USE_RVV))
         return get_weight_index_scrambled(i);
 #else
         return i;
@@ -121,7 +123,8 @@ class AffineTransformSparseInput {
                    OutputType*                             output,
                    [[maybe_unused]] const NNZInfo<InDims>& nnzInfo) const {
 
-#if (defined(USE_SSSE3) || defined(USE_LSX) || defined(USE_LASX) || (USE_NEON >= 8))
+#if (defined(USE_SSSE3) || defined(USE_LSX) || defined(USE_LASX) || (USE_NEON >= 8) \
+     || defined(USE_RVV))
     #if defined(USE_AVX512)
         using invec_t  = __m512i;
         using outvec_t = __m512i;
@@ -161,6 +164,13 @@ class AffineTransformSparseInput {
         #define vec_add_32 __lsx_vadd_w
         #define vec_set_32 __lsx_vreplgr2vr_w
         #define vec_add_dpbusd_32 SIMD::lsx_m128_add_dpbusd_epi32
+    #elif defined(USE_RVV)
+        using invec_t  = SIMD::fixedvec_i8_t;
+        using outvec_t = SIMD::fixedvec_i32_t;
+        #define vec_set_32(a) \
+            SIMD::from_rvv( \
+              __riscv_vreinterpret_v_i32m1_i8m1(__riscv_vmv_v_x_i32m1((a), RVV_VLEN / 32)))
+        #define vec_add_dpbusd_32 SIMD::rvv_add_dpbusd_epi32
     #endif
         constexpr IndexType OutputSimdWidth = sizeof(outvec_t) / sizeof(OutputType);
         constexpr IndexType NumAccums       = OutputDimensions / OutputSimdWidth;
@@ -219,6 +229,19 @@ class AffineTransformSparseInput {
             const isize   i  = *start++;
             const invec_t in = vec_set_32(load_as<i32>(input + i * sizeof(i32)));
             const auto    col =
+              reinterpret_cast<const invec_t*>(&weights_cp[i * OutputDimensions * ChunkSize]);
+            for (IndexType k = 0; k < NumAccums; ++k)
+                vec_add_dpbusd_32(acc[k], in, col[k]);
+        }
+    #elif defined(USE_RVV)
+        const auto* start = nnzInfo.nnz;
+        const auto* end   = nnzInfo.nnz + nnzInfo.count;
+
+        while (start < end)
+        {
+            const isize    i  = *start++;
+            const invec_t  in = vec_set_32(load_as<i32>(input + i * sizeof(i32)));
+            const invec_t* col =
               reinterpret_cast<const invec_t*>(&weights_cp[i * OutputDimensions * ChunkSize]);
             for (IndexType k = 0; k < NumAccums; ++k)
                 vec_add_dpbusd_32(acc[k], in, col[k]);
