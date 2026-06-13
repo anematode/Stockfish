@@ -44,12 +44,9 @@ if [ "$BINARY_SIZE" -gt "$MAX_SIZE" ]; then
     exit 1
 fi
 
-FAIL=0
-i=0
-for pair in $PAIRS; do
-    i=$((i + 1))
-    cpu=${pair%%:*}
-    expected_compiler=${pair##*:}
+check_one() {
+    cpu=$1
+    expected_compiler=$2
     compiler_out=$("$SDE_EXE" "-$cpu" -- "$STOCKFISH_EXE" compiler 2>&1 || true)
     bench_out=$("$SDE_EXE" "-$cpu" -- "$STOCKFISH_EXE" bench 2>&1 || true)
     actual_compiler=$(printf '%s\n' "$compiler_out" | awk -F: '/Compilation architecture/ {
@@ -60,11 +57,31 @@ for pair in $PAIRS; do
     }')
     if [ "$actual_compiler" != "$expected_compiler" ] || [ "$actual_bench" != "$EXPECTED_BENCH" ]; then
         printf '===== CPU %s output (expected %s/%s, got %s/%s) =====\n' \
-            "$cpu" "$expected_compiler" "$EXPECTED_BENCH" "${actual_compiler:--}" "$actual_bench" >&2
-        FAIL=1
-    else
-        printf 'CPU %s ok\n' "$cpu" >&2
+            "$cpu" "$expected_compiler" "$EXPECTED_BENCH" "${actual_compiler:--}" "$actual_bench"
+        return 1
     fi
+    printf 'CPU %s ok\n' "$cpu"
+}
+
+TMP=$(mktemp -d)
+i=0
+for pair in $PAIRS; do
+    i=$((i + 1))
+    cpu=${pair%%:*}
+    expected_compiler=${pair##*:}
+    if check_one "$cpu" "$expected_compiler" > "$TMP/$i.out" 2>&1; then
+        : > "$TMP/$i.ok"
+    fi &
+done
+wait
+
+# Collect
+FAIL=0
+j=0
+while [ "$j" -lt "$i" ]; do
+    j=$((j + 1))
+    cat "$TMP/$j.out" >&2
+    [ -f "$TMP/$j.ok" ] || FAIL=1
 done
 
 if [ "$FAIL" != 0 ]; then
