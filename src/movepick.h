@@ -49,13 +49,16 @@ class MovePicker {
                int);
     MovePicker(const Position&, Move, int, const CapturePieceToHistory*);
     Move next_move();
+    void maybe_rescore();
     void skip_quiet_moves();
 
    private:
     template<typename Pred>
     Move select(Pred);
+    template<GenType T, typename MoveLike>
+    ExtMove* score(const MoveLike* start, const MoveLike* end);
     template<GenType T>
-    ExtMove* score(const MoveList<T>&);
+    ExtMove* score(const MoveList<T>& ml);
     ExtMove* begin() { return cur; }
     ExtMove* end() { return endCur; }
 

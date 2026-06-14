@@ -191,8 +191,8 @@ MovePicker::MovePicker(const Position& p, Move ttm, int th, const CapturePieceTo
 // Assigns a numerical value to each move in a list, used for sorting.
 // Captures are ordered by Most Valuable Victim (MVV), preferring captures
 // with a good history. Quiets moves are ordered using the history tables.
-template<GenType Type>
-ExtMove* MovePicker::score(const MoveList<Type>& ml) {
+template<GenType Type, typename MoveLike>
+ExtMove* MovePicker::score(const MoveLike* start, const MoveLike* end) {
 
     static_assert(Type == CAPTURES || Type == QUIETS || Type == EVASIONS, "Wrong type");
 
@@ -210,10 +210,10 @@ ExtMove* MovePicker::score(const MoveList<Type>& ml) {
     }
 
     ExtMove* it = cur;
-    for (auto move : ml)
+    for (auto move = start; move != end; ++move)
     {
         ExtMove& m = *it++;
-        m          = move;
+        m          = *move;
 
         const Square    from          = m.from_sq();
         const Square    to            = m.to_sq();
@@ -260,6 +260,11 @@ ExtMove* MovePicker::score(const MoveList<Type>& ml) {
     return it;
 }
 
+template<GenType T>
+ExtMove* MovePicker::score(const MoveList<T>& ml) {
+    return score<T>(ml.begin(), ml.end());
+}
+
 // Returns the next move satisfying a predicate function.
 // This never returns the TT move, as it was emitted before.
 template<typename Pred>
@@ -270,6 +275,26 @@ Move MovePicker::select(Pred filter) {
             return *cur++;
 
     return Move::none();
+}
+
+void MovePicker::maybe_rescore() {
+    switch (stage)
+    {
+    case GOOD_QUIET: {
+        // Re-score if the delta between the next two moves is small and we're
+        // near the root
+        if (ply > 6 || endCur - cur < 2 || std::abs(cur[0].value - cur[1].value) > 350) {
+            return;
+        }
+
+        [[maybe_unused]] auto* end = score<QUIETS>(cur, endCur);
+        assert(end == endCur);
+
+        partial_insertion_sort(cur, endCur, -3560 * depth);
+        break;
+    }
+    default:;
+    }
 }
 
 // This is the most important method of the MovePicker class. We emit one
@@ -322,14 +347,21 @@ top:
             endCur = endGenerated = score<QUIETS>(ml);
 
             partial_insertion_sort(cur, endCur, -3560 * depth);
+            if (select([&]() { return cur->value > goodQuietThreshold; })) {
+                ++stage;
+                return *(cur - 1);
+            }
         }
 
         ++stage;
         [[fallthrough]];
 
     case GOOD_QUIET :
-        if (!skipQuiets && select([&]() { return cur->value > goodQuietThreshold; }))
-            return *(cur - 1);
+        if (!skipQuiets) {
+            maybe_rescore();
+            if (select([&]() { return cur->value > goodQuietThreshold; }))
+                return *(cur - 1);
+        }
 
         // Prepare the pointers to loop over the bad captures
         cur    = moves;
