@@ -1321,7 +1321,7 @@ moves_loop:  // When in check, search starts here
             // beyond the first move depth.
             // To prevent problems when the max value is less than the min value,
             // std::clamp has been replaced by a more robust implementation.
-            FDepth d = std::max(1_fd, std::min(newDepth - FDepth::from(r / 1024), newDepth + 2_fd)) +
+            FDepth d = std::max(1_fd, std::min(newDepth - FDepth::from_raw(r), newDepth + 2_fd)) +
                 (PvNode ? 1_fd : 0_fd);
 
             ss->reduction = (newDepth - d).to_int();

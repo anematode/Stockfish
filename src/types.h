@@ -236,7 +236,7 @@ public:
     }
 
     constexpr Depth to_int() const {
-        return inner >> 10;
+        return inner / 1024;
     }
 
     constexpr int to_raw() const {
