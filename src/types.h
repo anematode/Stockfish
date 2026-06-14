@@ -224,6 +224,7 @@ using Depth = int;
 // Fractional depth, quanitized by 1024
 class FDepth {
 public:
+    FDepth() {}
 
     static constexpr FDepth from(Depth d) {
         return { d * 1024 };

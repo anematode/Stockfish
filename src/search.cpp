@@ -716,11 +716,12 @@ Value Search::Worker::search(
 
     Key   posKey;
     Move  move, excludedMove, bestMove;
-    Depth extension, newDepth;
+    Depth extension;
+    FDepth newDepth;
     Value bestValue, value, eval, maxValue, probCutBeta;
     bool  givesCheck, improving, priorCapture, opponentWorsening;
     bool  capture, ttCapture;
-    int   priorReduction;
+    FDepth priorReduction;
     Piece movedPiece;
 
     SearchedList capturesSearched;
@@ -771,7 +772,7 @@ Value Search::Worker::search(
     Square prevSq  = ((ss - 1)->currentMove).is_ok() ? ((ss - 1)->currentMove).to_sq() : SQ_NONE;
     bestMove       = Move::none();
     priorReduction = (ss - 1)->reduction;
-    (ss - 1)->reduction = 0;
+    (ss - 1)->reduction = 0_fd;
     ss->statScore       = 0;
     (ss + 2)->cutoffCnt = 0;
 
@@ -830,9 +831,9 @@ Value Search::Worker::search(
     opponentWorsening = ss->staticEval > -(ss - 1)->staticEval;
 
     // Hindsight adjustment of reductions based on static evaluation difference.
-    if (priorReduction >= 3 && !opponentWorsening)
+    if (priorReduction >= 3_fd && !opponentWorsening)
         depth++;
-    if (priorReduction >= 2 && depth >= 2_fd && ss->staticEval + (ss - 1)->staticEval > 173)
+    if (priorReduction >= 2_fd && depth >= 2_fd && ss->staticEval + (ss - 1)->staticEval > 173)
         depth--;
 
     // At non-PV nodes we check for an early TT cutoff
@@ -1118,7 +1119,7 @@ moves_loop:  // When in check, search starts here
         givesCheck = pos.gives_check(move);
 
         // Calculate new depth for this move
-        newDepth = depth.to_int() - 1;
+        newDepth = depth - 1_fd;
 
         int delta = beta - alpha;
 
@@ -1138,7 +1139,7 @@ moves_loop:  // When in check, search starts here
                 mp.skip_quiet_moves();
 
             // Reduced depth of the next LMR search
-            int lmrDepth = newDepth - r / 1024;
+            FDepth lmrDepth = newDepth - FDepth::from_raw(r);
 
             if (capture || givesCheck)
             {
@@ -1146,9 +1147,9 @@ moves_loop:  // When in check, search starts here
                 int   captHist = captureHistory[movedPiece][move.to_sq()][type_of(capturedPiece)];
 
                 // Futility pruning for captures
-                if (!givesCheck && lmrDepth < 7)
+                if (!givesCheck && lmrDepth < 7_fd)
                 {
-                    Value futilityValue = ss->staticEval + 231 + 232 * lmrDepth
+                    Value futilityValue = ss->staticEval + 231 + 232 * lmrDepth.to_int()
                                         + PieceValue[capturedPiece] + 131 * captHist / 1024;
 
                     if (futilityValue <= alpha)
@@ -1176,15 +1177,15 @@ moves_loop:  // When in check, search starts here
                 history += 64 * mainHistory[us][move.raw()] / 32;
 
                 // (*Scaler): Generally, lower divisors scale well
-                lmrDepth += history / lmrDivisor[dIndex];
+                lmrDepth += FDepth::from_raw(history * 1024 / lmrDivisor[dIndex]);
 
-                Value futilityValue = ss->staticEval + 40 + 138 * !bestMove + 117 * lmrDepth
+                Value futilityValue = ss->staticEval + 40 + 138 * !bestMove + 117 * lmrDepth.to_int()
                                     + 90 * (ss->staticEval > alpha);
 
                 // Futility pruning: parent node
                 // (*Scaler): Generally, more frequent futility pruning
                 // scales well
-                if (!ss->inCheck && lmrDepth < 12 && futilityValue <= alpha)
+                if (!ss->inCheck && lmrDepth < 12_fd && futilityValue <= alpha)
                 {
                     if (bestValue <= futilityValue && !is_decisive(bestValue)
                         && !is_win(futilityValue))
@@ -1192,10 +1193,10 @@ moves_loop:  // When in check, search starts here
                     continue;
                 }
 
-                lmrDepth = std::max(lmrDepth, 0);
+                lmrDepth = std::max(lmrDepth, 0_fd);
 
                 // Prune moves with negative SEE
-                if (!pos.see_ge(move, -25 * lmrDepth * lmrDepth))
+                if (!pos.see_ge(move, -25 * lmrDepth.to_int() * lmrDepth.to_int()))
                     continue;
             }
         }
@@ -1215,7 +1216,7 @@ moves_loop:  // When in check, search starts here
             && ttData.depth >= depth - 3_fd && !is_shuffling(move, ss, pos))
         {
             Value singularBeta  = ttData.value - (60 + 70 * (ss->ttPv && !PvNode)) * depth.to_int() / 59;
-            Depth singularDepth = newDepth / 2;
+            Depth singularDepth = newDepth.to_int() / 2;
 
             ss->excludedMove = move;
             value = search<NonPV>(pos, ss, singularBeta - 1, singularBeta, FDepth::from(singularDepth), cutNode);
@@ -1270,7 +1271,7 @@ moves_loop:  // When in check, search starts here
         do_move(pos, move, st, givesCheck, ss);
 
         // Add extension to new depth
-        newDepth += extension;
+        newDepth += FDepth::from(extension);
 
         // Decrease reduction for PvNodes (*Scaler)
         if (ss->ttPv)
@@ -1320,11 +1321,11 @@ moves_loop:  // When in check, search starts here
             // beyond the first move depth.
             // To prevent problems when the max value is less than the min value,
             // std::clamp has been replaced by a more robust implementation.
-            Depth d = std::max(1, std::min(newDepth - r / 1024, newDepth + 2)) + PvNode;
+            FDepth d = std::max(1_fd, std::min(newDepth - FDepth::from_raw(r), newDepth + 2_fd)) + (PvNode ? 1_fd : 0_fd);
 
             ss->reduction = newDepth - d;
-            value         = -search<NonPV>(pos, ss + 1, -(alpha + 1), -alpha, FDepth::from(d), true);
-            ss->reduction = 0;
+            value         = -search<NonPV>(pos, ss + 1, -(alpha + 1), -alpha, d, true);
+            ss->reduction = 0_fd;
 
             // Do a full-depth search when reduced LMR search fails high
             // (*Scaler) Shallower searches here don't scale well
@@ -1335,10 +1336,10 @@ moves_loop:  // When in check, search starts here
                 const bool doDeeperSearch    = d < newDepth && value > bestValue + 52;
                 const bool doShallowerSearch = value < bestValue + 9;
 
-                newDepth += doDeeperSearch - doShallowerSearch;
+                newDepth += FDepth::from(doDeeperSearch - doShallowerSearch);
 
                 if (newDepth > d)
-                    value = -search<NonPV>(pos, ss + 1, -(alpha + 1), -alpha, FDepth::from(newDepth), !cutNode);
+                    value = -search<NonPV>(pos, ss + 1, -(alpha + 1), -alpha, newDepth, !cutNode);
 
                 // Post LMR continuation history updates
                 update_continuation_histories(ss, movedPiece, move.to_sq(), 1415);
@@ -1354,7 +1355,7 @@ moves_loop:  // When in check, search starts here
 
             // Note that if expected reduction is high, we reduce search depth here
             value = -search<NonPV>(pos, ss + 1, -(alpha + 1), -alpha,
-                                   FDepth::from(newDepth - (r > 5039) - (r > 5223 && newDepth > 2)), !cutNode);
+                                  newDepth - (r > 5039 ? 1_fd : 0_fd) - (r > 5223 && newDepth > 2_fd ? 1_fd : 0_fd), !cutNode);
         }
 
         // For PV nodes only, do a full PV search on the first move or after a fail high,
@@ -1369,9 +1370,9 @@ moves_loop:  // When in check, search starts here
             if (move == ttData.move
                 && ((is_valid(ttData.value) && is_decisive(ttData.value) && ttData.depth > 0_fd)
                     || ttData.depth > 1_fd))
-                newDepth = std::max(newDepth, 1);
+                newDepth = std::max(newDepth, 1_fd);
 
-            value = -search<PV>(pos, ss + 1, -beta, -alpha, FDepth::from(newDepth), false);
+            value = -search<PV>(pos, ss + 1, -beta, -alpha, newDepth, false);
         }
 
         // Step 19. Undo move
