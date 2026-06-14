@@ -1278,7 +1278,7 @@ moves_loop:  // When in check, search starts here
             r -= 2766 + PvNode * 1017 + (ttData.value > alpha) * 838
                + (ttData.depth >= depth) * (923 + cutNode * 955);
 
-        r += 714;  // Base reduction offset to compensate for other tweaks
+        r += 214;  // Base reduction offset to compensate for other tweaks
         r -= moveCount * 62;
         r -= std::abs(correctionValue) / 26131;
 
@@ -1356,7 +1356,7 @@ moves_loop:  // When in check, search starts here
 
             // Note that if expected reduction is high, we reduce search depth here
             value = -search<NonPV>(pos, ss + 1, -(alpha + 1), -alpha,
-                                   newDepth - (r > 5039 ? 1_fd : 0_fd) - (r > 5223 && newDepth > 2_fd ? 1_fd : 0_fd), !cutNode);
+                                   newDepth - (r > 4539 ? 1_fd : 0_fd) - (r > 4723 && newDepth > 2_fd ? 1_fd : 0_fd), !cutNode);
         }
 
         // For PV nodes only, do a full PV search on the first move or after a fail high,
