@@ -283,7 +283,7 @@ void MovePicker::maybe_rescore() {
     case GOOD_QUIET: {
         // Re-score if the delta between the next two moves is small and we're
         // near the root
-        if (ply > 6 || endCur - cur < 2 || std::abs(cur[0].value - cur[1].value) > 350) {
+        if (ply > 6 || endCur - cur < 2 || std::abs(cur[0].value - cur[1].value) > 500) {
             return;
         }
 
