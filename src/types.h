@@ -225,6 +225,8 @@ using Depth = int;
 class FDepth {
 public:
 
+    FDepth() {}
+
     static constexpr FDepth from(Depth d) {
         return { d * 1024 };
     }
