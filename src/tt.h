@@ -44,7 +44,7 @@ struct Cluster;
 struct TTData {
     Move  move;
     Value value, eval;
-    Depth depth;
+    FDepth depth;
     Bound bound;
     bool  is_pv;
 
@@ -55,7 +55,7 @@ struct TTData {
         move(m),
         value(v),
         eval(ev),
-        depth(d),
+        depth(FDepth::from(d)),
         bound(b),
         is_pv(pv) {};
     // clang-format on

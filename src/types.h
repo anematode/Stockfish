@@ -221,6 +221,61 @@ constexpr Value PieceValue[PIECE_NB] = {
 
 using Depth = int;
 
+// Fractional depth, quanitized by 1024
+class FDepth {
+public:
+
+    static constexpr FDepth from(Depth d) {
+        return { d * 1024 };
+    }
+
+    static constexpr FDepth from_raw(int v) {
+        return { v };
+    }
+
+    constexpr Depth to_int() const {
+        return inner >> 10;
+    }
+
+    constexpr int to_raw() const {
+        return inner;
+    }
+
+    FDepth operator+(FDepth other) const { return { inner + other.inner }; }
+    FDepth operator-(FDepth other) const { return { inner - other.inner }; }
+    FDepth& operator+=(FDepth other) { inner += other.inner; return *this; }
+    FDepth& operator-=(FDepth other) { inner -= other.inner; return *this; }
+    FDepth& operator*=(int k) { inner *= k; return *this; }
+
+    FDepth operator*(int k) const { return { inner * k }; }
+    FDepth operator/(int d) const { return { inner / d }; }
+
+    bool operator<(FDepth other) const { return inner < other.inner; }
+    bool operator>(FDepth other) const { return inner > other.inner; }
+    bool operator<=(FDepth other) const { return inner <= other.inner; }
+    bool operator>=(FDepth other) const { return inner >= other.inner; }
+
+    FDepth operator++(int) { inner += 1024; return { inner - 1024 }; }
+    FDepth operator--(int) { inner -= 1024; return { inner + 1024 }; }
+
+private:
+    constexpr FDepth(int d) : inner(d) {}
+
+    int inner;
+};
+
+inline FDepth operator*(int s, const FDepth & depth) {
+    return FDepth::from_raw(s * depth.to_raw());
+}
+
+constexpr FDepth operator""_fd(long double d) {
+    return FDepth::from_raw(int(d * 1024));
+}
+
+constexpr FDepth operator""_fd(unsigned long long d) {
+    return FDepth::from_raw(int(d * 1024));
+}
+
 // The following DEPTH_ constants are used for transposition table entries
 // and quiescence search move generation stages. In regular search, the
 // depth stored in the transposition table is literal: the search depth
