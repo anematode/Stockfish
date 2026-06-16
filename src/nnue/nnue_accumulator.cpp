@@ -458,6 +458,32 @@ Bitboard get_changed_pieces(const std::array<Piece, SQUARE_NB>& oldPieces,
 #endif
 }
 
+void calculate_lists_difference(ThreatFeatureSet::IndexList& from,
+                                ThreatFeatureSet::IndexList& to,
+                                ThreatFeatureSet::IndexList& removed,
+                                ThreatFeatureSet::IndexList& added) {
+    for (size_t i = 0; i < to.size(); ++i) {
+        int val = to[i];
+        for (size_t j = 0; j < from.size(); ++j) {
+            if (from[j] == val) {
+                goto next;
+            }
+        }
+        added.push_back(val);
+        next:
+    }
+    for (size_t i = 0; i < from.size(); ++i) {
+        int val = from[i];
+        for (size_t j = 0; j < to.size(); ++j) {
+            if (to[j] == val) {
+                goto next2;
+            }
+        }
+        removed.push_back(val);
+        next2:
+    }
+}
+
 // HalfKA data comes from the Finny table entry, while the threats are built
 // from the active threat features
 void update_accumulator_refresh_cache(Color                     perspective,
@@ -499,6 +525,12 @@ void update_accumulator_refresh_cache(Color                     perspective,
     ThreatFeatureSet::IndexList active;
     ThreatFeatureSet::append_active_indices(perspective, pos, active);
 
+    ThreatFeatureSet::IndexList thrRemoved;
+    ThreatFeatureSet::IndexList thrAdded;
+    calculate_lists_difference(entry.active, active, thrRemoved, thrAdded);
+
+    entry.active = active;
+
     accumulator.computed[perspective] = true;
 
 #ifdef VECTOR
@@ -507,6 +539,8 @@ void update_accumulator_refresh_cache(Color                     perspective,
 
     const auto* weights       = &featureTransformer.weights[0];
     const auto* threatWeights = &featureTransformer.threatWeights[0];
+
+    
 
     for (IndexType j = 0; j < Dimensions / Tiling::TileHeight; ++j)
     {
@@ -532,13 +566,27 @@ void update_accumulator_refresh_cache(Color                     perspective,
                 acc[k] = vec_add_16(acc[k], column[k]);
         }
 
-        for (IndexType k = 0; k < Tiling::NumRegs; k++)
-            vec_store(&entryTile[k], acc[k]);
+        for (int i = 0; i < thrRemoved.ssize(); ++i)
+        {
+            auto* column = reinterpret_cast<const vec_i8_t*>(
+              &threatWeights[thrRemoved[i] * Dimensions + tileOff]);
 
-        for (int i = 0; i < active.ssize(); ++i)
+    #ifdef USE_NEON
+            for (IndexType k = 0; k < Tiling::NumRegs; k += 2)
+            {
+                acc[k]     = vsubw_s8(acc[k], vget_low_s8(column[k / 2]));
+                acc[k + 1] = vsubw_high_s8(acc[k + 1], column[k / 2]);
+            }
+    #else
+            for (IndexType k = 0; k < Tiling::NumRegs; ++k)
+                acc[k] = vec_sub_16(acc[k], vec_convert_8_16(column[k]));
+    #endif
+        }
+
+        for (int i = 0; i < thrAdded.ssize(); ++i)
         {
             auto* column =
-              reinterpret_cast<const vec_i8_t*>(&threatWeights[active[i] * Dimensions + tileOff]);
+              reinterpret_cast<const vec_i8_t*>(&threatWeights[thrAdded[i] * Dimensions + tileOff]);
 
     #ifdef USE_NEON
             for (IndexType k = 0; k < Tiling::NumRegs; k += 2)
@@ -551,6 +599,9 @@ void update_accumulator_refresh_cache(Color                     perspective,
                 acc[k] = vec_add_16(acc[k], vec_convert_8_16(column[k]));
     #endif
         }
+
+        for (IndexType k = 0; k < Tiling::NumRegs; k++)
+            vec_store(&entryTile[k], acc[k]);
 
         for (IndexType k = 0; k < Tiling::NumRegs; k++)
             vec_store(&accTile[k], acc[k]);

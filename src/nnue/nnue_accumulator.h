@@ -37,18 +37,7 @@ class Position;
 
 namespace Stockfish::Eval::NNUE {
 
-struct alignas(CacheLineSize) Accumulator;
-
 class FeatureTransformer;
-
-// Class that holds the result of affine transformation of input features,
-// combined HalfKA + Threats
-struct alignas(CacheLineSize) Accumulator {
-    std::array<std::array<i16, L1>, COLOR_NB>          accumulation;
-    std::array<std::array<i32, PSQTBuckets>, COLOR_NB> psqtAccumulation;
-    std::array<bool, COLOR_NB>                         computed = {};
-};
-
 
 // AccumulatorCaches struct provides per-thread accumulator caches, where each
 // cache contains multiple entries for each of the possible king squares.
@@ -67,6 +56,7 @@ struct AccumulatorCaches {
         std::array<PSQTWeightType, PSQTBuckets> psqtAccumulation;
         std::array<Piece, SQUARE_NB>            pieces;
         Bitboard                                pieceBB;
+        ThreatFeatureSet::IndexList             active;
 
         // To initialize a refresh entry, we set all its bitboards empty,
         // so we put the biases in the accumulation, without any weights on top
@@ -74,6 +64,7 @@ struct AccumulatorCaches {
             accumulation = biases;
             std::memset(reinterpret_cast<std::byte*>(this) + offsetof(Entry, psqtAccumulation), 0,
                         sizeof(Entry) - offsetof(Entry, psqtAccumulation));
+            active = ThreatFeatureSet::IndexList();
         }
     };
 
@@ -89,8 +80,12 @@ struct AccumulatorCaches {
     std::array<std::array<Entry, COLOR_NB>, SQUARE_NB> entries;
 };
 
-
-struct AccumulatorState: public Accumulator {
+// Class that holds the result of affine transformation of input features,
+// combined HalfKA + Threats
+struct alignas(CacheLineSize) AccumulatorState {
+    std::array<std::array<i16, L1>, COLOR_NB>          accumulation;
+    std::array<std::array<i32, PSQTBuckets>, COLOR_NB> psqtAccumulation;
+    std::array<bool, COLOR_NB>                         computed = {};
     DirtyPiece   dirtyPiece;
     DirtyThreats dirtyThreats;
 };
