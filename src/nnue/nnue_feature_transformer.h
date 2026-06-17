@@ -283,10 +283,10 @@ class FeatureTransformer {
             // 8 bits. Shifting it by 7 bits left will no longer occupy the
             // signed bit, so we are safe.
 
-            for (IndexType j = 0; j < NumOutputChunks; j += 2)
+            for (IndexType j = 0; j < NumOutputChunks; j += 4)
             {
-                vec_t packed[2];
-                for (IndexType k = 0; k < 2; ++k)
+                vec_t packed[4];
+                for (IndexType k = 0; k < 4; ++k)
                 {
                     const IndexType i = (j + k) * 2;
 
@@ -339,7 +339,7 @@ class FeatureTransformer {
                     packed[k] = out[j + k] = result;
                 }
 
-                cursor.record2(packed[0], packed[1]);
+                cursor.record4(packed);
             }
 
 #else
