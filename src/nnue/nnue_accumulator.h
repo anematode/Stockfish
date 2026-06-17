@@ -65,8 +65,7 @@ struct AccumulatorCaches {
     struct alignas(CacheLineSize) Entry {
         std::array<BiasType, L1>                accumulation;
         std::array<PSQTWeightType, PSQTBuckets> psqtAccumulation;
-        std::array<Piece, SQUARE_NB>            pieces;
-        Bitboard                                pieceBB;
+        alignas(64) std::array<Piece, SQUARE_NB>            pieces;
 
         // To initialize a refresh entry, we set all its bitboards empty,
         // so we put the biases in the accumulation, without any weights on top
@@ -74,6 +73,63 @@ struct AccumulatorCaches {
             accumulation = biases;
             std::memset(reinterpret_cast<std::byte*>(this) + offsetof(Entry, psqtAccumulation), 0,
                         sizeof(Entry) - offsetof(Entry, psqtAccumulation));
+        }
+
+        std::pair<Bitboard, Bitboard> get_added_removed(__m512i n) {
+            __m512i e = _mm512_load_si512(pieces.data());
+
+            __mmask64 changed = _mm512_cmpneq_epi8_mask(e, n);
+            __mmask64 added = _mm512_mask_test_epi8_mask(changed, n, n);
+            __mmask64 removed = _mm512_mask_test_epi8_mask(changed, e, e);
+
+            return { added, removed };
+        }
+    };
+
+    struct EntryCluster {
+        static constexpr usize Associativity = 8;
+
+        std::array<Entry, Associativity> entries;
+
+        struct ClusterQueryResult {
+            Entry& overwrite;
+            Entry& nearest;
+
+            Bitboard addedBB;
+            Bitboard removedBB;
+        };
+
+        ClusterQueryResult query(const std::array<Piece, 64>& board) {
+            __m512i n = _mm512_loadu_si512(board.data());
+
+            alignas(64) Bitboard added[Associativity], removed[Associativity];
+            for (usize i = 0; i < Associativity; i++) {
+                auto [a, r] = entries[i].get_added_removed(n);
+                added[i] = a;
+                removed[i] = r;
+            }
+
+            __m512i score = _mm512_add_epi64(
+                _mm512_popcnt_epi64(_mm512_loadu_si512(added)),
+                _mm512_popcnt_epi64(_mm512_loadu_si512(removed))
+            );
+
+            __m128i narrowed = _mm512_cvtepi64_epi16(score);
+            auto min_index = [] (__m128i v) {
+                return _mm_extract_epi16(_mm_minpos_epu16(v), 1);
+            };
+
+            usize furthest = min_index(_mm_sub_epi16(_mm_setzero_si128(), narrowed));
+            usize nearest = min_index(narrowed);
+
+            return ClusterQueryResult{
+                entries[furthest], entries[nearest], added[nearest], removed[nearest]
+            };
+        }
+
+        template <typename T>
+        void clear(const T& v) {
+            for (auto & e : entries) e.clear(v);
         }
     };
 
@@ -84,9 +140,9 @@ struct AccumulatorCaches {
                 entry.clear(network.featureTransformer.biases);
     }
 
-    std::array<Entry, COLOR_NB>& operator[](Square sq) { return entries[sq]; }
+    std::array<EntryCluster, COLOR_NB>& operator[](Square sq) { return entries[sq]; }
 
-    std::array<std::array<Entry, COLOR_NB>, SQUARE_NB> entries;
+    std::array<std::array<EntryCluster, COLOR_NB>, SQUARE_NB> entries;
 };
 
 

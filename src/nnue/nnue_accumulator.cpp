@@ -470,15 +470,13 @@ void update_accumulator_refresh_cache(Color                     perspective,
     using Tiling [[maybe_unused]] = SIMDTiling<Dimensions, Dimensions, PSQTBuckets>;
 
     const Square             ksq   = pos.square<KING>(perspective);
-    auto&                    entry = cache[ksq][perspective];
+    auto query = cache[ksq][perspective].query(pos.piece_array());
     PSQFeatureSet::IndexList removed, added;
 
-    const Bitboard changedBB = get_changed_pieces(entry.pieces, pos.piece_array());
-    Bitboard       removedBB = changedBB & entry.pieceBB;
-    Bitboard       addedBB   = changedBB & pos.pieces();
+    Bitboard       addedBB   = query.addedBB, removedBB = query.removedBB;
 
 #if defined(USE_AVX512ICL)
-    PSQFeatureSet::write_indices(entry.pieces, pos.piece_array(), removedBB, addedBB, perspective,
+    PSQFeatureSet::write_indices(query.nearest.pieces, pos.piece_array(), removedBB, addedBB, perspective,
                                  ksq, removed, added);
 #else
     while (removedBB)
@@ -493,8 +491,7 @@ void update_accumulator_refresh_cache(Color                     perspective,
     }
 #endif
 
-    entry.pieceBB = pos.pieces();
-    entry.pieces  = pos.piece_array();
+    query.overwrite.pieces = pos.piece_array();
 
     ThreatFeatureSet::IndexList active;
     ThreatFeatureSet::append_active_indices(perspective, pos, active);
@@ -512,7 +509,8 @@ void update_accumulator_refresh_cache(Color                     perspective,
     {
         const usize tileOff = j * Tiling::TileHeight;
         auto* accTile   = reinterpret_cast<vec_t*>(&accumulator.accumulation[perspective][tileOff]);
-        auto* entryTile = reinterpret_cast<vec_t*>(&entry.accumulation[tileOff]);
+        auto* entryTile = reinterpret_cast<vec_t*>(&query.nearest.accumulation[tileOff]);
+        auto* entryDstTile = reinterpret_cast<vec_t*>(&query.overwrite.accumulation[tileOff]);
 
         for (IndexType k = 0; k < Tiling::NumRegs; ++k)
             acc[k] = entryTile[k];
@@ -533,7 +531,7 @@ void update_accumulator_refresh_cache(Color                     perspective,
         }
 
         for (IndexType k = 0; k < Tiling::NumRegs; k++)
-            vec_store(&entryTile[k], acc[k]);
+            vec_store(&entryDstTile[k], acc[k]);
 
         for (int i = 0; i < active.ssize(); ++i)
         {
@@ -561,7 +559,8 @@ void update_accumulator_refresh_cache(Color                     perspective,
         const usize psqtTileOff = j * Tiling::PsqtTileHeight;
         auto*       accTilePsqt =
           reinterpret_cast<psqt_vec_t*>(&accumulator.psqtAccumulation[perspective][psqtTileOff]);
-        auto* entryTilePsqt = reinterpret_cast<psqt_vec_t*>(&entry.psqtAccumulation[psqtTileOff]);
+        auto* entryTilePsqt = reinterpret_cast<psqt_vec_t*>(&query.nearest.psqtAccumulation[psqtTileOff]);
+        auto* entryDstTilePsqt = reinterpret_cast<psqt_vec_t*>(&query.overwrite.psqtAccumulation[psqtTileOff]);
 
         for (IndexType k = 0; k < Tiling::NumPsqtRegs; ++k)
             psqt[k] = entryTilePsqt[k];
@@ -582,7 +581,7 @@ void update_accumulator_refresh_cache(Color                     perspective,
         }
 
         for (IndexType k = 0; k < Tiling::NumPsqtRegs; ++k)
-            vec_store_psqt(&entryTilePsqt[k], psqt[k]);
+            vec_store_psqt(&entryDstTilePsqt[k], psqt[k]);
 
         for (int i = 0; i < active.ssize(); ++i)
         {
