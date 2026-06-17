@@ -462,25 +462,60 @@ void calculate_lists_difference(ThreatFeatureSet::IndexList& from,
                                 ThreatFeatureSet::IndexList& to,
                                 ThreatFeatureSet::IndexList& removed,
                                 ThreatFeatureSet::IndexList& added) {
-    for (size_t i = 0; i < to.size(); ++i) {
-        int val = to[i];
-        for (size_t j = 0; j < from.size(); ++j) {
-            if (from[j] == val) {
-                goto next;
+    if (from.ssize() <= 31 && to.ssize() <= 31) {
+        auto load = [] (ThreatFeatureSet::IndexList l) {
+            __m512i ones = _mm512_set1_epi32(-1);
+            __mmask32 m = (1 << l.ssize()) - 1;
+
+            return std::pair{ _mm512_mask_loadu_epi32(ones, m, &l[0]),
+                    _mm512_mask_loadu_epi32(ones, _kshiftri_mask32(m, 16), &l[16]) };
+        };
+        
+        auto [ from1, from2 ] = load(from);
+        auto [ to1, to2 ] = load(to);
+
+        __mmask16 from1Excl, to1Excl, from2Excl, to2Excl, tmp1, tmp2;
+
+        _mm512_2intersect_epi32(from1, to1, &from1Excl, &to1Excl);
+        _mm512_2intersect_epi32(from2, to2, &from2Excl, &to2Excl);
+
+        _mm512_2intersect_epi32(from2, to1, &tmp1, &tmp2);
+        from2Excl = ~(from2Excl | tmp1);
+        to1Excl = ~(to1Excl | tmp2);
+
+        _mm512_2intersect_epi32(from1, to2, &tmp1, &tmp2);
+        from1Excl = ~(from1Excl | tmp1);
+        to2Excl = ~(to2Excl | tmp2);
+
+        auto* removed_out = removed.make_space(popcount(from1Excl) + popcount(from2Excl));
+        auto* added_out = added.make_space(popcount(to1Excl) + popcount(to2Excl));
+
+        _mm512_mask_compressstoreu_epi32(removed_out, from1Excl, from1);
+        _mm512_mask_compressstoreu_epi32(removed_out + popcount(from1Excl), from2Excl, from2);
+
+        _mm512_mask_compressstoreu_epi32(added_out, to1Excl, to1);
+        _mm512_mask_compressstoreu_epi32(added_out + popcount(to1Excl), to2Excl, to2);
+    } else {
+        for (size_t i = 0; i < to.size(); ++i) {
+            int val = to[i];
+            for (size_t j = 0; j < from.size(); ++j) {
+                if (from[j] == val) {
+                    goto next;
+                }
             }
+            added.push_back(val);
+            next:
         }
-        added.push_back(val);
-        next:
-    }
-    for (size_t i = 0; i < from.size(); ++i) {
-        int val = from[i];
-        for (size_t j = 0; j < to.size(); ++j) {
-            if (to[j] == val) {
-                goto next2;
+        for (size_t i = 0; i < from.size(); ++i) {
+            int val = from[i];
+            for (size_t j = 0; j < to.size(); ++j) {
+                if (to[j] == val) {
+                    goto next2;
+                }
             }
+            removed.push_back(val);
+            next2:
         }
-        removed.push_back(val);
-        next2:
     }
 }
 
