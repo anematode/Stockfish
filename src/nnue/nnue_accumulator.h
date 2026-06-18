@@ -87,7 +87,7 @@ struct AccumulatorCaches {
     };
 
     struct EntryCluster {
-        static constexpr usize Associativity = 4;
+        static constexpr usize Associativity = 8;
 
         std::array<Entry, Associativity> entries;
 
