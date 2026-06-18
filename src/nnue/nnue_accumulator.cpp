@@ -470,7 +470,7 @@ void update_accumulator_refresh_cache(Color                     perspective,
     using Tiling [[maybe_unused]] = SIMDTiling<Dimensions, Dimensions, PSQTBuckets>;
 
     const Square             ksq   = pos.square<KING>(perspective);
-    auto query = cache[ksq][perspective].query(pos.piece_array());
+    auto query = cache[ksq][perspective].query(pos);
     PSQFeatureSet::IndexList removed, added;
 
     Bitboard       addedBB   = query.addedBB, removedBB = query.removedBB;
@@ -639,4 +639,52 @@ void update_accumulator_refresh_cache(Color                     perspective,
 
 }
 
+AccumulatorCaches::EntryCluster::ClusterQueryResult
+AccumulatorCaches::EntryCluster::query(const Position& pos) {
+    static_assert(Associativity == 8);
+
+    __m512i changed = _mm512_setzero_si512();
+    __m512i oldOcc  = _mm512_setzero_si512();
+
+    for (Color c : {WHITE, BLACK})
+    {
+        const __m512i old_c = _mm512_load_si512(colorsBB[c].data());
+        const __m512i new_c = _mm512_set1_epi64(pos.pieces(c));
+        changed             = _mm512_or_si512(changed, _mm512_xor_si512(old_c, new_c));
+        oldOcc              = _mm512_or_si512(oldOcc, old_c);
+    }
+
+    for (PieceType pt : {PAWN, KNIGHT, BISHOP, ROOK, QUEEN, KING})
+    {
+        const __m512i old_pt = _mm512_load_si512(pieceTypesBB[pt].data());
+        const __m512i new_pt = _mm512_set1_epi64(pos.pieces(pt));
+        changed              = _mm512_or_si512(changed, _mm512_xor_si512(old_pt, new_pt));
+    }
+
+    const __m512i newOcc    = _mm512_set1_epi64(pos.pieces());
+    const __m512i added_v   = _mm512_and_si512(changed, newOcc);
+    const __m512i removed_v = _mm512_and_si512(changed, oldOcc);
+
+    alignas(64) Bitboard added[Associativity], removed[Associativity];
+    _mm512_store_si512(added, added_v);
+    _mm512_store_si512(removed, removed_v);
+
+    const __m512i score =
+      _mm512_add_epi64(_mm512_popcnt_epi64(added_v), _mm512_popcnt_epi64(removed_v));
+
+    const __m128i narrowed  = _mm512_cvtepi64_epi16(score);
+    auto          min_index = [](__m128i v) {
+        return _mm_extract_epi16(_mm_minpos_epu16(v), 1);
+    };
+
+    const usize replace = min_index(_mm_sub_epi16(_mm_setzero_si128(), narrowed));
+    const usize best    = min_index(narrowed);
+
+    for (Color c : {WHITE, BLACK})
+        colorsBB[c][replace] = pos.pieces(c);
+    for (PieceType pt : {PAWN, KNIGHT, BISHOP, ROOK, QUEEN, KING})
+        pieceTypesBB[pt][replace] = pos.pieces(pt);
+
+    return ClusterQueryResult{entries[replace], entries[best], added[best], removed[best]};
+}
 }
