@@ -74,22 +74,15 @@ struct AccumulatorCaches {
             std::memset(reinterpret_cast<std::byte*>(this) + offsetof(Entry, psqtAccumulation), 0,
                         sizeof(Entry) - offsetof(Entry, psqtAccumulation));
         }
-
-        std::pair<Bitboard, Bitboard> get_added_removed(__m512i n) {
-            __m512i e = _mm512_load_si512(pieces.data());
-
-            __mmask64 changed = _mm512_cmpneq_epi8_mask(e, n);
-            __mmask64 added = _mm512_mask_test_epi8_mask(changed, n, n);
-            __mmask64 removed = _mm512_mask_test_epi8_mask(changed, e, e);
-
-            return { added, removed };
-        }
     };
 
     struct EntryCluster {
         static constexpr usize Associativity = 8;
 
         std::array<Entry, Associativity> entries;
+
+        alignas(64) std::array<std::array<Bitboard, Associativity>, COLOR_NB> colorsBB;
+        alignas(64) std::array<std::array<Bitboard, Associativity>, PIECE_TYPE_NB> pieceTypesBB;
 
         struct ClusterQueryResult {
             Entry& overwrite;
@@ -99,52 +92,14 @@ struct AccumulatorCaches {
             Bitboard removedBB;
         };
 
-        ClusterQueryResult query(const std::array<Piece, 64>& board) {
-            usize replace, best;
-            alignas(64) Bitboard added[Associativity], removed[Associativity];
-
-            __m512i n = _mm512_loadu_si512(board.data());
-
-            for (usize i = 0; i < Associativity; i++) {
-                auto [a, r] = entries[i].get_added_removed(n);
-                added[i] = a;
-                removed[i] = r;
-            }
-
-            if constexpr (Associativity == 8) {
-                __m512i score = _mm512_add_epi64(
-                    _mm512_popcnt_epi64(_mm512_loadu_si512(added)),
-                    _mm512_popcnt_epi64(_mm512_loadu_si512(removed))
-                );
-
-                __m128i narrowed = _mm512_cvtepi64_epi16(score);
-                auto min_index = [] (__m128i v) {
-                    return _mm_extract_epi16(_mm_minpos_epu16(v), 1);
-                };
-
-                replace = min_index(_mm_sub_epi16(_mm_setzero_si128(), narrowed));
-                best = min_index(narrowed);
-            } else {
-                int scores[Associativity];
-                for (usize i = 0; i < Associativity; i++) {
-                    scores[i] = popcount(added[i]) + popcount(removed[i]);
-                }
-                best = 0;
-                replace = 0;
-                for (usize i = 0; i < Associativity; i++) {
-                    if (scores[i] > scores[replace]) replace = i;
-                    if (scores[i] < scores[best]) best = i;
-                }
-            }
-
-            return ClusterQueryResult{
-                entries[replace], entries[best], added[best], removed[best]
-            };
-        }
+        ClusterQueryResult query(const Position& pos);
 
         template <typename T>
         void clear(const T& v) {
             for (auto & e : entries) e.clear(v);
+
+            colorsBB     = {};
+            pieceTypesBB = {};
         }
     };
 
