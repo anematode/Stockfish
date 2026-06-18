@@ -87,7 +87,7 @@ struct AccumulatorCaches {
     };
 
     struct EntryCluster {
-        static constexpr usize Associativity = 8;
+        static constexpr usize Associativity = 4;
 
         std::array<Entry, Associativity> entries;
 
@@ -100,30 +100,45 @@ struct AccumulatorCaches {
         };
 
         ClusterQueryResult query(const std::array<Piece, 64>& board) {
+            usize replace, best;
+            alignas(64) Bitboard added[Associativity], removed[Associativity];
+
             __m512i n = _mm512_loadu_si512(board.data());
 
-            alignas(64) Bitboard added[Associativity], removed[Associativity];
             for (usize i = 0; i < Associativity; i++) {
                 auto [a, r] = entries[i].get_added_removed(n);
                 added[i] = a;
                 removed[i] = r;
             }
 
-            __m512i score = _mm512_add_epi64(
-                _mm512_popcnt_epi64(_mm512_loadu_si512(added)),
-                _mm512_popcnt_epi64(_mm512_loadu_si512(removed))
-            );
+            if constexpr (Associativity == 8) {
+                __m512i score = _mm512_add_epi64(
+                    _mm512_popcnt_epi64(_mm512_loadu_si512(added)),
+                    _mm512_popcnt_epi64(_mm512_loadu_si512(removed))
+                );
 
-            __m128i narrowed = _mm512_cvtepi64_epi16(score);
-            auto min_index = [] (__m128i v) {
-                return _mm_extract_epi16(_mm_minpos_epu16(v), 1);
-            };
+                __m128i narrowed = _mm512_cvtepi64_epi16(score);
+                auto min_index = [] (__m128i v) {
+                    return _mm_extract_epi16(_mm_minpos_epu16(v), 1);
+                };
 
-            usize furthest = min_index(_mm_sub_epi16(_mm_setzero_si128(), narrowed));
-            usize nearest = min_index(narrowed);
+                replace = min_index(_mm_sub_epi16(_mm_setzero_si128(), narrowed));
+                best = min_index(narrowed);
+            } else {
+                int scores[Associativity];
+                for (usize i = 0; i < Associativity; i++) {
+                    scores[i] = popcount(added[i]) + popcount(removed[i]);
+                }
+                best = 0;
+                replace = 0;
+                for (usize i = 0; i < Associativity; i++) {
+                    if (scores[i] > scores[replace]) replace = i;
+                    if (scores[i] < scores[best]) best = i;
+                }
+            }
 
             return ClusterQueryResult{
-                entries[furthest], entries[nearest], added[nearest], removed[nearest]
+                entries[replace], entries[best], added[best], removed[best]
             };
         }
 
