@@ -475,9 +475,6 @@ void update_accumulator_refresh_cache(Color                     perspective,
 
     Bitboard       addedBB   = query.addedBB, removedBB = query.removedBB;
 
-    dbg_mean_of(popcount(addedBB), 1);
-    dbg_mean_of(popcount(removedBB), 2);
-
 #if defined(USE_AVX512ICL)
     PSQFeatureSet::write_indices(query.nearest.pieces, pos.piece_array(), removedBB, addedBB, perspective,
                                  ksq, removed, added);
