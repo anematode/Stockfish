@@ -126,31 +126,20 @@ struct NetworkArchitecture {
         std::memcpy(buffer.concat_buffer + FC_0_OUTPUTS * 2 + FC_1_OUTPUTS, buffer.ac_1_out,
                     FC_1_OUTPUTS * sizeof(typename decltype(ac_1)::OutputType));
 
-        for (int i = 0; i < FC_0_OUTPUTS * 2; ++i)
-        {
-            buffer.concat_buffer[i] *= 2;
-        }
-        for (int i = FC_0_OUTPUTS * 2 + FC_1_OUTPUTS; i < FC_0_OUTPUTS * 2 + FC_1_OUTPUTS * 2; ++i)
-        {
-            buffer.concat_buffer[i] *= 2;
-        }
-
         fc_2.propagate(buffer.concat_buffer, buffer.fc_2_out);
 
-        static_assert(FC_0_OUTPUTS >= 2 && FC_1_OUTPUTS >= 2);
+        static_assert(FC_0_OUTPUTS >= 2);
         i32 fwdOut = buffer.fc_2_out[0];
-
-        // Skip connection scaled by 4 to mathematically align with the 2x concat_buffer modification
-        i32 skip_0 =
-          4 * buffer.fc_0_out[FC_0_OUTPUTS - 2] - 4 * buffer.fc_0_out[FC_0_OUTPUTS - 1];
-        fwdOut += skip_0;
+        i32 skip_0 = buffer.fc_0_out[FC_0_OUTPUTS - 2] - buffer.fc_0_out[FC_0_OUTPUTS - 1];
+        // Skip connection scaled by 2 in trainer for larger dynamic range.
+        fwdOut += 2 * skip_0;
 
         // fwdOut is such that 1.0 is equal to HiddenOneVal*(1<<WeightScaleBits)*2 in
         // quantized form, but we want 1.0 to be equal to 600*OutputScale
         // to make overflow impossible we cast to int64_t
         constexpr i64 multiplier  = 600 * OutputScale;
         constexpr i64 denominator = static_cast<i64>(HiddenOneVal)
-                                           * static_cast<i64>(1U << WeightScaleBits) * 4;
+                                           * static_cast<i64>(1U << WeightScaleBits) * 2;
 
         i32 outputValue = static_cast<i32>((static_cast<i64>(fwdOut) * multiplier) / denominator);
         return outputValue;
