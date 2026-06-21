@@ -1149,7 +1149,7 @@ moves_loop:  // When in check, search starts here
                 mp.skip_quiet_moves();
 
             // Reduced depth of the next LMR search
-            int lmrDepth = newDepth.to_int() - r / 1024;
+            FDepth lmrDepth = newDepth - FDepth::from_raw(r);
 
             if (capture || givesCheck)
             {
@@ -1157,9 +1157,9 @@ moves_loop:  // When in check, search starts here
                 int   captHist = captureHistory[movedPiece][move.to_sq()][type_of(capturedPiece)];
 
                 // Futility pruning for captures
-                if (!givesCheck && lmrDepth < 7)
+                if (!givesCheck && lmrDepth < 7_fd)
                 {
-                    Value futilityValue = ss->staticEval + 231 + 232 * lmrDepth
+                    Value futilityValue = ss->staticEval + 231 + (232 * lmrDepth).to_int()
                                         + PieceValue[capturedPiece] + 131 * captHist / 1024;
 
                     if (futilityValue <= alpha)
@@ -1187,15 +1187,15 @@ moves_loop:  // When in check, search starts here
                 history += 64 * mainHistory[us][move.raw()] / 32;
 
                 // (*Scaler): Generally, lower divisors scale well
-                lmrDepth += history / lmrDivisor[dIndex];
+                lmrDepth += FDepth::from(history / lmrDivisor[dIndex]);
 
-                Value futilityValue = ss->staticEval + 40 + 138 * !bestMove + 117 * lmrDepth
+                Value futilityValue = ss->staticEval + 40 + 138 * !bestMove + (117 * lmrDepth).to_int()
                                     + 90 * (ss->staticEval > alpha);
 
                 // Futility pruning: parent node
                 // (*Scaler): Generally, more frequent futility pruning
                 // scales well
-                if (!ss->inCheck && lmrDepth < 12 && futilityValue <= alpha)
+                if (!ss->inCheck && lmrDepth < 12_fd && futilityValue <= alpha)
                 {
                     if (bestValue <= futilityValue && !is_decisive(bestValue)
                         && !is_win(futilityValue))
@@ -1203,10 +1203,10 @@ moves_loop:  // When in check, search starts here
                     continue;
                 }
 
-                lmrDepth = std::max(lmrDepth, 0);
+                lmrDepth = std::max(lmrDepth, 0_fd);
 
                 // Prune moves with negative SEE
-                if (!pos.see_ge(move, -25 * lmrDepth * lmrDepth))
+                if (!pos.see_ge(move, -25 * lmrDepth.to_int() * lmrDepth.to_int()))
                     continue;
             }
         }
@@ -1331,7 +1331,7 @@ moves_loop:  // When in check, search starts here
             // beyond the first move depth.
             // To prevent problems when the max value is less than the min value,
             // std::clamp has been replaced by a more robust implementation.
-            FDepth d = std::max(1_fd, std::min(newDepth - FDepth::from(r / 1024), newDepth + 2_fd)) +
+            FDepth d = std::max(1_fd, std::min(newDepth - FDepth::from_raw(r), newDepth + 2_fd)) +
                 (PvNode ? 1_fd : 0_fd);
 
             ss->reduction = (newDepth - d).to_int();
