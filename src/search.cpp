@@ -166,6 +166,7 @@ Search::Worker::Worker(SharedState&                    sharedState,
     // Unpack the SharedState struct into member variables
     sharedHistory(sharedState.sharedHistories.at(token.get_numa_index())),
     continuationHistory(sharedHistory.continuationHistory),
+    captureHistory(sharedHistory.captureHistory),
     threadIdx(threadId),
     numaThreadIdx(numaThreadId),
     numaTotal(numaTotalThreads),

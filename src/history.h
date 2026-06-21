@@ -129,7 +129,7 @@ using ButterflyHistory = Stats<i16, 7183, COLOR_NB, UINT_16_HISTORY_SIZE>;
 using LowPlyHistory = Stats<i16, 7183, LOW_PLY_HISTORY_SIZE, UINT_16_HISTORY_SIZE>;
 
 // CapturePieceToHistory is addressed by a move's [piece][to][captured piece type]
-using CapturePieceToHistory = Stats<i16, 10692, PIECE_NB, SQUARE_NB, PIECE_TYPE_NB>;
+using CapturePieceToHistory = AtomicStats<i16, 10692, PIECE_NB, SQUARE_NB, PIECE_TYPE_NB>;
 
 // PieceToHistory is like ButterflyHistory but is addressed by a move's [piece][to]
 using PieceToHistory = AtomicStats<i16, 30000, PIECE_NB, SQUARE_NB>;
@@ -240,6 +240,7 @@ struct SharedHistories {
     UnifiedCorrectionHistory correctionHistory;
     ContinuationHistory      continuationHistory[2][2];
     PawnHistory              pawnHistory;
+    CapturePieceToHistory    captureHistory;
 
 
    private:
