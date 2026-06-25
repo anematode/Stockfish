@@ -29,6 +29,8 @@
     #include <array>
     #include <algorithm>
     #include <immintrin.h>
+#elif defined(USE_NEON)
+    #include <arm_neon.h>
 #endif
 
 namespace Stockfish {
@@ -135,6 +137,68 @@ splat_precomputed_moves(Move* moveList, Square from, Bitboard occupied, Bitboard
 
 #else
 
+static inline uint8x16_t iota16() {
+    static const uint8_t k[16] = {0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15};
+    return vld1q_u8(k);
+}
+
+alignas(16) std::array<uint8_t, 16> nib_lut = [] () {
+    std::array<uint8_t, 16> r{};
+    for (int v = 0; v < 16; v++) {
+        uint8_t pk = 0;
+        int n = 0;
+        for (int b = 0; b < 4; b++)
+            if (v & (1 << b)) pk |= (uint8_t)(b << (2 * n++));
+        r[v] = pk;
+    }
+    return r;
+} ();
+
+std::pair<uint8x16_t, size_t> get_active_indices_and_popcount(uint64_t bitset) {
+    assert(popcount(bitset) <= 15);
+
+    const uint8x16_t iota = iota16();
+    const uint8x16_t one  = vdupq_n_u8(1);
+
+    uint64_t x = bitset;
+    x -= (x >> 1) & 0x5555555555555555ull;
+    // Per-nibble popcount
+    x  = (x & 0x3333333333333333ull) + ((x >> 2) & 0x3333333333333333ull);
+    // Each nibble in npref_w[4*n:4*n+3] is the # of set bits in bitset[:4*n+3],
+    // via a prefix sum
+    uint64_t npref_w = x * 0x1111111111111111ull;
+
+    uint8x16_t whole = vcombine_u8(vcreate_u8(bitset), vcreate_u8(npref_w));
+    uint8x16_t lo    = vandq_u8(whole, vdupq_n_u8(0x0F));
+    uint8x16_t hi    = vshrq_n_u8(whole, 4);
+    uint8x16_t nib   = vzip1q_u8(lo, hi);
+    uint8x16_t np    = vzip2q_u8(lo, hi);
+    uint8x16_t pack_by_nib = vqtbl1q_u8(vld1q_u8(nib_lut.data()), nib);
+
+    // srcNib[k] = #{ j : np[j] <= k } , binary search
+    uint8x16_t t8 = vcleq_u8(vdupq_laneq_u8(np, 7), iota);          // np[7]  <= k ?
+    uint8x16_t srcNib = vandq_u8(t8, vdupq_n_u8(8));                // 0 or 8
+    uint8x16_t p3  = vcleq_u8(vdupq_laneq_u8(np, 3), iota);
+    uint8x16_t p11 = vcleq_u8(vdupq_laneq_u8(np, 11), iota);
+    uint8x16_t t4  = vbslq_u8(t8, p11, p3);                         // np[sn+3] <= k ?
+    srcNib = vbslq_u8(t4, vaddq_u8(srcNib, vdupq_n_u8(4)), srcNib);
+    uint8x16_t pr = vqtbl1q_u8(np, vaddq_u8(srcNib, one));          // step 3, probe np[sn+1]
+    srcNib = vbslq_u8(vcleq_u8(pr, iota), vaddq_u8(srcNib, vdupq_n_u8(2)), srcNib);
+    pr = vqtbl1q_u8(np, srcNib);                                    // step 4, probe np[sn]
+    srcNib = vbslq_u8(vcleq_u8(pr, iota), vaddq_u8(srcNib, one), srcNib);
+
+    // within-nibble rank
+    uint8x16_t nstart = vqtbl1q_u8(np, vsubq_u8(srcNib, one));
+    uint8x16_t lr     = vsubq_u8(iota, nstart);
+
+    // within-nibble position
+    uint8x16_t pack = vqtbl1q_u8(pack_by_nib, srcNib);
+    int8x16_t  sh   = vreinterpretq_s8_u8(vshlq_n_u8(lr, 1));
+    uint8x16_t pos  = vandq_u8(vshlq_u8(pack, vnegq_s8(sh)), vdupq_n_u8(3));
+    // add nibble base
+    return { vaddq_u8(vshlq_n_u8(srcNib, 2), pos), npref_w >> 60 };
+}
+
 template<Direction offset>
 inline Move* splat_pawn_moves(Move* moveList, Bitboard to_bb) {
     while (to_bb)
@@ -143,6 +207,23 @@ inline Move* splat_pawn_moves(Move* moveList, Bitboard to_bb) {
         *moveList++ = Move(to - offset, to);
     }
     return moveList;
+}
+
+inline Move* splat_moves_15(Move* moveList, Square from, Bitboard to_bb) {
+    auto [ indices, count ] = get_active_indices_and_popcount(to_bb);
+
+    uint16x8_t f = vdupq_n_u16(Move(from, SQ_A1).raw());
+    Move* p = moveList;
+    for (uint8x8_t q : { vget_low_u8(indices), vget_high_u8(indices) }) {
+        uint16x8_t m = vmovl_u8(q);
+        m = vshlq_n_u16(m, Move::ToSqShift);
+
+        uint16x8_t t = vaddq_u16(f, m);
+        vst1q_u16(reinterpret_cast<uint16_t*>(p), t);
+        p += 8;
+    }
+
+    return moveList + count;
 }
 
 inline Move* splat_moves(Move* moveList, Square from, Bitboard to_bb) {
@@ -264,14 +345,20 @@ Move* generate_moves(const Position& pos, Move* moveList, Bitboard target) {
     while (bb)
     {
         Square from = pop_lsb(bb);
-#ifdef USE_AVX512ICL
         if constexpr (Pt != QUEEN)
         {
+#ifdef USE_AVX512ICL
             moveList = splat_precomputed_moves<Pt>(moveList, from, pos.pieces(), target);
+            continue;
+#endif
+        }
+        Bitboard b = Attacks::attacks_bb<Pt>(from, pos.pieces()) & target;
+#ifdef USE_NEON
+        if constexpr (Pt != QUEEN) {
+            moveList = splat_moves_15(moveList, from, b);
             continue;
         }
 #endif
-        Bitboard b = Attacks::attacks_bb<Pt>(from, pos.pieces()) & target;
 
         moveList = splat_moves(moveList, from, b);
     }
