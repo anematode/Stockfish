@@ -141,6 +141,7 @@ class Position {
     bool  gives_check(Move m) const;
     Piece moved_piece(Move m) const;
     Piece captured_piece() const;
+    void prefetch_move(Move m, TranspositionTable& tt) const;
 
     // Doing and undoing moves
     void do_move(Move m, StateInfo& newSt, const TranspositionTable* tt);

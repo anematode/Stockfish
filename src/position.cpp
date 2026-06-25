@@ -823,6 +823,19 @@ bool Position::gives_check(Move m) const {
     }
 }
 
+void Position::prefetch_move(Move m, TranspositionTable& tt) const
+{
+    Square from     = m.from_sq();
+    Square to       = m.to_sq();
+    Piece  pc       = piece_on(from);
+    Piece  captured = piece_on(to);
+    Key    k        = st->key ^ Zobrist::side;
+
+    k ^= Zobrist::psq[captured][to] ^ Zobrist::psq[pc][to] ^ Zobrist::psq[pc][from];
+    prefetch(tt.first_entry(k));
+}
+
+
 
 // Makes a move, and saves all information necessary
 // to a StateInfo object. The move is assumed to be legal. Pseudo-legal
