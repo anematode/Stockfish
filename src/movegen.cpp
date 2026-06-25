@@ -43,11 +43,31 @@ inline Move* splat_pawn_moves(Move* moveList, Bitboard to_bb) {
 
     const __m128i toSquares =
       _mm_cvtepi8_epi16(_mm512_castsi512_si128(_mm512_maskz_compress_epi8(to_bb, AllSquares)));
-    const __m128i fromSquares = _mm_subs_epi16(toSquares, _mm_set1_epi16(offset));
+    const __m128i fromSquares = _mm_sub_epi16(toSquares, _mm_set1_epi16(offset));
     const __m128i moves       = _mm_or_si128(_mm_slli_epi16(fromSquares, Move::FromSqShift),
                                              _mm_slli_epi16(toSquares, Move::ToSqShift));
 
     _mm_storeu_si128(reinterpret_cast<__m128i*>(moveList), moves);
+    return moveList + popcount(to_bb);
+}
+
+template<Direction offset>
+inline Move* splat_pawn_moves_dual(Move* moveList, Bitboard to_bb1, Bitboard to_bb2) {
+    assert((to_bb1 & to_bb2) == 0);
+
+    Bitboard to_bb = to_bb1 | to_bb2;
+    uint16_t down_twice = pext(to_bb2, to_bb);
+
+    const __m256i toSquares =
+      _mm256_cvtepi8_epi16(_mm512_castsi512_si128(_mm512_maskz_compress_epi8(to_bb, AllSquares)));
+    const __m256i offsetV = _mm256_set1_epi16(offset);
+    __m256i fromSquares = _mm256_sub_epi16(toSquares, offsetV);
+    fromSquares = _mm256_mask_sub_epi16(fromSquares, down_twice, fromSquares, offsetV);
+
+    const __m256i moves       = _mm256_or_si256(_mm256_slli_epi16(fromSquares, Move::FromSqShift),
+                                             _mm256_slli_epi16(toSquares, Move::ToSqShift));
+
+    _mm256_storeu_si256(reinterpret_cast<__m256i*>(moveList), moves);
     return moveList + popcount(to_bb);
 }
 
@@ -136,6 +156,20 @@ splat_precomputed_moves(Move* moveList, Square from, Bitboard occupied, Bitboard
 #else
 
 template<Direction offset>
+inline Move* splat_pawn_moves_dual(Move* moveList, Bitboard to_bb1, Bitboard to_bb2) {
+    assert((to_bb1 & to_bb2) == 0);
+
+    Bitboard to_bb = to_bb1 | to_bb2;
+    while (to_bb)
+    {
+        Square to   = pop_lsb(to_bb);
+        Direction delta = (to_bb2 & to) ? offset + offset : offset;
+        *moveList++ = Move(to - delta, to);
+    }
+    return moveList;
+}
+
+template<Direction offset>
 inline Move* splat_pawn_moves(Move* moveList, Bitboard to_bb) {
     while (to_bb)
     {
@@ -200,8 +234,7 @@ Move* generate_pawn_moves(const Position& pos, Move* moveList, Bitboard target) 
             b2 &= target;
         }
 
-        moveList = splat_pawn_moves<Up>(moveList, b1);
-        moveList = splat_pawn_moves<Up + Up>(moveList, b2);
+        moveList = splat_pawn_moves_dual<Up>(moveList, b1, b2);
     }
 
     // Promotions and underpromotions
