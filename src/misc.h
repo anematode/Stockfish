@@ -456,20 +456,20 @@ class PRNG {
 
     u64 s;
 
-    u64 rand64() {
+    constexpr u64 rand64() {
 
         s ^= s >> 12, s ^= s << 25, s ^= s >> 27;
         return s * 2685821657736338717LL;
     }
 
    public:
-    PRNG(u64 seed) :
+    constexpr PRNG(u64 seed) :
         s(seed) {
         assert(seed);
     }
 
     template<typename T>
-    T rand() {
+    constexpr T rand() {
         return T(rand64());
     }
 
@@ -577,12 +577,12 @@ class FixedString {
 
     template<typename T>
     bool operator==(const T& other) const noexcept {
-        return (std::string_view) (*this) == other;
+        return (std::string_view)(*this) == other;
     }
 
     template<typename T>
     bool operator!=(const T& other) const noexcept {
-        return (std::string_view) (*this) != other;
+        return (std::string_view)(*this) != other;
     }
 
     void clear() {

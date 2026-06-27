@@ -45,23 +45,100 @@ namespace Stockfish {
 
 using namespace Attacks;
 
-namespace Zobrist {
-
-Key psq[PIECE_NB][SQUARE_NB];
-Key enpassant[FILE_NB];
-Key castling[CASTLING_RIGHT_NB];
-Key side, noPawns;
-
-}
-
 namespace {
-
 constexpr std::string_view PieceToChar(" PNBRQK  pnbrqk");
 
 static constexpr Piece Pieces[] = {W_PAWN, W_KNIGHT, W_BISHOP, W_ROOK, W_QUEEN, W_KING,
                                    B_PAWN, B_KNIGHT, B_BISHOP, B_ROOK, B_QUEEN, B_KING};
 }  // namespace
 
+// Implements Marcel van Kervinck's cuckoo algorithm to detect repetition of positions
+// for 3-fold repetition draws. The algorithm uses two hash tables with Zobrist hashes
+// to allow fast detection of recurring positions. For details see:
+// http://web.archive.org/web/20201107002606/https://marcelk.net/2013-04-06/paper/upcoming-rep-v2.pdf
+
+// First and second hash functions for indexing the cuckoo tables
+constexpr int H1(Key h) { return h & 0x1fff; }
+constexpr int H2(Key h) { return (h >> 16) & 0x1fff; }
+
+namespace Zobrist {
+
+struct Table {
+    Key psq[PIECE_NB][SQUARE_NB]    = {};
+    Key enpassant[FILE_NB]          = {};
+    Key castling[CASTLING_RIGHT_NB] = {};
+    Key side                        = 0;
+    Key noPawns                     = 0;
+
+    // Cuckoo tables with Zobrist hashes of valid reversible moves, and the moves themselves
+    std::array<Key, 8192>  cuckoo     = {};
+    std::array<Move, 8192> cuckooMove = {};
+};
+
+constexpr Table init_zobrist() {
+    Table z{};
+    PRNG  rng(1070372);
+
+    for (Piece pc : Pieces)
+        for (Square s = SQ_A1; s <= SQ_H8; ++s)
+            z.psq[pc][s] = rng.rand<Key>();
+    // pawns on these squares will promote
+    for (Square s = SQ_A8; s <= SQ_H8; ++s)
+        z.psq[W_PAWN][s] = 0;
+    for (Square s = SQ_A1; s <= SQ_H1; ++s)
+        z.psq[B_PAWN][s] = 0;
+
+    for (File f = FILE_A; f <= FILE_H; ++f)
+        z.enpassant[f] = rng.rand<Key>();
+
+    for (int cr = NO_CASTLING; cr <= ANY_CASTLING; ++cr)
+        z.castling[cr] = rng.rand<Key>();
+
+    z.side    = rng.rand<Key>();
+    z.noPawns = rng.rand<Key>();
+
+    // Prepare the cuckoo tables
+    [[maybe_unused]] int count = 0;
+    for (Piece pc : Pieces)
+        for (Square s1 = SQ_A1; s1 <= SQ_H8; ++s1)
+            for (Square s2 = Square(s1 + 1); s2 <= SQ_H8; ++s2)
+                if ((type_of(pc) != PAWN) && (PseudoAttacks[type_of(pc)][s1] & s2))
+                {
+                    Move move = Move(s1, s2);
+                    Key  key  = z.psq[pc][s1] ^ z.psq[pc][s2] ^ z.side;
+                    int  i    = H1(key);
+                    while (true)
+                    {
+                        Key tmp     = key;
+                        key         = z.cuckoo[i];
+                        z.cuckoo[i] = tmp;
+
+                        Move moveTmp    = move;
+                        move            = z.cuckooMove[i];
+                        z.cuckooMove[i] = moveTmp;
+
+                        if (move == Move::none())  // Arrived at empty slot?
+                            break;
+                        i = (i == H1(key)) ? H2(key) : H1(key);  // Push victim to alternative slot
+                    }
+                    count++;
+                }
+    assert(count == 3668);
+
+    return z;
+}
+
+constexpr Table detail = init_zobrist();
+
+constexpr auto& psq        = detail.psq;
+constexpr auto& enpassant  = detail.enpassant;
+constexpr auto& castling   = detail.castling;
+constexpr auto& side       = detail.side;
+constexpr auto& noPawns    = detail.noPawns;
+constexpr auto& cuckoo     = detail.cuckoo;
+constexpr auto& cuckooMove = detail.cuckooMove;
+
+}  // namespace Zobrist
 
 // Returns an ASCII representation of the position
 std::ostream& operator<<(std::ostream& os, const Position& pos) {
@@ -102,65 +179,8 @@ std::ostream& operator<<(std::ostream& os, const Position& pos) {
     return os;
 }
 
-
-// Implements Marcel van Kervinck's cuckoo algorithm to detect repetition of positions
-// for 3-fold repetition draws. The algorithm uses two hash tables with Zobrist hashes
-// to allow fast detection of recurring positions. For details see:
-// http://web.archive.org/web/20201107002606/https://marcelk.net/2013-04-06/paper/upcoming-rep-v2.pdf
-
-// First and second hash functions for indexing the cuckoo tables
-inline int H1(Key h) { return h & 0x1fff; }
-inline int H2(Key h) { return (h >> 16) & 0x1fff; }
-
-// Cuckoo tables with Zobrist hashes of valid reversible moves, and the moves themselves
-std::array<Key, 8192>  cuckoo;
-std::array<Move, 8192> cuckooMove;
-
 // Initializes at startup the various arrays used to compute hash keys
-void Position::init() {
-
-    PRNG rng(1070372);
-
-    for (Piece pc : Pieces)
-        for (Square s = SQ_A1; s <= SQ_H8; ++s)
-            Zobrist::psq[pc][s] = rng.rand<Key>();
-    // pawns on these squares will promote
-    std::fill_n(Zobrist::psq[W_PAWN] + SQ_A8, 8, 0);
-    std::fill_n(Zobrist::psq[B_PAWN], 8, 0);
-
-    for (File f = FILE_A; f <= FILE_H; ++f)
-        Zobrist::enpassant[f] = rng.rand<Key>();
-
-    for (int cr = NO_CASTLING; cr <= ANY_CASTLING; ++cr)
-        Zobrist::castling[cr] = rng.rand<Key>();
-
-    Zobrist::side    = rng.rand<Key>();
-    Zobrist::noPawns = rng.rand<Key>();
-
-    // Prepare the cuckoo tables
-    cuckoo.fill(0);
-    cuckooMove.fill(Move::none());
-    [[maybe_unused]] int count = 0;
-    for (Piece pc : Pieces)
-        for (Square s1 = SQ_A1; s1 <= SQ_H8; ++s1)
-            for (Square s2 = Square(s1 + 1); s2 <= SQ_H8; ++s2)
-                if ((type_of(pc) != PAWN) && (attacks_bb(type_of(pc), s1, 0) & s2))
-                {
-                    Move move = Move(s1, s2);
-                    Key  key  = Zobrist::psq[pc][s1] ^ Zobrist::psq[pc][s2] ^ Zobrist::side;
-                    int  i    = H1(key);
-                    while (true)
-                    {
-                        std::swap(cuckoo[i], key);
-                        std::swap(cuckooMove[i], move);
-                        if (move == Move::none())  // Arrived at empty slot?
-                            break;
-                        i = (i == H1(key)) ? H2(key) : H1(key);  // Push victim to alternative slot
-                    }
-                    count++;
-                }
-    assert(count == 3668);
-}
+void Position::init() {}
 
 
 // Initializes the position object with the given FEN string.
@@ -1546,9 +1566,10 @@ bool Position::upcoming_repetition(int ply) const {
             continue;
 
         Key moveKey = originalKey ^ stp->key;
-        if ((j = H1(moveKey), cuckoo[j] == moveKey) || (j = H2(moveKey), cuckoo[j] == moveKey))
+        if ((j = H1(moveKey), Zobrist::cuckoo[j] == moveKey)
+            || (j = H2(moveKey), Zobrist::cuckoo[j] == moveKey))
         {
-            Move   move = cuckooMove[j];
+            Move   move = Zobrist::cuckooMove[j];
             Square s1   = move.from_sq();
             Square s2   = move.to_sq();
 
