@@ -104,6 +104,75 @@ struct MoveSorter {
         write(8, _mm512_setr_epi32(8, 24, 9, 25, 10, 26, 11, 27, 12, 28, 13, 29, 14, 30, 15, 31));
     }
 };
+#elif defined(USE_AVX2)
+    static void splat_extmove(const ExtMove& m, __m256i& move, __m256i& value) {
+        move  = _mm256_set1_epi32(m.raw());
+        value = _mm256_set1_epi32(m.value);
+    }
+
+    // Sorts up to 16 moves, modeled after the AVX-512 expand-based implementation.
+    struct MoveSorter {
+        static constexpr int MAX_ELEMENTS = 16;
+        __m256i              sortedValues[2];
+        __m256i              sortedMoves[2];
+        __m256i              iota[2];
+
+        explicit MoveSorter(const ExtMove& first) {
+            splat_extmove(first, sortedMoves[0], sortedValues[0]);
+            sortedMoves[1] = sortedMoves[0];
+
+            sortedValues[1] = _mm256_set1_epi32(std::numeric_limits<int>::min());
+
+            iota[0] = _mm256_set_epi32(0, 1, 2, 3, 4, 5, 6, 7);
+            iota[1] = _mm256_set_epi32(8, 9, 10, 11, 12, 13, 14, 15);
+
+            // Set the uninitialized move values to INT_MIN, so that they sort less than any other move
+            sortedValues[0] = _mm256_blend_epi32(sortedValues[0], sortedValues[1], 0x1);
+        }
+
+        int insertion_point(__m256i value) {
+            __m256i m = _mm256_packs_epi32(
+                _mm256_cmpgt_epi32(value, sortedValues[0]),
+                _mm256_cmpgt_epi32(value, sortedValues[1])
+            );
+
+            int count = popcount(_mm256_movemask_epi8(m));
+            sf_assume(count % 2 == 0);
+            return count / 2;
+        }
+
+        void insert(const ExtMove& m) {
+            __m256i move, value;
+            splat_extmove(m, move, value);
+
+            int ins = insertion_point(value);
+            __m256i insV = _mm256_set1_epi32(ins);
+
+            for (int i : { 0, 1 }) {
+                __m256i shouldInsert = _mm256_cmpeq_epi32(insV, iota[i]);
+                __m256i shouldShift = _mm256_cmpgt_epi32(iota[i], insV);
+
+                __m256i permI = _mm256_add_epi32(iota[0], shouldShift);
+
+                auto perm = [&] (__m256i& d, __m256i k) {
+                    __m256i permed = _mm256_permutexvar_epi32(d, permI);
+                    __m256i inserted = _mm256_blendv_epi32(shouldInsert, k, permed);
+
+                    if (i == 1) {
+
+                    }
+                };
+
+                perm(sortedMoves[i], move);
+                perm(sortedValues[i], values);
+            }
+        }
+
+        void write_sorted(ExtMove* moves, isize count) const {
+            // shuffle them...
+            // masked moves are slow so load/select/store
+        }
+    };
 #endif
 
 // Sort moves in descending order up to and including a given limit.
