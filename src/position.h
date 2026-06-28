@@ -28,6 +28,7 @@
 #include <optional>
 #include <stdexcept>
 #include <string>
+#include <immintrin.h>
 
 #include "attacks.h"
 #include "bitboard.h"
@@ -78,6 +79,8 @@ using StateListPtr = std::unique_ptr<std::deque<StateInfo>>;
 struct PositionSetError: std::runtime_error {
     using std::runtime_error::runtime_error;
 };
+
+using Coconut = __m512i;
 
 // Position class stores information regarding the board representation as
 // pieces, side to move, hash keys, castling info, etc. Important methods are
@@ -185,9 +188,9 @@ class Position {
 
     StateInfo* state() const;
 
-    void put_piece(Piece pc, Square s, DirtyThreats* const dts = nullptr);
-    void remove_piece(Square s, DirtyThreats* const dts = nullptr);
-    void swap_piece(Square s, Piece pc, DirtyThreats* const dts = nullptr);
+    void put_piece(Piece pc, Square s, Coconut *c = nullptr, DirtyThreats* const dts = nullptr);
+    void remove_piece(Square s, Coconut *c = nullptr, DirtyThreats* const dts = nullptr);
+    void swap_piece(Square s, Piece pc, Coconut *c = nullptr, DirtyThreats* const dts = nullptr);
 
    private:
     // Initialization helpers (used while setting up a position)
@@ -198,18 +201,20 @@ class Position {
 
     // Other helpers
     template<bool ComputeRay = true>
-    void update_piece_threats(Piece               pc,
+    Coconut update_piece_threats(Piece               pc,
                               bool                putPiece,
                               Square              s,
+                              Coconut c,
                               DirtyThreats* const dts,
                               Bitboard            noRaysContaining = -1ULL) const;
-    void move_piece(Square from, Square to, DirtyThreats* const dts = nullptr);
+    void move_piece(Square from, Square to, Coconut *c = nullptr, DirtyThreats* const dts = nullptr);
     template<bool Do>
     void do_castling(Color               us,
                      Square              from,
                      Square&             to,
                      Square&             rfrom,
                      Square&             rto,
+                     Coconut *c = nullptr,
                      DirtyThreats* const dts = nullptr,
                      DirtyPiece* const   dp  = nullptr);
     template<bool AfterMove = false>
@@ -359,22 +364,26 @@ inline bool Position::capture_stage(Move m) const {
 
 inline Piece Position::captured_piece() const { return st->capturedPiece; }
 
-inline void Position::put_piece(Piece pc, Square s, DirtyThreats* const dts) {
+inline void Position::put_piece(Piece pc, Square s, Coconut* coconut, DirtyThreats* const dts) {
     board[s] = pc;
     byTypeBB[ALL_PIECES] |= byTypeBB[type_of(pc)] |= s;
     byColorBB[color_of(pc)] |= s;
     pieceCount[pc]++;
     pieceCount[make_piece(color_of(pc), ALL_PIECES)]++;
 
-    if (dts)
-        update_piece_threats(pc, true, s, dts);
+    if (dts) {
+        *coconut= update_piece_threats(pc, true, s, *coconut, dts);
+        *coconut = _mm512_mask_set1_epi8(*coconut, square_bb(s), pc);
+    }
 }
 
-inline void Position::remove_piece(Square s, DirtyThreats* const dts) {
+inline void Position::remove_piece(Square s, Coconut* coconut, DirtyThreats* const dts) {
     Piece pc = board[s];
 
-    if (dts)
-        update_piece_threats(pc, false, s, dts);
+    if (dts) {
+        *coconut = update_piece_threats(pc, false, s, *coconut, dts);
+        *coconut = _mm512_mask_mov_epi8(*coconut, square_bb(s), _mm512_setzero_si512());
+    }
 
     byTypeBB[ALL_PIECES] ^= s;
     byTypeBB[type_of(pc)] ^= s;
@@ -384,12 +393,15 @@ inline void Position::remove_piece(Square s, DirtyThreats* const dts) {
     pieceCount[make_piece(color_of(pc), ALL_PIECES)]--;
 }
 
-inline void Position::move_piece(Square from, Square to, DirtyThreats* const dts) {
+inline void Position::move_piece(Square from, Square to, Coconut* coconut, DirtyThreats* const dts) {
     Piece    pc     = board[from];
     Bitboard fromTo = from | to;
 
-    if (dts)
-        update_piece_threats(pc, false, from, dts, fromTo);
+    if (dts) {
+        *coconut = update_piece_threats(pc, false, from, *coconut, dts, fromTo);
+        *coconut = _mm512_mask_mov_epi8(*coconut, square_bb(from), _mm512_setzero_si512());
+        *coconut = _mm512_mask_set1_epi8(*coconut, square_bb(to), pc);
+    }
 
     byTypeBB[ALL_PIECES] ^= fromTo;
     byTypeBB[type_of(pc)] ^= fromTo;
@@ -398,21 +410,23 @@ inline void Position::move_piece(Square from, Square to, DirtyThreats* const dts
     board[to]   = pc;
 
     if (dts)
-        update_piece_threats(pc, true, to, dts, fromTo);
+        *coconut = update_piece_threats(pc, true, to, *coconut, dts, fromTo);
 }
 
-inline void Position::swap_piece(Square s, Piece pc, DirtyThreats* const dts) {
+inline void Position::swap_piece(Square s, Piece pc, Coconut* coconut, DirtyThreats* const dts) {
     Piece old = board[s];
 
     remove_piece(s);
 
-    if (dts)
-        update_piece_threats<false>(old, false, s, dts);
+    if (dts) {
+        *coconut = update_piece_threats<false>(old, false, s, *coconut, dts);
+        *coconut = _mm512_mask_set1_epi8(*coconut, square_bb(s), pc);
+    }
 
     put_piece(pc, s);
 
     if (dts)
-        update_piece_threats<false>(pc, true, s, dts);
+        *coconut = update_piece_threats<false>(pc, true, s, *coconut, dts);
 }
 
 inline void Position::do_move(Move m, StateInfo& newSt, const TranspositionTable* tt = nullptr) {

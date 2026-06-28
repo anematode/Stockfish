@@ -837,6 +837,8 @@ void Position::do_move(Move                      m,
     Piece  pc       = piece_on(from);
     Piece  captured = m.type_of() == EN_PASSANT ? make_piece(them, PAWN) : piece_on(to);
 
+    Coconut coconut { _mm512_loadu_si512(board.data()) };
+
     dp.pc     = pc;
     dp.from   = from;
     dp.to     = to;
@@ -852,7 +854,7 @@ void Position::do_move(Move                      m,
         assert(captured == make_piece(us, ROOK));
 
         Square rfrom, rto;
-        do_castling<true>(us, from, to, rfrom, rto, &dts, &dp);
+        do_castling<true>(us, from, to, rfrom, rto, &coconut, &dts, &dp);
 
         k ^= Zobrist::psq[captured][rfrom] ^ Zobrist::psq[captured][rto];
         st->nonPawnKey[us] ^= Zobrist::psq[captured][rfrom] ^ Zobrist::psq[captured][rto];
@@ -877,7 +879,7 @@ void Position::do_move(Move                      m,
                 assert(piece_on(capsq) == make_piece(them, PAWN));
 
                 // Update board and piece lists in ep case, normal captures are updated later
-                remove_piece(capsq, &dts);
+                remove_piece(capsq, &coconut, &dts);
             }
 
             st->pawnKey ^= Zobrist::psq[captured][capsq];
@@ -1011,15 +1013,15 @@ void Position::do_move(Move                      m,
 
         if (captured && m.type_of() != EN_PASSANT)
         {
-            remove_piece(from, &dts);
-            swap_piece(to, toPc, &dts);
+            remove_piece(from, &coconut, &dts);
+            swap_piece(to, toPc, &coconut, &dts);
         }
         else if (pc == toPc)
-            move_piece(from, to, &dts);
+            move_piece(from, to, &coconut, &dts);
         else
         {
-            remove_piece(from, &dts);
-            put_piece(toPc, to, &dts);
+            remove_piece(from, &coconut, &dts);
+            put_piece(toPc, to, &coconut, &dts);
         }
     }
 
@@ -1136,13 +1138,13 @@ inline void add_dirty_threat(DirtyThreats* const dts,
 // Given a DirtyThreat template and bit offsets to insert the piece type and square, write the threats
 // present at the given bitboard.
 template<int SqShift, int PcShift>
-void write_multiple_dirties(const Position& p,
-                            Bitboard        mask,
+void write_multiple_dirties( Bitboard        mask,
                             DirtyThreat     dt_template,
-                            DirtyThreats*   dts) {
+                            DirtyThreats*   dts,
+                            Coconut coconut) {
     static_assert(sizeof(DirtyThreat) == 4);
 
-    const __m512i board    = _mm512_loadu_si512(p.piece_array().data());
+    const __m512i board    = coconut;
     const int     dt_count = popcount(mask);
     assert(dt_count <= 16);
 
@@ -1168,9 +1170,10 @@ void write_multiple_dirties(const Position& p,
 #endif
 
 template<bool ComputeRay>
-void Position::update_piece_threats(Piece               pc,
+Coconut Position::update_piece_threats(Piece               pc,
                                     bool                putPiece,
                                     Square              s,
+                                    Coconut coconut,
                                     DirtyThreats* const dts,
                                     // Silence spurious warning on GCC 10
                                     [[maybe_unused]] Bitboard noRaysContaining) const {
@@ -1209,7 +1212,7 @@ void Position::update_piece_threats(Piece               pc,
     {
         if constexpr (ComputeRay)
             process_sliders(false);
-        return;
+        return coconut;
     }
 
 
@@ -1243,13 +1246,13 @@ void Position::update_piece_threats(Piece               pc,
 #ifdef USE_AVX512ICL
     DirtyThreat dt_template{pc, NO_PIECE, s, Square(0), putPiece};
     write_multiple_dirties<DirtyThreat::ThreatenedSqOffset, DirtyThreat::ThreatenedPcOffset>(
-      *this, threatened, dt_template, dts);
+      threatened, dt_template, dts, coconut);
 
     Bitboard all_attackers = sliders | incoming_threats;
 
     dt_template = {NO_PIECE, pc, Square(0), s, putPiece};
-    write_multiple_dirties<DirtyThreat::PcSqOffset, DirtyThreat::PcOffset>(*this, all_attackers,
-                                                                           dt_template, dts);
+    write_multiple_dirties<DirtyThreat::PcSqOffset, DirtyThreat::PcOffset>(all_attackers,
+                                                                           dt_template, dts, coconut);
 #else
     while (threatened)
     {
@@ -1288,6 +1291,8 @@ void Position::update_piece_threats(Piece               pc,
         add_dirty_threat(dts, putPiece, srcPc, pc, srcSq, s);
     }
 #endif
+
+    return coconut;
 }
 
 Key Position::prefetch_key(Move m) const {
@@ -1313,6 +1318,7 @@ void Position::do_castling(Color               us,
                            Square&             to,
                            Square&             rfrom,
                            Square&             rto,
+                           Coconut* coconut,
                            DirtyThreats* const dts,
                            DirtyPiece* const   dp) {
 
@@ -1332,10 +1338,10 @@ void Position::do_castling(Color               us,
     }
 
     // Remove both pieces first since squares could overlap in Chess960
-    remove_piece(Do ? from : to, dts);
-    remove_piece(Do ? rfrom : rto, dts);
-    put_piece(make_piece(us, KING), Do ? to : from, dts);
-    put_piece(make_piece(us, ROOK), Do ? rto : rfrom, dts);
+    remove_piece(Do ? from : to, coconut, dts);
+    remove_piece(Do ? rfrom : rto, coconut, dts);
+    put_piece(make_piece(us, KING), Do ? to : from, coconut, dts);
+    put_piece(make_piece(us, ROOK), Do ? rto : rfrom, coconut, dts);
 }
 
 
