@@ -140,56 +140,86 @@ splat_precomputed_moves(Move* moveList, Square from, Bitboard occupied, Bitboard
 #elif defined(USE_NEON) /* USE_SVE2 */
 
 // uint8x16_t should contain the list of indices of set bits in increasing order.
+// Values beyond the end of the valid region are don't cares.
 // b is required to have <= 16 set bits.
 // Also return the total count of bits in b as a byproduct.
 std::pair<uint8x16_t, usize> get_set_bits(Bitboard b) {
     assert(popcount(b) <= 16);
 
-    // pmullb(x,x) interleaves the bits of x with 0, giving a 128-bit result
-    poly64x2_t v2 = vreinterpretq_p64_p128(vmull_p64(b, b));
+    // clmul(x, x) is a carryless square: cross terms cancel in pairs, so it spreads bit i of x to
+    // bit 2i, giving a 128-bit result. Applied twice to a 64-bit lane, bit i lands on bit 4i, i.e.
+    // exactly one bit per nibble.
+    poly64x2_t v2 = vreinterpretq_p64_p128(vmull_p64((poly64_t) b, (poly64_t) b));
 
-    auto compact_nibbles = [] (poly128_t p) {
-        svuint64_t bdep_mask = svset_neonq_u64(svundef_u64(),
-            vreinterpretq_u64_u16(vmulq_n_u16(vreinterpretq_u16_p128(p), 15)));
+    // Given a 128-bit value with one (possibly set) bit per nibble, pack the indices (0..15) of the
+    // present nibbles of each 64-bit lane into that lane's low nibbles, in increasing order.
+    auto compact_nibbles = [](poly128_t p) {
+        // Widen each present nibble (a single bit) to a full 0xF nibble.
+        svuint64_t bdep_mask = svset_neonq_u64(
+          svundef_u64(), vreinterpretq_u64_u16(vmulq_n_u16(vreinterpretq_u16_p128(p), 15)));
 
+        // Nibble k of this constant holds the value k; BEXT gathers the ones the mask selects.
         const svuint64_t nibbles = svdup_u64(0xfedcba9876543210);
         return vreinterpretq_u8_u64(svget_neonq_u64(svbext_u64(nibbles, bdep_mask)));
     };
 
-    // The low nibbles of each 64-bit lane of vh and vl contain the indices of set bits
-    // in each 16-bit segment of the original bitboard.
-    uint8x16_t vl = compact_nibbles(vmull_p64((poly64_t)vget_low_p64(v2), (poly64_t)vget_low_p64(v2)));
+    // The low nibbles of each 64-bit lane of vl/vh hold the within-segment indices (0..15) of the
+    // set bits of one 16-bit segment of b: vl = {seg0 (bits 0..15), seg1 (bits 16..31)},
+    // vh = {seg2 (bits 32..47), seg3 (bits 48..63)}. So as a 32-byte table {vl, vh}, segment s
+    // occupies bytes [8s, 8s + 8).
+    poly64_t   lo = vgetq_lane_p64(v2, 0);
+    uint8x16_t vl = compact_nibbles(vmull_p64(lo, lo));
     uint8x16_t vh = compact_nibbles(vmull_high_p64(v2, v2));
 
-    // Find shuffle constant to extract the desired nibbles from vh/vl.
-    // As an example, if our bitboard is 0x5500'0011'0001'0010, then the popcount of each 16-bit segment is
-    // 1, 1, 2, 4; and our desired nibble shuffle is (annotating the quarter from whence the nibbles come):
-    //    0    8    16   17   24   25   26   27   ...
-    //   -Q0- -Q1- ---Q2---- --------Q3---------
-    // Because there's only 4 segments we just process them one-by-one.
+    // For each output lane we want (segment, offset): which 16-bit segment its set bit lives in and
+    // its rank within that segment. As an example, for b = 0x5500'0011'0001'0010 the segment
+    // popcounts are 1, 1, 2, 4 and the per-lane pairs are:
+    //   (0,0) (1,0) (2,0) (2,1) (3,0) (3,1) (3,2) (3,3) ...
+    //   --Q0- --Q1- -----Q2----- -----------Q3-----------
+    // We derive them by subtracting each segment's popcount from a running index in turn.
 
-    svuint16_t vb = svreinterpret_u16_u64(svset_neonq_u64(svundef_u64(), vdupq_n_u64(b)));
-    svuint8_t cnt16 = svreinterpret_u8_u16(svcnt_u16_x(svptrue_b16(), vb));
+    svuint16_t vb    = svreinterpret_u16_u64(svset_neonq_u64(svundef_u64(), vdupq_n_u64(b)));
+    svuint8_t  cnt16 = svreinterpret_u8_u16(svcnt_u16_x(svptrue_b16(), vb));
 
-    svuint8_t iota = svindex_u8(0, 1);
-    svuint8_t incr8 = svdup_n_u8(4), q = svdup_n_u8(0);
+    svuint8_t iota  = svindex_u8(0, 1);
+    svuint8_t incr8 = svdup_n_u8(16), q = svdup_n_u8(0);
 
     svbool_t c = svptrue_b8();
 
-#define P(i) { \
-    svuint8_t m = svdup_lane_u8(cnt16, 2 * i); \
-    c = svcmpge_u8(c, iota, m); \
-    iota = svsub_u8_m(c, iota, m); \
-    q = svadd_u8_m(c, q, incr8); }
+    // After P(0..2): q[j] = 16 * segment(j) (the segment's base index) and iota[j] = offset of j
+    // within that segment.
+#define P(i) \
+    { \
+        svuint8_t m = svdup_lane_u8(cnt16, 2 * i); \
+        c           = svcmpge_u8(c, iota, m); \
+        iota        = svsub_u8_m(c, iota, m); \
+        q           = svadd_u8_m(c, q, incr8); \
+    }
 
     P(0) P(1) P(2)
 
-    uint8x16_t lookup = /** blah blah */;
+#undef P
+
+    uint8x16_t qn  = svget_neonq_u8(q);     // 16 * segment
+    uint8x16_t off = svget_neonq_u8(iota);  // offset within segment
+
+    // The byte holding nibble `off` of segment s sits at table index 8s + off/2 = (16s + off) / 2,
+    // so gather it straight from {vl, vh} with a 2-register lookup -- no need to unpack the nibbles.
+    uint8x16x2_t table;
+    table.val[0] = vl;
+    table.val[1] = vh;
+    uint8x16_t bytes = vqtbl2q_u8(table, vshrq_n_u8(vaddq_u8(qn, off), 1));
+
+    // Each gathered byte packs two nibbles; take the high one for odd offsets, the low one for even.
+    uint8x16_t nibble = vbslq_u8(vtstq_u8(off, vdupq_n_u8(1)), vshrq_n_u8(bytes, 4),
+                                 vandq_u8(bytes, vdupq_n_u8(0x0f)));
+
+    // Absolute index = within-segment index + segment base.
+    uint8x16_t indices = vaddq_u8(nibble, qn);
 
     usize count = vaddv_u8(vget_low_u8(svget_neonq_u8(cnt16)));
 
-
-    return { indices, count };
+    return {indices, count};
 }
 
 #else
