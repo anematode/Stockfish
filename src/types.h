@@ -337,8 +337,47 @@ struct DirtyThreat {
 
 using DirtyThreatList = ValueList<DirtyThreat, 96>;
 
+struct DirtyThreatUpdateStep {
+    enum StepKind : u8 {
+        Remove = 0,  // remove piece at `to`
+        Move = 1,    // move piece, from -> to
+        Swap = 2,    //
+        Put = 3,
+    };
+
+    StepKind kind;
+    Square from, to;
+    Piece pc;
+};
+
 struct DirtyThreats {
+    alignas(64) std::array<Piece, SQUARE_NB> mailbox;
+    std::array<Bitboard, PIECE_TYPE_NB> byTypeBB;
+    std::array<Bitboard, COLOR_NB> byColorBB;
+    bool init = false;
+
+    ValueList<DirtyThreatUpdateStep, 4> updates;
+
+    void record(DirtyThreatUpdateStep::StepKind kind, Square from, Square to, Piece pc) {
+        updates.push_back({kind, from, to, pc});
+    }
+
+    const DirtyThreatList& get_list();
+
+private:
     DirtyThreatList list;
+    Piece piece_on(Square s) const { return mailbox[s]; }
+    template<typename... PieceTypes>
+    Bitboard pieces(PieceTypes... pts) const {
+        return (byTypeBB[pts] | ...);
+    }
+    template<typename... PieceTypes>
+    Bitboard pieces(Color c, PieceTypes... pts) const {
+        return byColorBB[c] & (byTypeBB[pts] | ...);
+    }
+
+    template <bool ComputeRay>
+    void populate_inner(Piece, bool, Square, Bitboard);
 };
 
     #define ENABLE_INCR_OPERATORS_ON(T) \

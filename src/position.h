@@ -196,13 +196,6 @@ class Position {
     void set_state() const;
     void set_check_info() const;
 
-    // Other helpers
-    template<bool ComputeRay = true>
-    void update_piece_threats(Piece               pc,
-                              bool                putPiece,
-                              Square              s,
-                              DirtyThreats* const dts,
-                              Bitboard            noRaysContaining = -1ULL) const;
     void move_piece(Square from, Square to, DirtyThreats* const dts = nullptr);
     template<bool Do>
     void do_castling(Color               us,
@@ -367,14 +360,14 @@ inline void Position::put_piece(Piece pc, Square s, DirtyThreats* const dts) {
     pieceCount[make_piece(color_of(pc), ALL_PIECES)]++;
 
     if (dts)
-        update_piece_threats(pc, true, s, dts);
+        dts->record(DirtyThreatUpdateStep::Put, SQUARE_ZERO, s, pc);
 }
 
 inline void Position::remove_piece(Square s, DirtyThreats* const dts) {
     Piece pc = board[s];
 
     if (dts)
-        update_piece_threats(pc, false, s, dts);
+        dts->record(DirtyThreatUpdateStep::Remove, SQUARE_ZERO, s, pc);
 
     byTypeBB[ALL_PIECES] ^= s;
     byTypeBB[type_of(pc)] ^= s;
@@ -389,30 +382,21 @@ inline void Position::move_piece(Square from, Square to, DirtyThreats* const dts
     Bitboard fromTo = from | to;
 
     if (dts)
-        update_piece_threats(pc, false, from, dts, fromTo);
+        dts->record(DirtyThreatUpdateStep::Move, from, to, pc);
 
     byTypeBB[ALL_PIECES] ^= fromTo;
     byTypeBB[type_of(pc)] ^= fromTo;
     byColorBB[color_of(pc)] ^= fromTo;
     board[from] = NO_PIECE;
     board[to]   = pc;
-
-    if (dts)
-        update_piece_threats(pc, true, to, dts, fromTo);
 }
 
 inline void Position::swap_piece(Square s, Piece pc, DirtyThreats* const dts) {
-    Piece old = board[s];
-
     remove_piece(s);
-
-    if (dts)
-        update_piece_threats<false>(old, false, s, dts);
-
     put_piece(pc, s);
 
     if (dts)
-        update_piece_threats<false>(pc, true, s, dts);
+        dts->record(DirtyThreatUpdateStep::Swap, SQUARE_ZERO, s, pc);
 }
 
 inline void Position::do_move(Move m, StateInfo& newSt, const TranspositionTable* tt = nullptr) {

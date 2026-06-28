@@ -272,13 +272,13 @@ void FullThreats::append_active_indices(Color perspective, const Position& pos, 
 
 void FullThreats::append_changed_indices(Color                   perspective,
                                          Square                  ksq,
-                                         const DiffType&         diff,
+                                         DiffType&         diff,
                                          IndexList&              removed,
                                          IndexList&              added,
                                          const ThreatWeightType* prefetchBase,
                                          IndexType               prefetchStride) {
 
-    for (const auto& dirty : diff.list)
+    for (const auto& dirty : diff.get_list())
     {
         auto attacker = dirty.pc();
         auto attacked = dirty.threatened_pc();

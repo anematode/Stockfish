@@ -842,6 +842,10 @@ void Position::do_move(Move                      m,
     dp.to     = to;
     dp.add_sq = SQ_NONE;
 
+    dts.mailbox = board;
+    dts.byColorBB = byColorBB;
+    dts.byTypeBB  = byTypeBB;
+
     assert(color_of(pc) == us);
     assert(captured == NO_PIECE || color_of(captured) == (m.type_of() != CASTLING ? them : us));
     assert(type_of(captured) != KING);
@@ -1123,13 +1127,13 @@ void Position::undo_move(Move m) {
     assert(pos_is_ok());
 }
 
-inline void add_dirty_threat(DirtyThreats* const dts,
+inline void add_dirty_threat(DirtyThreatList& list,
                              bool                putPiece,
                              Piece               pc,
                              Piece               threatened,
                              Square              s,
                              Square              threatenedSq) {
-    dts->list.push_back({pc, threatened, s, threatenedSq, putPiece});
+    list.push_back({pc, threatened, s, threatenedSq, putPiece});
 }
 
 #ifdef USE_AVX512ICL
@@ -1167,14 +1171,79 @@ void write_multiple_dirties(const Position& p,
 }
 #endif
 
+const DirtyThreatList& DirtyThreats::get_list() {
+    if (init)
+        return list;
+    init = true;
+    for (auto& step : updates) {
+        using SK = DirtyThreatUpdateStep::StepKind;
+
+        auto [kind, from, to, pc] = step;
+
+        switch (kind) {
+            case SK::Put:
+                populate_inner<true>(pc, true, to, -1ULL);
+
+                byColorBB[color_of(pc)] |= to;
+                byTypeBB[type_of(pc)] |= to;
+                byTypeBB[ALL_PIECES] |= to;
+                mailbox[to] = pc;
+
+                break;
+            case SK::Remove:
+                populate_inner<true>(pc, false, to, -1ULL);
+
+                byColorBB[color_of(pc)] ^= to;
+                byTypeBB[type_of(pc)] ^= to;
+                byTypeBB[ALL_PIECES] ^= to;
+                mailbox[to] = NO_PIECE;
+
+                break;
+            case SK::Swap: {
+                Piece oldPc = piece_on(to);
+                populate_inner<false>(oldPc, false, to, 0ULL);
+
+                byColorBB[color_of(oldPc)] ^= to;
+                byTypeBB[type_of(oldPc)] ^= to;
+
+                byColorBB[color_of(pc)] |= to;
+                byTypeBB[type_of(pc)] |= to;
+                mailbox[to] = pc;
+
+                populate_inner<false>(pc, true, to, 0ULL);
+
+                break;
+            }
+            case SK::Move: {
+                Bitboard fromTo = from | to;
+
+                populate_inner<true>(pc, false, from, fromTo);
+
+                byColorBB[color_of(pc)] ^= fromTo;
+                byTypeBB[type_of(pc)] ^= fromTo;
+                byTypeBB[ALL_PIECES] ^= fromTo;
+
+                mailbox[from] = NO_PIECE;
+                mailbox[to] = pc;
+
+                populate_inner<true>(pc, true, to, fromTo);
+
+                break;
+            }
+            default:
+                sf_assume(false);
+        }
+    }
+    return list;
+}
+
 template<bool ComputeRay>
-void Position::update_piece_threats(Piece               pc,
+void DirtyThreats::populate_inner(Piece               pc,
                                     bool                putPiece,
                                     Square              s,
-                                    DirtyThreats* const dts,
                                     // Silence spurious warning on GCC 10
-                                    [[maybe_unused]] Bitboard noRaysContaining) const {
-    const Bitboard occupied     = pieces();
+                                    [[maybe_unused]] Bitboard noRaysContaining) {
+    const Bitboard occupied     = pieces(ALL_PIECES);
     const Bitboard rookQueens   = pieces(ROOK, QUEEN);
     const Bitboard bishopQueens = pieces(BISHOP, QUEEN);
     const Bitboard rAttacks     = attacks_bb<ROOK>(s, occupied);
@@ -1197,11 +1266,11 @@ void Position::update_piece_threats(Piece               pc,
             {
                 const Square threatenedSq = lsb(discovered);
                 const Piece  threatenedPc = piece_on(threatenedSq);
-                add_dirty_threat(dts, !putPiece, slider, threatenedPc, sliderSq, threatenedSq);
+                add_dirty_threat(list, !putPiece, slider, threatenedPc, sliderSq, threatenedSq);
             }
 
             if (addDirectAttacks)
-                add_dirty_threat(dts, putPiece, slider, pc, sliderSq, s);
+                add_dirty_threat(list, putPiece, slider, pc, sliderSq, s);
         }
     };
 
@@ -1259,7 +1328,7 @@ void Position::update_piece_threats(Piece               pc,
         assert(threatenedSq != s);
         assert(threatenedPc);
 
-        add_dirty_threat(dts, putPiece, pc, threatenedPc, s, threatenedSq);
+        add_dirty_threat(list, putPiece, pc, threatenedPc, s, threatenedSq);
     }
 #endif
 
@@ -1285,7 +1354,7 @@ void Position::update_piece_threats(Piece               pc,
         assert(srcSq != s);
         assert(srcPc != NO_PIECE);
 
-        add_dirty_threat(dts, putPiece, srcPc, pc, srcSq, s);
+        add_dirty_threat(list, putPiece, srcPc, pc, srcSq, s);
     }
 #endif
 }

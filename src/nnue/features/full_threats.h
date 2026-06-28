@@ -77,7 +77,7 @@ class FullThreats {
     // Get a list of indices for recently changed features
     static void append_changed_indices(Color                   perspective,
                                        Square                  ksq,
-                                       const DiffType&         diff,
+                                       DiffType&         diff,
                                        IndexList&              removed,
                                        IndexList&              added,
                                        const ThreatWeightType* prefetchBase   = nullptr,

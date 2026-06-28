@@ -41,7 +41,7 @@ void update_accumulator_incremental(Color                     perspective,
                                     const FeatureTransformer& featureTransformer,
                                     const Square              ksq,
                                     AccumulatorState&         target_state,
-                                    const AccumulatorState&   computed);
+                                    AccumulatorState&   computed);
 
 void update_accumulator_refresh_cache(Color                     perspective,
                                       const FeatureTransformer& featureTransformer,
@@ -337,7 +337,7 @@ void update_accumulator_incremental(Color                     perspective,
                                     const FeatureTransformer& featureTransformer,
                                     const Square              ksq,
                                     AccumulatorState&         target_state,
-                                    const AccumulatorState&   computed) {
+                                    AccumulatorState&   computed) {
 
     assert(computed.computed[perspective]);
     assert(!target_state.computed[perspective]);
@@ -350,7 +350,7 @@ void update_accumulator_incremental(Color                     perspective,
     ThreatFeatureSet::IndexList thrRemoved, thrAdded;
 
     const auto& dirtyPiece   = Forward ? target_state.dirtyPiece : computed.dirtyPiece;
-    const auto& dirtyThreats = Forward ? target_state.dirtyThreats : computed.dirtyThreats;
+    auto& dirtyThreats = Forward ? target_state.dirtyThreats : computed.dirtyThreats;
 
     const auto* pfBase   = &featureTransformer.threatWeights[0];
     IndexType   pfStride = FeatureTransformer::OutputDimensions;
