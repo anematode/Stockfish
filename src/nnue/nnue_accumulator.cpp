@@ -43,6 +43,7 @@ void update_accumulator_incremental(Color                     perspective,
                                     AccumulatorState&         target_state,
                                     const AccumulatorState&   computed);
 
+template <bool FirstCacheFill = false>
 void update_accumulator_refresh_cache(Color                     perspective,
                                       const FeatureTransformer& featureTransformer,
                                       const Position&           pos,
@@ -460,6 +461,7 @@ Bitboard get_changed_pieces(const std::array<Piece, SQUARE_NB>& oldPieces,
 
 // HalfKA data comes from the Finny table entry, while the threats are built
 // from the active threat features
+template <bool FirstCacheFill>
 void update_accumulator_refresh_cache(Color                     perspective,
                                       const FeatureTransformer& featureTransformer,
                                       const Position&           pos,
@@ -470,26 +472,45 @@ void update_accumulator_refresh_cache(Color                     perspective,
     using Tiling [[maybe_unused]] = SIMDTiling<Dimensions, Dimensions, PSQTBuckets>;
 
     const Square             ksq   = pos.square<KING>(perspective);
-    auto&                    entry = cache[ksq][perspective];
+    auto&                    entry = cache[ksq][perspective][pos.count<ALL_PIECES>() - 1];
+
+    if (!FirstCacheFill && !entry.initialized) {
+        update_accumulator_refresh_cache<true>(perspective, featureTransformer, pos, accumulator, cache);
+        entry.initialized = true;
+        return;
+    }
+
     PSQFeatureSet::IndexList removed, added;
 
     const Bitboard changedBB = get_changed_pieces(entry.pieces, pos.piece_array());
     Bitboard       removedBB = changedBB & entry.pieceBB;
     Bitboard       addedBB   = changedBB & pos.pieces();
 
+    assert(FirstCacheFill || popcount(removedBB) == popcount(addedBB));
+
 #if defined(USE_AVX512ICL)
     PSQFeatureSet::write_indices(entry.pieces, pos.piece_array(), removedBB, addedBB, perspective,
                                  ksq, removed, added);
 #else
-    while (removedBB)
-    {
-        Square sq = pop_lsb(removedBB);
-        removed.push_back(PSQFeatureSet::make_index(perspective, sq, entry.pieces[sq], ksq));
-    }
-    while (addedBB)
-    {
-        Square sq = pop_lsb(addedBB);
-        added.push_back(PSQFeatureSet::make_index(perspective, sq, pos.piece_on(sq), ksq));
+    if constexpr (FirstCacheFill) {
+        while (removedBB)
+        {
+            Square sq = pop_lsb(removedBB);
+            removed.push_back(PSQFeatureSet::make_index(perspective, sq, entry.pieces[sq], ksq));
+        }
+        while (addedBB)
+        {
+            Square sq = pop_lsb(addedBB);
+            added.push_back(PSQFeatureSet::make_index(perspective, sq, pos.piece_on(sq), ksq));
+        }
+    } else {
+        while (removedBB)
+        {
+            Square sq = pop_lsb(removedBB);
+            removed.push_back(PSQFeatureSet::make_index(perspective, sq, entry.pieces[sq], ksq));
+            sq = pop_lsb(addedBB);
+            added.push_back(PSQFeatureSet::make_index(perspective, sq, pos.piece_on(sq), ksq));
+        }
     }
 #endif
 
@@ -517,19 +538,31 @@ void update_accumulator_refresh_cache(Color                     perspective,
         for (IndexType k = 0; k < Tiling::NumRegs; ++k)
             acc[k] = entryTile[k];
 
-        for (int i = 0; i < removed.ssize(); ++i)
-        {
-            auto* column =
-              reinterpret_cast<const vec_t*>(&weights[removed[i] * Dimensions + tileOff]);
-            for (IndexType k = 0; k < Tiling::NumRegs; ++k)
-                acc[k] = vec_sub_16(acc[k], column[k]);
-        }
-        for (int i = 0; i < added.ssize(); ++i)
-        {
-            auto* column =
-              reinterpret_cast<const vec_t*>(&weights[added[i] * Dimensions + tileOff]);
-            for (IndexType k = 0; k < Tiling::NumRegs; ++k)
-                acc[k] = vec_add_16(acc[k], column[k]);
+        if constexpr (FirstCacheFill) {
+            for (int i = 0; i < removed.ssize(); ++i)
+            {
+                auto* column =
+                  reinterpret_cast<const vec_t*>(&weights[removed[i] * Dimensions + tileOff]);
+                for (IndexType k = 0; k < Tiling::NumRegs; ++k)
+                    acc[k] = vec_sub_16(acc[k], column[k]);
+            }
+            for (int i = 0; i < added.ssize(); ++i)
+            {
+                auto* column =
+                  reinterpret_cast<const vec_t*>(&weights[added[i] * Dimensions + tileOff]);
+                for (IndexType k = 0; k < Tiling::NumRegs; ++k)
+                    acc[k] = vec_add_16(acc[k], column[k]);
+            }
+        } else {
+            for (int i = 0; i < removed.ssize(); ++i)
+            {
+                auto* columnR =
+                    reinterpret_cast<const vec_t*>(&weights[removed[i] * Dimensions + tileOff]);
+                auto* columnA =
+                  reinterpret_cast<const vec_t*>(&weights[added[i] * Dimensions + tileOff]);
+                for (IndexType k = 0; k < Tiling::NumRegs; ++k)
+                    acc[k] = vec_add_16(vec_sub_16(acc[k], columnR[k]), columnA[k]);
+            }
         }
 
         for (IndexType k = 0; k < Tiling::NumRegs; k++)

@@ -54,7 +54,7 @@ struct alignas(CacheLineSize) Accumulator {
 // cache contains multiple entries for each of the possible king squares.
 // When the accumulator needs to be refreshed, the cached entry is used to more
 // efficiently update the accumulator, instead of rebuilding it from scratch.
-// This idea, was first described by Luecx (author of Koivisto) and
+// This idea was first described by Luecx (author of Koivisto) and
 // is commonly referred to as "Finny Tables".
 struct AccumulatorCaches {
     template<typename Network>
@@ -67,6 +67,7 @@ struct AccumulatorCaches {
         std::array<PSQTWeightType, PSQTBuckets> psqtAccumulation;
         std::array<Piece, SQUARE_NB>            pieces;
         Bitboard                                pieceBB;
+        bool                                    initialized;
 
         // To initialize a refresh entry, we set all its bitboards empty,
         // so we put the biases in the accumulation, without any weights on top
@@ -81,12 +82,13 @@ struct AccumulatorCaches {
     void clear(const Network& network) {
         for (auto& entries1D : entries)
             for (auto& entry : entries1D)
-                entry.clear(network.featureTransformer.biases);
+                for (auto& e : entry)
+                    e.clear(network.featureTransformer.biases);
     }
 
-    std::array<Entry, COLOR_NB>& operator[](Square sq) { return entries[sq]; }
+    auto& operator[](Square sq) { return entries[sq]; }
 
-    std::array<std::array<Entry, COLOR_NB>, SQUARE_NB> entries;
+    std::array<std::array<std::array<Entry, 32>, COLOR_NB>, SQUARE_NB> entries;
 };
 
 
