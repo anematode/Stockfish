@@ -29,6 +29,10 @@
     #include <array>
     #include <algorithm>
     #include <immintrin.h>
+#elif defined(USE_NEON)
+#include <arm_neon.h>
+#include <arm_sve.h>
+#include <arm_neon_sve_bridge.h>
 #endif
 
 namespace Stockfish {
@@ -131,6 +135,61 @@ splat_precomputed_moves(Move* moveList, Square from, Bitboard occupied, Bitboard
     }
 
     return moveList + popcount(mask);
+}
+
+#elif defined(USE_NEON) /* USE_SVE2 */
+
+// uint8x16_t should contain the list of indices of set bits in increasing order.
+// b is required to have <= 16 set bits.
+// Also return the total count of bits in b as a byproduct.
+std::pair<uint8x16_t, usize> get_set_bits(Bitboard b) {
+    assert(popcount(b) <= 16);
+
+    // pmullb(x,x) interleaves the bits of x with 0, giving a 128-bit result
+    poly64x2_t v2 = vreinterpretq_p64_p128(vmull_p64(b, b));
+
+    auto compact_nibbles = [] (poly128_t p) {
+        svuint64_t bdep_mask = svset_neonq_u64(svundef_u64(),
+            vreinterpretq_u64_u16(vmulq_n_u16(vreinterpretq_u16_p128(p), 15)));
+
+        const svuint64_t nibbles = svdup_u64(0xfedcba9876543210);
+        return vreinterpretq_u8_u64(svget_neonq_u64(svbext_u64(nibbles, bdep_mask)));
+    };
+
+    // The low nibbles of each 64-bit lane of vh and vl contain the indices of set bits
+    // in each 16-bit segment of the original bitboard.
+    uint8x16_t vl = compact_nibbles(vmull_p64((poly64_t)vget_low_p64(v2), (poly64_t)vget_low_p64(v2)));
+    uint8x16_t vh = compact_nibbles(vmull_high_p64(v2, v2));
+
+    // Find shuffle constant to extract the desired nibbles from vh/vl.
+    // As an example, if our bitboard is 0x5500'0011'0001'0010, then the popcount of each 16-bit segment is
+    // 1, 1, 2, 4; and our desired nibble shuffle is (annotating the quarter from whence the nibbles come):
+    //    0    8    16   17   24   25   26   27   ...
+    //   -Q0- -Q1- ---Q2---- --------Q3---------
+    // Because there's only 4 segments we just process them one-by-one.
+
+    svuint16_t vb = svreinterpret_u16_u64(svset_neonq_u64(svundef_u64(), vdupq_n_u64(b)));
+    svuint8_t cnt16 = svreinterpret_u8_u16(svcnt_u16_x(svptrue_b16(), vb));
+
+    svuint8_t iota = svindex_u8(0, 1);
+    svuint8_t incr8 = svdup_n_u8(4), q = svdup_n_u8(0);
+
+    svbool_t c = svptrue_b8();
+
+#define P(i) { \
+    svuint8_t m = svdup_lane_u8(cnt16, 2 * i); \
+    c = svcmpge_u8(c, iota, m); \
+    iota = svsub_u8_m(c, iota, m); \
+    q = svadd_u8_m(c, q, incr8); }
+
+    P(0) P(1) P(2)
+
+    uint8x16_t lookup = /** blah blah */;
+
+    usize count = vaddv_u8(vget_low_u8(svget_neonq_u8(cnt16)));
+
+
+    return { indices, count };
 }
 
 #else
