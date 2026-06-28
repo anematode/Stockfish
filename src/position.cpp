@@ -1140,18 +1140,18 @@ inline void add_dirty_threat(DirtyThreatList& list,
 // Given a DirtyThreat template and bit offsets to insert the piece type and square, write the threats
 // present at the given bitboard.
 template<int SqShift, int PcShift>
-void write_multiple_dirties(const Position& p,
+void write_multiple_dirties(const std::array<Piece, SQUARE_NB>& mailbox,
                             Bitboard        mask,
                             DirtyThreat     dt_template,
-                            DirtyThreats*   dts) {
+                            DirtyThreatList&   list) {
     static_assert(sizeof(DirtyThreat) == 4);
 
-    const __m512i board    = _mm512_loadu_si512(p.piece_array().data());
+    const __m512i board    = _mm512_loadu_si512(mailbox.data());
     const int     dt_count = popcount(mask);
     assert(dt_count <= 16);
 
     const __m512i template_v = _mm512_set1_epi32(dt_template.raw());
-    auto*         write      = dts->list.make_space(dt_count);
+    auto*         write      = list.make_space(dt_count);
 
     // Extract the list of squares and upconvert to 32 bits. There are never more than 16
     // incoming threats so this is sufficient.
@@ -1312,13 +1312,13 @@ void DirtyThreats::populate_inner(Piece               pc,
 #ifdef USE_AVX512ICL
     DirtyThreat dt_template{pc, NO_PIECE, s, Square(0), putPiece};
     write_multiple_dirties<DirtyThreat::ThreatenedSqOffset, DirtyThreat::ThreatenedPcOffset>(
-      *this, threatened, dt_template, dts);
+      mailbox, threatened, dt_template, list);
 
     Bitboard all_attackers = sliders | incoming_threats;
 
     dt_template = {NO_PIECE, pc, Square(0), s, putPiece};
-    write_multiple_dirties<DirtyThreat::PcSqOffset, DirtyThreat::PcOffset>(*this, all_attackers,
-                                                                           dt_template, dts);
+    write_multiple_dirties<DirtyThreat::PcSqOffset, DirtyThreat::PcOffset>(mailbox, all_attackers,
+                                                                           dt_template, list);
 #else
     while (threatened)
     {
