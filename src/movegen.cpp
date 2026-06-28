@@ -29,6 +29,10 @@
     #include <array>
     #include <algorithm>
     #include <immintrin.h>
+#elif defined(USE_SVE2)
+#include <arm_sve.h>
+#include <arm_neon.h>
+#include <arm_neon_sve_bridge.h>
 #endif
 
 namespace Stockfish {
@@ -133,8 +137,100 @@ splat_precomputed_moves(Move* moveList, Square from, Bitboard occupied, Bitboard
     return moveList + popcount(mask);
 }
 
-#else
+#elif defined(USE_SVE2)
+constexpr uint64_t Planes[] = {
+    0xAAAAAAAAAAAAAAAAULL, 0xCCCCCCCCCCCCCCCCULL, 0xF0F0F0F0F0F0F0F0ULL,
+    0xFF00FF00FF00FF00ULL, 0xFFFF0000FFFF0000ULL, 0xFFFFFFFF00000000ULL
+};
 
+// Returns set of active indices, and the number of active indices.
+std::pair<uint8x16_t, usize> get_set_bits_sve2(Bitboard mask) {
+    assert(popcount(mask) <= 16);
+
+    uint64x2x3_t planes = vld1q_u64_x3(Planes);
+
+    auto neon_to_sve = [] (uint64x2_t v) {
+        return svset_neonq_u64(svundef_u64(), v);
+    };
+
+    const svuint64_t mask_v = svdup_n_u64(mask);
+    const svuint64_t bp_01  = svbext_u64(neon_to_sve(planes.val[0]), mask_v);
+    const svuint64_t bp_23  = svbext_u64(neon_to_sve(planes.val[1]), mask_v);
+    const svuint64_t bp_45  = svbext_u64(neon_to_sve(planes.val[2]), mask_v);
+
+    const svbool_t pg = svptrue_b64();
+    const svuint64_t c = svcnt_u64_z(pg, mask_v);
+    const svuint64_t w1_01 =
+      svpmullb_u64(svreinterpret_u32_u64(bp_01), svreinterpret_u32_u64(bp_01));
+    const svuint64_t w1_23 =
+      svpmullb_u64(svreinterpret_u32_u64(bp_23), svreinterpret_u32_u64(bp_23));
+    const svuint64_t w1_45 =
+      svpmullb_u64(svreinterpret_u32_u64(bp_45), svreinterpret_u32_u64(bp_45));
+
+    const svuint64_t combined_0145 =
+      svorr_u64_x(pg, w1_01, svlsl_n_u64_x(pg, w1_45, 1));
+
+    const svuint64_t w2_0145 = svpmullb_u64(svreinterpret_u32_u64(combined_0145),
+                                            svreinterpret_u32_u64(combined_0145));
+    const svuint64_t w2_23 =
+      svpmullb_u64(svreinterpret_u32_u64(w1_23), svreinterpret_u32_u64(w1_23));
+
+    const svuint64_t combined_full =
+      svorr_u64_x(pg, w2_0145, svlsl_n_u64_x(pg, w2_23, 1));
+
+    const svuint64_t result_evens = svpmullb_pair_u64(combined_full, combined_full);
+    const svuint64_t result_odds  = svpmullt_pair_u64(combined_full, combined_full);
+
+    const svuint64_t squares_sve =
+      svorr_u64_x(pg, result_evens, svlsl_n_u64_x(pg, result_odds, 1));
+    const uint8x16_t squares = svget_neonq_u8(svreinterpret_u8_u64(squares_sve));
+
+    return { squares, vgetq_lane_u64(svget_neonq_u64(c), 0) };
+}
+
+// Expand the set bits of to_bb into moves originating from `from`, storing them
+// unconditionally. Small means at most 8 targets (knights and kings), so a
+// single 128-bit store suffices; otherwise up to 16 targets are handled with two
+// stores (rooks and bishops reach at most 15). Lanes past the true target count
+// hold junk, but are never read because the returned pointer skips over them.
+template<bool Small>
+inline Move* splat_moves_sve2(Move* moveList, Square from, Bitboard to_bb) {
+    const auto [squares, count] = get_set_bits_sve2(to_bb);
+    const uint16x8_t fromBits   = vdupq_n_u16(Move(from, SQUARE_ZERO).raw());
+
+    vst1q_u16(reinterpret_cast<uint16_t*>(moveList),
+              vorrq_u16(fromBits, vmovl_u8(vget_low_u8(squares))));
+    if constexpr (!Small)
+        vst1q_u16(reinterpret_cast<uint16_t*>(moveList) + 8,
+                  vorrq_u16(fromBits, vmovl_u8(vget_high_u8(squares))));
+
+    return moveList + count;
+}
+
+template<Direction offset>
+inline Move* splat_pawn_moves(Move* moveList, Bitboard to_bb) {
+    assert(popcount(to_bb) <= 8);  // <= 8 pawns per side
+    const auto [squares, count] = get_set_bits_sve2(to_bb);
+
+    // to == from + offset, so the from square is recovered by subtraction. The
+    // arithmetic is done in 16 bits, which wraps correctly for both signs.
+    const uint16x8_t to16   = vmovl_u8(vget_low_u8(squares));
+    const uint16x8_t from16 = vsubq_u16(to16, vdupq_n_u16(uint16_t(offset)));
+    const uint16x8_t moves  = vorrq_u16(vshlq_n_u16(from16, Move::FromSqShift), to16);
+
+    vst1q_u16(reinterpret_cast<uint16_t*>(moveList), moves);
+    return moveList + count;
+}
+
+// Fallback for queens, whose attacks can exceed the 16-square limit of
+// get_set_bits_sve2().
+inline Move* splat_moves(Move* moveList, Square from, Bitboard to_bb) {
+    while (to_bb)
+        *moveList++ = Move(from, pop_lsb(to_bb));
+    return moveList;
+}
+
+#else
 template<Direction offset>
 inline Move* splat_pawn_moves(Move* moveList, Bitboard to_bb) {
     while (to_bb)
@@ -270,6 +366,13 @@ Move* generate_moves(const Position& pos, Move* moveList, Bitboard target) {
             moveList = splat_precomputed_moves<Pt>(moveList, from, pos.pieces(), target);
             continue;
         }
+#elif defined(USE_SVE2)
+        if constexpr (Pt != QUEEN)
+        {
+            Bitboard b = Attacks::attacks_bb<Pt>(from, pos.pieces()) & target;
+            moveList   = splat_moves_sve2<Pt == KNIGHT>(moveList, from, b);
+            continue;
+        }
 #endif
         Bitboard b = Attacks::attacks_bb<Pt>(from, pos.pieces()) & target;
 
@@ -305,8 +408,10 @@ Move* generate_all(const Position& pos, Move* moveList) {
 
     Bitboard b = Type == EVASIONS ? ~pos.pieces(Us) : target;
 
-#ifdef USE_AVX512ICL
+#if defined(USE_AVX512ICL)
     moveList = splat_precomputed_moves<KING>(moveList, ksq, 0ULL, b);
+#elif defined(USE_SVE2)
+    moveList = splat_moves_sve2<true>(moveList, ksq, Attacks::attacks_bb<KING>(ksq) & b);
 #else
     moveList = splat_moves(moveList, ksq, Attacks::attacks_bb<KING>(ksq) & b);
 #endif
