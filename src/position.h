@@ -57,6 +57,7 @@ struct StateInfo {
 
     // Not copied when making a move (will be recomputed anyhow)
     Key        key;
+    Key        kingRingKey[COLOR_NB];
     Bitboard   checkersBB;
     StateInfo* previous;
     Bitboard   blockersForKing[COLOR_NB];
@@ -165,6 +166,7 @@ class Position {
     Key pawn_key() const;
     Key minor_piece_key() const;
     Key non_pawn_key(Color c) const;
+    Key king_ring_key(Color c) const;
 
     // Other properties of the position
     Color side_to_move() const;
@@ -195,6 +197,7 @@ class Position {
     Key  compute_material_key() const;
     void set_state() const;
     void set_check_info() const;
+    void update_king_ring_keys();
 
     // Other helpers
     template<bool ComputeRay = true>

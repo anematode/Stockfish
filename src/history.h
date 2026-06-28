@@ -142,6 +142,8 @@ using ContinuationHistory = MultiArray<PieceToHistory, PIECE_NB, SQUARE_NB>;
 // PawnHistory is addressed by the pawn structure and a move's [piece][to]
 using PawnHistory = DynStats<AtomicStats<i16, 8192, PIECE_NB, SQUARE_NB>, PAWN_HISTORY_BASE_SIZE>;
 
+using KingRingHistory = DynStats<AtomicStats<i16, 1024, COLOR_NB>, UINT_16_HISTORY_SIZE>;
+
 // Correction histories record differences between the static evaluation of
 // positions and their search score. It is used to improve the static evaluation
 // used by some search heuristics.
@@ -199,7 +201,8 @@ using TTMoveHistory = StatsEntry<i16, 8192>;
 struct SharedHistories {
     SharedHistories(usize threadCount) :
         correctionHistory(threadCount),
-        pawnHistory(threadCount) {
+        pawnHistory(threadCount),
+        kingRingHistory(threadCount) {
         assert((threadCount & (threadCount - 1)) == 0 && threadCount != 0);
         sizeMinus1         = correctionHistory.get_size() - 1;
         pawnHistSizeMinus1 = pawnHistory.get_size() - 1;
@@ -237,9 +240,19 @@ struct SharedHistories {
         return correctionHistory[pos.non_pawn_key(c) & sizeMinus1];
     }
 
+    template<Color c>
+    auto& king_ring_entry(const Position& pos) {
+        return kingRingHistory[pos.king_ring_key(c) & sizeMinus1];
+    }
+    template<Color c>
+    const auto& king_ring_entry(const Position& pos) const {
+        return kingRingHistory[pos.king_ring_key(c) & sizeMinus1];
+    }
+
     UnifiedCorrectionHistory correctionHistory;
     ContinuationHistory      continuationHistory[2][2];
     PawnHistory              pawnHistory;
+    KingRingHistory          kingRingHistory;
 
 
    private:

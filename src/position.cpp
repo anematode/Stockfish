@@ -798,6 +798,21 @@ bool Position::gives_check(Move m) const {
     }
 }
 
+void Position::update_king_ring_keys() {
+    __m512i b = _mm512_loadu_si512(board.data());
+
+    for (Color c : { WHITE, BLACK }) {
+        // Idk how to compute this quickly in general, so temporarily do some
+        // garbage
+        Square ksq = square<KING>(c);
+        b = _mm512_maskz_mov_epi8(attacks_bb<KING>(ksq), b);
+        const __m512i Junk = _mm512_loadu_si512(&Zobrist::psq[QUEEN][ksq]);
+        b = _mm512_aesenc_epi128(b, Junk);
+        b = _mm512_aesenc_epi128(b, Junk);
+        st->kingRingKey[c] = _mm512_reduce_add_epi64(b);
+    }
+}
+
 
 // Makes a move, and saves all information necessary
 // to a StateInfo object. The move is assumed to be legal. Pseudo-legal
@@ -992,6 +1007,7 @@ void Position::do_move(Move                      m,
         prefetch(tt->first_entry(adjust_key50(k)));
     // Update the key with the final value
     st->key = k;
+    update_king_ring_keys();
 
     if (history)
     {
@@ -1303,6 +1319,10 @@ Key Position::prefetch_key(Move m) const {
         return k;
 
     return adjust_key50<true>(k);
+}
+
+Key Position::king_ring_key(Color c) const {
+    return st->kingRingKey[c];
 }
 
 // Helper used to do/undo a castling move. This is a bit
