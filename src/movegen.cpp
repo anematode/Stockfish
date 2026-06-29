@@ -18,6 +18,8 @@
 
 #include "movegen.h"
 
+#include <arm_neon.h>
+#include <arm_vector_types.h>
 #include <cassert>
 #include <initializer_list>
 
@@ -143,56 +145,55 @@ constexpr uint64_t Planes[] = {
     0xFF00FF00FF00FF00ULL, 0xFFFF0000FFFF0000ULL, 0xFFFFFFFF00000000ULL
 };
 
-// Returns set of active indices, and the number of active indices.
-std::pair<uint8x16_t, usize> get_set_bits_sve2(Bitboard mask) {
+// Returns set of active indices, and the number of active indices. Requires
+// that the mask has <= 16 active bits.
+// Example:
+//    m = 0x4000'2020'0010'0121
+// -> res.first is  [ 0, 5, 8, 20, 37, 45, 62, xx ... ]
+//    res.second is 7
+std::pair<uint8x16_t, uint64_t> get_set_bits_sve2(uint64_t mask) {
     assert(popcount(mask) <= 16);
-
     uint64x2x3_t planes = vld1q_u64_x3(Planes);
 
     auto neon_to_sve = [] (uint64x2_t v) {
         return svset_neonq_u64(svundef_u64(), v);
     };
 
-    const svuint64_t mask_v = svdup_n_u64(mask);
-    const svuint64_t bp_01  = svbext_u64(neon_to_sve(planes.val[0]), mask_v);
-    const svuint64_t bp_23  = svbext_u64(neon_to_sve(planes.val[1]), mask_v);
-    const svuint64_t bp_45  = svbext_u64(neon_to_sve(planes.val[2]), mask_v);
+    const uint64x2_t mask_v = vdupq_n_u64(mask);
+    const svuint64_t mask_sv = neon_to_sve(mask_v);
+    const auto bp_01 = svget_neonq_u64(svbext_u64(neon_to_sve(planes.val[0]), mask_sv));
+    const auto bp_23 = svget_neonq_u64(svbext_u64(neon_to_sve(planes.val[1]), mask_sv));
+    const auto bp_45 = svget_neonq_u64(svbext_u64(neon_to_sve(planes.val[2]), mask_sv));
 
-    const svbool_t pg = svptrue_b64();
-    const svuint64_t c = svcnt_u64_z(pg, mask_v);
-    const svuint64_t w1_01 =
-      svpmullb_u64(svreinterpret_u32_u64(bp_01), svreinterpret_u32_u64(bp_01));
-    const svuint64_t w1_23 =
-      svpmullb_u64(svreinterpret_u32_u64(bp_23), svreinterpret_u32_u64(bp_23));
-    const svuint64_t w1_45 =
-      svpmullb_u64(svreinterpret_u32_u64(bp_45), svreinterpret_u32_u64(bp_45));
+    size_t count = vaddv_u8(vcnt_u8(vreinterpret_u8_u64(vdup_n_u64(mask))));
 
-    const svuint64_t combined_0145 =
-      svorr_u64_x(pg, w1_01, svlsl_n_u64_x(pg, w1_45, 1));
+    // Pack the six 16-bit planes into the low slots: [m0,m1,m2,m3,m4,m5,0,0]
+    const uint8x16_t idx = { 0,1, 8,9, 16,17, 24,25, 32,33, 40,41,
+                             0xff,0xff,0xff,0xff };
+    uint8x16x3_t tbl = { vreinterpretq_u8_u64(bp_01),
+                         vreinterpretq_u8_u64(bp_23),
+                         vreinterpretq_u8_u64(bp_45) };
+    uint8x16_t uz2 = vqtbl3q_u8(tbl, idx);
 
-    const svuint64_t w2_0145 = svpmullb_u64(svreinterpret_u32_u64(combined_0145),
-                                            svreinterpret_u32_u64(combined_0145));
-    const svuint64_t w2_23 =
-      svpmullb_u64(svreinterpret_u32_u64(w1_23), svreinterpret_u32_u64(w1_23));
+    auto interleave = [] (uint8x16_t v) {
+        poly64x2_t p = vreinterpretq_p64_u8(v);
+        uint64x2_t a = vreinterpretq_u64_p128(
+            vmull_p64((poly64_t)vget_low_p64(p), (poly64_t)vget_low_p64(p)) );
+        uint64x2_t b = vreinterpretq_u64_p128(vmull_high_p64(p, p));
+        a = vrax1q_u64(a, b);
+        return vreinterpretq_u8_u64(a);
+    };
 
-    const svuint64_t combined_full =
-      svorr_u64_x(pg, w2_0145, svlsl_n_u64_x(pg, w2_23, 1));
+    uz2 = interleave(uz2);
+    uz2 = interleave(uz2);
+    uz2 = interleave(uz2);
 
-    const svuint64_t result_evens = svpmullb_pair_u64(combined_full, combined_full);
-    const svuint64_t result_odds  = svpmullt_pair_u64(combined_full, combined_full);
-
-    const svuint64_t squares_sve =
-      svorr_u64_x(pg, result_evens, svlsl_n_u64_x(pg, result_odds, 1));
-    const uint8x16_t squares = svget_neonq_u8(svreinterpret_u8_u64(squares_sve));
-
-    return { squares, vgetq_lane_u64(svget_neonq_u64(c), 0) };
+    return { uz2, count };
 }
 
-// Expand the set bits of to_bb into moves originating from `from`, storing them
-// unconditionally. Small means at most 8 targets (knights and kings), so a
-// single 128-bit store suffices; otherwise up to 16 targets are handled with two
-// stores (rooks and bishops reach at most 15). Lanes past the true target count
-// hold junk, but are never read because the returned pointer skips over them.
+// Expand the set bits of to_bb into moves originating from `from`
+// Small means at most 8 targets (knights and kings), so a
+// single 128-bit store suffices
 template<bool Small>
 inline Move* splat_moves_sve2(Move* moveList, Square from, Bitboard to_bb) {
     const auto [squares, count] = get_set_bits_sve2(to_bb);
