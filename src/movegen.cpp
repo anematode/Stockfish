@@ -18,8 +18,6 @@
 
 #include "movegen.h"
 
-#include <arm_neon.h>
-#include <arm_vector_types.h>
 #include <cassert>
 #include <initializer_list>
 
