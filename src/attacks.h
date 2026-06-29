@@ -31,7 +31,7 @@
     #define USE_HYPERBOLA_QUINT
 #elif defined(__loongarch__) && __loongarch_grlen == 64
     #define USE_HYPERBOLA_QUINT
-#elif defined(USE_AVX2) && !defined(USE_PEXT)
+#elif defined(USE_AVX2)
     #include <immintrin.h>
     #define USE_DUAL_HYPERBOLA_QUINT
 #endif
@@ -75,15 +75,17 @@ const Magic& magic(Square s, PieceType pt);
 
 #elif defined(USE_DUAL_HYPERBOLA_QUINT)
 
-struct DualMagic {
-    // file, diagonal, unused, antidiagonal
-    Bitboard maskFile, maskDiag, maskNone, maskAntidiag;
+struct alignas(32) DualMagic {
+    // file, diagonal, rank (if GFNI) or unused (if not), antidiagonal
+    Bitboard maskFile, maskDiag, maskRankOrNone, maskAntidiag;
     // Precomputed 2 * square_bb(sq), 2 * reverse(square_bb(sq))
     Bitboard r, rr;
 
+#ifndef USE_GFNI
     const u8* RESTRICT rankAttacksLookup;
     // 8 * rank_of(sq)
     int shift;
+#endif
 
     // We always compute [bishop, rook] attacks at once, then rely on
     // compiler's DCE and CSE to eliminate unneeded re-computations or extractions.
@@ -94,11 +96,17 @@ struct DualMagic {
     // only, we use a compact lookup table indexed by the 8 bits of the rank's occupancy.
     std::pair<Bitboard, Bitboard> both_attacks_bb(Bitboard occupied) const {
         // Byteswap within 64-bit elements
+        // If GFNI is available, this is a bit reverse and we eschew the rankAttacksLookup
         const auto bswap = [](__m256i v) {
-            return _mm256_shuffle_epi8(v, _mm256_set_epi8(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12,
+            v =  _mm256_shuffle_epi8(v, _mm256_set_epi8(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12,
                                                           13, 14, 15, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
                                                           10, 11, 12, 13, 14, 15));
-        };
+#ifdef USE_GFNI
+            // TODO: AVX512_BMM has u8 bit reversal
+            v = _mm256_gf2p8affine_epi64_epi8(v, _mm256_set1_epi64x(0x8040201008040201), 0);
+#endif
+            return v;
+    };
 
         // Each lane contains a mask and we follow the same HQ algorithm as
         // given above in the ARM64 code path
@@ -114,12 +122,16 @@ struct DualMagic {
         // Lane 0: rook attacks (file only); lane 1: bishop attacks
         __m128i rookBishop =
           _mm_or_si128(_mm256_extracti128_si256(result, 1), _mm256_castsi256_si128(result));
+        Bitboard rook = _mm_cvtsi128_si64(rookBishop);
 
+#ifndef USE_GFNI
         Bitboard rowOccupancy = rankAttacksLookup[(occupied >> shift) & 0xff];
         Bitboard rankAttacks  = rowOccupancy << shift;
+        rook += rankAttacks;
+#endif
 
         // [bishop, rook]
-        return {_mm_extract_epi64(rookBishop, 1), _mm_cvtsi128_si64(rookBishop) + rankAttacks};
+        return {_mm_extract_epi64(rookBishop, 1), rook};
     }
 };
 

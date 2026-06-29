@@ -183,6 +183,7 @@ avxvnni = no
 avx512 = no
 vnni512 = no
 avx512icl = no
+gfni = no
 altivec = no
 vsx = no
 neon = no
@@ -274,6 +275,7 @@ ifeq ($(findstring -avxvnni,$(ARCH)),-avxvnni)
 	sse41 = yes
 	avx2 = yes
 	avxvnni = yes
+	gfni = yes
 	pext = yes
 endif
 
@@ -320,6 +322,7 @@ ifeq ($(findstring -avx512icl,$(ARCH)),-avx512icl)
 	pext = yes
 	avx512 = yes
 	vnni512 = yes
+	gfni = yes
 	avx512icl = yes
 endif
 
@@ -890,6 +893,14 @@ ifeq ($(pext),yes)
 	CXXFLAGS += -DUSE_PEXT
 	ifeq ($(comp),$(filter $(comp),gcc clang mingw icx))
 		CXXFLAGS += -mbmi2 -DUSE_COMPTIME_ATTACKS
+	endif
+endif
+
+### Galois field instructions
+ifeq ($(gfni),yes)
+	CXXFLAGS += -DUSE_GFNI
+	ifeq ($(comp),$(filter $(comp),gcc clang mingw icx))
+		CXXFLAGS += -mgfni
 	endif
 endif
 

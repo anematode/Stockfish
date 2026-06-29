@@ -76,7 +76,7 @@ static void init_magics(Magic magics[][2]) {
 
 // Sliding attacks within a rank, indexed by the slider's file and the
 // 8-bit rank occupancy, yielding the 8-bit attack set on that rank
-constexpr auto RankAttacks = []() {
+[[maybe_unused]] constexpr auto RankAttacks = []() {
     std::array<std::array<u8, 256>, FILE_NB> table{};
     for (int file = 0; file < 8; ++file)
         for (int occ = 0; occ < 256; ++occ)
@@ -90,12 +90,17 @@ static void init_dual_magics(DualMagic magics[]) {
         DualMagic& m        = magics[s];
         m.maskFile          = line_mask(s, NORTH, SOUTH);
         m.maskDiag          = line_mask(s, NORTH_EAST, SOUTH_WEST);
-        m.maskNone          = 0;
+#ifdef USE_GFNI
+        m.maskDiag          = line_mask(s, NORTH_EAST, SOUTH_WEST);
+        m.maskRankOrNone    = line_mask(s, EAST, WEST);
+#else
+        m.maskRankOrNone    = 0;
+        m.rankAttacksLookup = RankAttacks[int(file_of(s))].data();
+        m.shift             = 8 * int(rank_of(s));
+#endif
         m.maskAntidiag      = line_mask(s, NORTH_WEST, SOUTH_EAST);
         m.r                 = square_bb(s) * 2;
         m.rr                = square_bb(Square(63 - int(s))) * 2;
-        m.rankAttacksLookup = RankAttacks[int(file_of(s))].data();
-        m.shift             = 8 * int(rank_of(s));
     }
 }
 
