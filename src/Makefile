@@ -876,7 +876,7 @@ ifeq ($(dotprod),yes)
 endif
 
 ifeq ($(sve2),yes)
-	CXXFLAGS += -march=armv9-a+sve2-bitperm+dotprod+neon-aes -DUSE_SVE2
+	CXXFLAGS += -march=armv9-a+sve2-bitperm+dotprod+aes -DUSE_SVE2
 endif
 
 ifeq ($(lasx),yes)
