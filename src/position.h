@@ -64,6 +64,8 @@ struct StateInfo {
     Bitboard   checkSquares[PIECE_TYPE_NB];
     Piece      capturedPiece;
     int        repetition;
+
+    alignas(8) char boardData[160];
 };
 
 
@@ -220,14 +222,16 @@ class Position {
     std::array<Bitboard, PIECE_TYPE_NB> byTypeBB;
     std::array<Bitboard, COLOR_NB>      byColorBB;
 
-    int          pieceCount[PIECE_NB];
-    int          castlingRightsMask[SQUARE_NB];
-    Square       castlingRookSquare[CASTLING_RIGHT_NB];
-    Bitboard     castlingPath[CASTLING_RIGHT_NB];
+    u8          pieceCount[PIECE_NB];
+
+    // All members before `st` are copied into StateInfo
     StateInfo*   st;
     int          gamePly;
     Color        sideToMove;
     bool         chess960;
+    int          castlingRightsMask[SQUARE_NB];
+    Square       castlingRookSquare[CASTLING_RIGHT_NB];
+    Bitboard     castlingPath[CASTLING_RIGHT_NB];
     DirtyPiece   scratch_dp;
     DirtyThreats scratch_dts;
 };

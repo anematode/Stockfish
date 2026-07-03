@@ -824,6 +824,10 @@ void Position::do_move(Move                      m,
     newSt.previous = st;
     st             = &newSt;
 
+    // Record our board state for undo_move.
+    static_assert(sizeof(st->boardData) == offsetof(Position, st));
+    memcpy(&st->boardData, this, offsetof(Position, st));
+
     // Increment ply counters. In particular, rule50 will be reset to zero later on
     // in case of a capture or a pawn move.
     ++gamePly;
@@ -1064,59 +1068,13 @@ void Position::do_move(Move                      m,
 
 // Unmakes a move. When it returns, the position should
 // be restored to exactly the same state as before the move was made.
-void Position::undo_move(Move m) {
+void Position::undo_move([[maybe_unused]] Move m) {
 
     assert(m.is_ok());
 
+    memcpy(this, &st->boardData, sizeof(st->boardData));
+
     sideToMove = ~sideToMove;
-
-    Color  us   = sideToMove;
-    Square from = m.from_sq();
-    Square to   = m.to_sq();
-    Piece  pc   = piece_on(to);
-
-    assert(empty(from) || m.type_of() == CASTLING);
-    assert(type_of(st->capturedPiece) != KING);
-
-    if (m.type_of() == PROMOTION)
-    {
-        assert(relative_rank(us, to) == RANK_8);
-        assert(type_of(pc) == m.promotion_type());
-        assert(type_of(pc) >= KNIGHT && type_of(pc) <= QUEEN);
-
-        pc = make_piece(us, PAWN);
-        swap_piece(to, pc);
-    }
-
-    if (m.type_of() == CASTLING)
-    {
-        Square rfrom, rto;
-        do_castling<false>(us, from, to, rfrom, rto);
-    }
-    else
-    {
-        move_piece(to, from);  // Put the piece back at the source square
-
-        if (st->capturedPiece)
-        {
-            Square capsq = to;
-
-            if (m.type_of() == EN_PASSANT)
-            {
-                capsq -= pawn_push(us);
-
-                assert(type_of(pc) == PAWN);
-                assert(to == st->previous->epSquare);
-                assert(relative_rank(us, to) == RANK_6);
-                assert(piece_on(capsq) == NO_PIECE);
-                assert(st->capturedPiece == make_piece(~us, PAWN));
-            }
-
-            put_piece(st->capturedPiece, capsq);  // Restore the captured piece
-        }
-    }
-
-    // Finally point our state pointer back to the previous state
     st = st->previous;
     --gamePly;
 
