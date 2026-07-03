@@ -76,8 +76,8 @@ const Magic& magic(Square s, PieceType pt);
 #elif defined(USE_DUAL_HYPERBOLA_QUINT)
 
 struct alignas(32) DualMagic {
-    // file, diagonal, unused, antidiagonal
-    Bitboard maskFile, maskDiag, maskNone, maskAntidiag;
+    // file, diagonal, rank, antidiagonal
+    Bitboard maskFile, maskDiag, maskRank, maskAntidiag;
     // Precomputed 2 * square_bb(sq), 2 * reverse(square_bb(sq))
     Bitboard r, rr;
 
@@ -93,11 +93,40 @@ struct alignas(32) DualMagic {
     // reside in different bytes). Rank atttacks cannot. Thus, for rank attacks
     // only, we use a compact lookup table indexed by the 8 bits of the rank's occupancy.
     std::pair<Bitboard, Bitboard> both_attacks_bb(Bitboard occupied) const {
+        __m256i hqResult = get_hq<false>(_mm256_set1_epi64x(occupied));
+        __m128i hqLo = _mm256_castsi256_si128(hqResult);
+
+        __m128i bishop = _mm_or_si128(_mm256_extracti128_si256(hqResult, 1), hqLo);
+
+        Bitboard rook = _mm_cvtsi128_si64(hqLo);
+        Bitboard rowOccupancy = rankAttacksLookup[(occupied >> shift) & 0xff];
+        Bitboard rankAttacks  = rowOccupancy << shift;
+        rook += rankAttacks;
+
+        // [bishop, rook]
+        return {_mm_extract_epi64(bishop, 1), rook};
+    }
+    
+#ifdef USE_AVX512ICL
+    __m128i get_bishop_rook(__m256i occupied) const {
+        __m256i hqResult = get_hq<true>(occupied);
+        return _mm_or_si128(_mm256_extracti128_si256(hqResult, 1), _mm256_castsi256_si128(hqResult));
+    }
+#endif
+
+private:
+    template <bool DoBitrev>
+    __m256i get_hq(__m256i occupied) const {
         // Byteswap within 64-bit elements
         const auto bswap = [](__m256i v) {
-            return _mm256_shuffle_epi8(v, _mm256_set_epi8(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12,
+            v =  _mm256_shuffle_epi8(v, _mm256_set_epi8(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12,
                                                           13, 14, 15, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
                                                           10, 11, 12, 13, 14, 15));
+#ifdef USE_AVX512ICL
+            if constexpr (DoBitrev)
+                v = _mm256_gf2p8affine_epi64_epi8(v, _mm256_set1_epi64x(0x8040201008040201), 0);
+#endif
+            return v;
         };
 
         // Each lane contains a mask and we follow the same HQ algorithm as
@@ -106,20 +135,12 @@ struct alignas(32) DualMagic {
         const __m256i rs   = _mm256_set1_epi64x(r);
         const __m256i rrs  = _mm256_set1_epi64x(rr);
 
-        __m256i o      = _mm256_and_si256(mask, _mm256_set1_epi64x(occupied));
+        __m256i o      = _mm256_and_si256(mask, occupied);
         __m256i fwd    = _mm256_sub_epi64(o, rs);
         __m256i rev    = bswap(_mm256_sub_epi64(bswap(o), rrs));
         __m256i result = _mm256_and_si256(_mm256_xor_si256(fwd, rev), mask);
 
-        // Lane 0: rook attacks (file only); lane 1: bishop attacks
-        __m128i rookBishop =
-          _mm_or_si128(_mm256_extracti128_si256(result, 1), _mm256_castsi256_si128(result));
-
-        Bitboard rowOccupancy = rankAttacksLookup[(occupied >> shift) & 0xff];
-        Bitboard rankAttacks  = rowOccupancy << shift;
-
-        // [bishop, rook]
-        return {_mm_extract_epi64(rookBishop, 1), _mm_cvtsi128_si64(rookBishop) + rankAttacks};
+        return result;
     }
 };
 

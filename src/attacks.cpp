@@ -84,12 +84,12 @@ static void init_dual_magics(DualMagic magics[]) {
         DualMagic& m        = magics[s];
         m.maskFile          = line_mask(s, NORTH, SOUTH);
         m.maskDiag          = line_mask(s, NORTH_EAST, SOUTH_WEST);
-        m.maskNone          = 0;
+        m.maskRank          = line_mask(s, EAST, WEST);
+        m.rankAttacksLookup = RankAttacks[int(file_of(s))].data();
+        m.shift             = 8 * int(rank_of(s));
         m.maskAntidiag      = line_mask(s, NORTH_WEST, SOUTH_EAST);
         m.r                 = square_bb(s) * 2;
         m.rr                = square_bb(Square(63 - int(s))) * 2;
-        m.rankAttacksLookup = RankAttacks[int(file_of(s))].data();
-        m.shift             = 8 * int(rank_of(s));
     }
 }
 
