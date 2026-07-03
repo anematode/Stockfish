@@ -251,7 +251,7 @@ inline Bitboard Position::pieces() const { return byTypeBB[ALL_PIECES]; }
 
 template<typename... PieceTypes>
 inline Bitboard Position::pieces(PieceTypes... pts) const {
-    return (byTypeBB[pts] | ...);
+    return (byTypeBB[pts] + ...);
 }
 
 inline Bitboard Position::pieces(Color c) const { return byColorBB[c]; }
