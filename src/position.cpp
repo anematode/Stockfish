@@ -1072,7 +1072,7 @@ void Position::undo_move([[maybe_unused]] Move m) {
 
     assert(m.is_ok());
 
-    memcpy(this, &st->boardData, sizeof(st->boardData));
+    memcpy((char*) this, &st->boardData, sizeof(st->boardData));
 
     sideToMove = ~sideToMove;
     st = st->previous;
