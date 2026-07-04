@@ -48,14 +48,18 @@ class MovePicker {
                const SharedHistories*,
                int);
     MovePicker(const Position&, Move, int, const CapturePieceToHistory*);
-    Move next_move();
+    Move next_move(u64 nodesSearched = 0);
     void skip_quiet_moves();
 
    private:
     template<typename Pred>
     Move select(Pred);
+    template<GenType T, typename MoveLike>
+    ExtMove* score(const MoveLike* start, const MoveLike* end);
     template<GenType T>
     ExtMove* score(const MoveList<T>&);
+    template<GenType T>
+    void rescore(Move*, Move*);
 
     const Position&              pos;
     const ButterflyHistory*      mainHistory;
@@ -64,6 +68,7 @@ class MovePicker {
     const PieceToHistory**       continuationHistory;
     const SharedHistories*       sharedHistory;
     Move                         ttMove;
+    u64 lastNodeCount = -1ULL;
     ExtMove *                    cur, *endCur, *endBadCaptures, *endCaptures, *endGenerated;
     int                          stage;
     int                          threshold;

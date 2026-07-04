@@ -191,8 +191,8 @@ MovePicker::MovePicker(const Position& p, Move ttm, int th, const CapturePieceTo
 // Assigns a numerical value to each move in a list, used for sorting.
 // Captures are ordered by Most Valuable Victim (MVV), preferring captures
 // with a good history. Quiets moves are ordered using the history tables.
-template<GenType Type>
-ExtMove* MovePicker::score(const MoveList<Type>& ml) {
+template<GenType Type, typename MoveLike>
+ExtMove* MovePicker::score(const MoveLike* start, const MoveLike* end) {
 
     static_assert(Type == CAPTURES || Type == QUIETS || Type == EVASIONS, "Wrong type");
 
@@ -210,10 +210,10 @@ ExtMove* MovePicker::score(const MoveList<Type>& ml) {
     }
 
     ExtMove* it = cur;
-    for (auto move : ml)
+    for (auto move = start; move != end; ++move)
     {
         ExtMove& m = *it++;
-        m          = move;
+        m          = *move;
 
         const Square    from          = m.from_sq();
         const Square    to            = m.to_sq();
@@ -260,6 +260,11 @@ ExtMove* MovePicker::score(const MoveList<Type>& ml) {
     return it;
 }
 
+template<GenType Type>
+ExtMove* MovePicker::score(const MoveList<Type>& ml) {
+    return score<Type, Move>(ml.begin(), ml.end());
+}
+
 // Returns the next move satisfying a predicate function.
 // This never returns the TT move, as it was emitted before.
 template<typename Pred>
@@ -272,12 +277,30 @@ Move MovePicker::select(Pred filter) {
     return Move::none();
 }
 
+constexpr u64 RescoreNodes = 512;
+
 // This is the most important method of the MovePicker class. We emit one
 // new pseudo-legal move on every call until there are no more moves left,
 // picking the move with the highest score from a list of generated moves.
-Move MovePicker::next_move() {
-
+Move MovePicker::next_move(u64 nodeCount) {
     constexpr int goodQuietThreshold = -14000;
+
+    if (nodeCount > lastNodeCount + RescoreNodes) {
+        lastNodeCount = nodeCount;
+        switch (stage) {
+            case GOOD_QUIET: {
+                score<QUIETS>(cur, endCur);
+                partial_insertion_sort(cur, endCur, -3560 * depth);
+                break;
+            }
+            case EVASION: {
+                score<EVASIONS>(cur, endCur);
+                partial_insertion_sort(cur, endCur, std::numeric_limits<int>::min());
+                break;
+            }
+        }
+    }
+
 top:
     switch (stage)
     {
@@ -297,6 +320,7 @@ top:
         cur = endBadCaptures = moves;
         endCur = endCaptures = score<CAPTURES>(ml);
 
+        lastNodeCount = nodeCount;
         partial_insertion_sort(cur, endCur, std::numeric_limits<int>::min());
         ++stage;
         goto top;
@@ -321,6 +345,7 @@ top:
 
             endCur = endGenerated = score<QUIETS>(ml);
 
+            lastNodeCount = nodeCount;
             partial_insertion_sort(cur, endCur, -3560 * depth);
         }
 
@@ -361,6 +386,7 @@ top:
         cur    = moves;
         endCur = endGenerated = score<EVASIONS>(ml);
 
+        lastNodeCount = nodeCount;
         partial_insertion_sort(cur, endCur, std::numeric_limits<int>::min());
         ++stage;
         [[fallthrough]];
