@@ -129,19 +129,19 @@ struct MoveSorter {
         splat_extmove(m, move, value);
 
         assert(m.value != std::numeric_limits<int>::min());
-        __m256i below = _mm256_cmpgt_epi32(value, sortedValues);
+        const __m256i below = _mm256_cmpgt_epi32(value, sortedValues);
 
-        const __m256i Iota  = _mm256_setr_epi32(0, 1, 2, 3, 4, 5, 6, 7);
-        // Add below ? -1 : 0 to iota to get expand shuffle
-        __m256i expand = _mm256_add_epi32(below, Iota);
+        // Downward shift by one lane
+        const __m256i shift         = _mm256_setr_epi32(0, 0, 1, 2, 3, 4, 5, 6);
+        // Add -1 to iota
+        __m256i expandLut = _mm256_add_epi32(below, _mm256_setr_epi32(0, 1, 2, 3, 4, 5, 6, 7));
 
-        const __m256i shiftedValues = _mm256_permutevar8x32_epi32(sortedValues, expand);
-        const __m256i shiftedMoves  = _mm256_permutevar8x32_epi32(sortedMoves, expand);
+        const __m256i shiftedValues = _mm256_permutevar8x32_epi32(sortedValues, expandLut);
+        const __m256i shiftedMoves  = _mm256_permutevar8x32_epi32(sortedMoves, expandLut);
 
-        // The insertion point is the first lane of the tail and can be ascertained by diffing
-        // the comparison with `value` before and after the expand.
-        // The andn here with expand handles the annoying lane=0 insertion case.
-        const __m256i shiftedBelow  = _mm256_andnot_si256(expand, _mm256_cmpgt_epi32(value, shiftedValues));
+        // The insertion point is the first lane of the tail
+        const __m256i shiftedBelow  = _mm256_blend_epi32(_mm256_permutevar8x32_epi32(below, shift),
+                                                         _mm256_setzero_si256(), 1);
         const __m256i insertionLane = _mm256_andnot_si256(shiftedBelow, below);
 
         sortedValues = _mm256_blendv_epi8(shiftedValues, value, insertionLane);
