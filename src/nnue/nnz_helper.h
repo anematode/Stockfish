@@ -31,8 +31,6 @@ struct NNZInfo {
 
 #if defined(USE_AVX512)
     unsigned count = 0;
-    // indices of non-zero chunks
-    u16 nnz[Dimensions / 4];
 
     #ifdef USE_AVX512ICL
     alignas(64) static constexpr auto Indices = []() {
@@ -46,6 +44,8 @@ struct NNZInfo {
         }
         return indices;
     }();
+    // indices of non-zero chunks
+    u16 nnz[Dimensions / 4];
     #else
     alignas(64) static constexpr auto Indices = []() {
         std::array<std::array<u32, 16>, 2> indices{};
@@ -57,6 +57,8 @@ struct NNZInfo {
         }
         return indices;
     }();
+    // indices of non-zero chunks
+    u32 nnz[Dimensions / 4];
     #endif
 
     struct NNZCursor {
@@ -91,7 +93,7 @@ struct NNZInfo {
                 // Get a bitmask and gather non zero indices
                 const __mmask16 nnzMask = _mm512_test_epi32_mask(neurons, neurons);
                 const __m512i   nnzV    = _mm512_maskz_compress_epi32(nnzMask, indices);
-                _mm512_mask_cvtepi32_storeu_epi16(info.nnz + count, 0xFFFF, nnzV);
+                _mm512_storeu_si512(info.nnz + count, nnzV);
 
                 count += popcount(nnzMask);
                 indices = _mm512_add_epi32(indices, increment);
