@@ -641,8 +641,8 @@ void Position::update_slider_blockers(Color c) const {
 // Slider attacks use the occupied bitboard to indicate occupancy.
 Bitboard Position::attackers_to(Square s, Bitboard occupied) const {
 
-    return (attacks_bb<ROOK>(s, occupied) & pieces(ROOK, QUEEN))
-         | (attacks_bb<BISHOP>(s, occupied) & pieces(BISHOP, QUEEN))
+    return (attacks_bb<ROOK, false>(s, occupied) & pieces(ROOK, QUEEN))
+         | (attacks_bb<BISHOP, false>(s, occupied) & pieces(BISHOP, QUEEN))
          | (attacks_bb<PAWN>(s, BLACK) & pieces(WHITE, PAWN))
          | (attacks_bb<PAWN>(s, WHITE) & pieces(BLACK, PAWN))
          | (attacks_bb<KNIGHT>(s) & pieces(KNIGHT)) | (attacks_bb<KING>(s) & pieces(KING));
@@ -650,8 +650,8 @@ Bitboard Position::attackers_to(Square s, Bitboard occupied) const {
 
 bool Position::attackers_to_exist(Square s, Bitboard occupied, Color c) const {
 
-    return (attacks_bb<ROOK>(s, occupied) & pieces(c, ROOK, QUEEN))
-        || (attacks_bb<BISHOP>(s, occupied) & pieces(c, BISHOP, QUEEN))
+    return (attacks_bb<ROOK, false>(s, occupied) & pieces(c, ROOK, QUEEN))
+        || (attacks_bb<BISHOP, false>(s, occupied) & pieces(c, BISHOP, QUEEN))
         || (attacks_bb<PAWN>(s, ~c) & pieces(c, PAWN))
         || (attacks_bb<KNIGHT>(s) & pieces(c, KNIGHT)) || (attacks_bb<KING>(s) & pieces(c, KING));
 }
@@ -1433,85 +1433,6 @@ bool Position::see_ge(Move m, int threshold) const {
     Bitboard occupied  = pieces() ^ from ^ to;  // xoring to is important for pinned piece logic
     Color    stm       = sideToMove;
     int      res = 1;
-
-#if defined(USE_AVX512ICL)
-    auto intoVec = [] (Bitboard bb) {
-        return _mm_cvtsi64_si128(bb);
-    };
-    auto splat256 = [] (Bitboard bb) {
-        return _mm256_set1_epi64x(bb);
-    };
-    auto splat128 = [] (Bitboard bb) {
-        return _mm_set1_epi64x(bb);
-    };
-
-    const DualMagic& dm = dual_magic(to);
-
-    __m256i occupiedV = splat256(occupied);
-    // PAWN through QUEEN bitboards, i.e., excluding KING
-    __m512i byType = _mm512_maskz_loadu_epi64(0b111110, byTypeBB.data());
-
-    // Lane 0: Rook-like attackers; lane 1: queen-like attackers
-    __m128i bishopRook = _mm_set_epi64x(
-        pieces(QUEEN, BISHOP),
-        pieces(QUEEN, ROOK)
-    );
-    __m128i initialSliders = _mm_and_si128(bishopRook, dm.get_bishop_rook(occupiedV));
-
-    Bitboard nonsliderAttackers = (attacks_bb<PAWN>(to, BLACK) & pieces(WHITE, PAWN))
-         | (attacks_bb<PAWN>(to, WHITE) & pieces(BLACK, PAWN))
-         | (attacks_bb<KNIGHT>(to) & pieces(KNIGHT)) | (attacks_bb<KING>(to) & pieces(KING));
-
-    __m128i attackersV = _mm_or_si128(
-        intoVec(nonsliderAttackers),
-        _mm_or_si128(initialSliders, _mm_shuffle_epi32(initialSliders, 0b1110)));
-
-    assert(Bitboard(_mm_cvtsi128_si64(attackersV)) == attackers_to(to, occupied));
-
-    while (true) {
-        stm = ~stm;
-        // attackers &= occupied
-        attackersV = _mm_and_si128(attackersV, _mm256_castsi256_si128(occupiedV));
-
-        __m128i stmAttackers = _mm_and_si128(attackersV, intoVec(pieces(stm)));
-        __mmask8 anyPinners = _mm_test_epi64_mask(_mm256_castsi256_si128(occupiedV), splat128(pinners(~stm)));
-
-        // stmAttackers &= ~blockers_for_king(stm)
-        stmAttackers = _mm_mask_andnot_epi64(stmAttackers, anyPinners, splat128(blockers_for_king(stm)), stmAttackers);
-
-        // If stm has no more attackers then give up: stm loses
-        if (!_mm_test_epi32_mask(stmAttackers, stmAttackers))
-            break;
-
-        res ^= 1;
-
-        // Find lowest value piece which matches
-        __m512i b = _mm512_broadcastq_epi64(stmAttackers);
-        __mmask8 match = _mm512_test_epi64_mask(b, byType);
-
-        // Extract to lowest lane via compress
-        __m128i bb = _mm512_castsi512_si128(_mm512_maskz_compress_epi64(match, byType));
-        bb = _mm_and_si128(bb, stmAttackers);
-
-        __m256i bbV = _mm256_broadcastq_epi64(
-            _mm_and_si128(_mm_sub_epi64(_mm_setzero_si128(), bb), bb));
-
-        occupiedV = _mm256_xor_si256(bbV, occupiedV);
-
-        if (!match)
-            return (_mm_cvtsi128_si64(attackersV) & ~pieces(stm)) ? res ^ 1 : res;
-
-        if ((swap = PieceValue[lsb(match)] - swap) < res)
-            break;
-
-        __m128i newSliders = _mm_and_si128(bishopRook, dm.get_bishop_rook(occupiedV));
-        attackersV = _mm_or_si128(
-            attackersV, _mm_or_si128(newSliders, _mm_shuffle_epi32(newSliders, 0b1110)));
-    }
-
-    return res;
-#endif
-
     Bitboard attackers = attackers_to(to, occupied);
     Bitboard stmAttackers, bb;
 
@@ -1544,7 +1465,7 @@ bool Position::see_ge(Move m, int threshold) const {
                 break;
             occupied ^= least_significant_square_bb(bb);
 
-            attackers |= attacks_bb<BISHOP>(to, occupied) & pieces(BISHOP, QUEEN);
+            attackers |= attacks_bb<BISHOP, false>(to, occupied) & pieces(BISHOP, QUEEN);
         }
 
         else if ((bb = stmAttackers & pieces(KNIGHT)))
@@ -1560,7 +1481,7 @@ bool Position::see_ge(Move m, int threshold) const {
                 break;
             occupied ^= least_significant_square_bb(bb);
 
-            attackers |= attacks_bb<BISHOP>(to, occupied) & pieces(BISHOP, QUEEN);
+            attackers |= attacks_bb<BISHOP, false>(to, occupied) & pieces(BISHOP, QUEEN);
         }
 
         else if ((bb = stmAttackers & pieces(ROOK)))
@@ -1569,7 +1490,7 @@ bool Position::see_ge(Move m, int threshold) const {
                 break;
             occupied ^= least_significant_square_bb(bb);
 
-            attackers |= attacks_bb<ROOK>(to, occupied) & pieces(ROOK, QUEEN);
+            attackers |= attacks_bb<ROOK, false>(to, occupied) & pieces(ROOK, QUEEN);
         }
 
         else if ((bb = stmAttackers & pieces(QUEEN)))
@@ -1579,8 +1500,8 @@ bool Position::see_ge(Move m, int threshold) const {
             assert(swap >= res);
             occupied ^= least_significant_square_bb(bb);
 
-            attackers |= (attacks_bb<BISHOP>(to, occupied) & pieces(BISHOP, QUEEN))
-                       | (attacks_bb<ROOK>(to, occupied) & pieces(ROOK, QUEEN));
+            attackers |= (attacks_bb<BISHOP, false>(to, occupied) & pieces(BISHOP, QUEEN))
+                       | (attacks_bb<ROOK, false>(to, occupied) & pieces(ROOK, QUEEN));
         }
 
         else  // KING

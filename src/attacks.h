@@ -92,27 +92,26 @@ struct alignas(32) DualMagic {
     // can use a byte reversal rather than a full bit reversal (because all squares
     // reside in different bytes). Rank atttacks cannot. Thus, for rank attacks
     // only, we use a compact lookup table indexed by the 8 bits of the rank's occupancy.
+    template <bool UseGfni>
     std::pair<Bitboard, Bitboard> both_attacks_bb(Bitboard occupied) const {
-        __m256i hqResult = get_hq<false>(_mm256_set1_epi64x(occupied));
+        __m256i hqResult = get_hq<UseGfni>(_mm256_set1_epi64x(occupied));
         __m128i hqLo = _mm256_castsi256_si128(hqResult);
 
-        __m128i bishop = _mm_or_si128(_mm256_extracti128_si256(hqResult, 1), hqLo);
+        __m128i bishopRook = _mm_or_si128(_mm256_extracti128_si256(hqResult, 1), hqLo);
 
-        Bitboard rook = _mm_cvtsi128_si64(hqLo);
-        Bitboard rowOccupancy = rankAttacksLookup[(occupied >> shift) & 0xff];
-        Bitboard rankAttacks  = rowOccupancy << shift;
-        rook += rankAttacks;
+        Bitboard rook;
+        if constexpr (!UseGfni) {
+            rook =  _mm_cvtsi128_si64(hqLo);
+            Bitboard rowOccupancy = rankAttacksLookup[(occupied >> shift) & 0xff];
+            Bitboard rankAttacks  = rowOccupancy << shift;
+            rook += rankAttacks;
+        } else {
+            rook = _mm_cvtsi128_si64(bishopRook);
+        }
 
         // [bishop, rook]
-        return {_mm_extract_epi64(bishop, 1), rook};
+        return {_mm_extract_epi64(bishopRook, 1), rook};
     }
-    
-#ifdef USE_AVX512ICL
-    __m128i get_bishop_rook(__m256i occupied) const {
-        __m256i hqResult = get_hq<true>(occupied);
-        return _mm_or_si128(_mm256_extracti128_si256(hqResult, 1), _mm256_castsi256_si128(hqResult));
-    }
-#endif
 
 private:
     template <bool DoBitrev>
@@ -280,13 +279,13 @@ inline Bitboard attacks_bb(Square s, Color c = COLOR_NB) {
 // Returns the attacks by the given piece
 // assuming the board is occupied according to the passed Bitboard.
 // Sliding piece attacks do not continue passed an occupied square.
-template<PieceType Pt>
+template<PieceType Pt, bool UseGfni = true>
 inline Bitboard attacks_bb(Square s, Bitboard occupied) {
 
     assert(Pt != PAWN && is_ok(s));
 
 #ifdef USE_DUAL_HYPERBOLA_QUINT
-    const auto [bishop, rook] = dual_magic(s).both_attacks_bb(occupied);
+    const auto [bishop, rook] = dual_magic(s).both_attacks_bb<UseGfni>(occupied);
 
     switch (Pt)
     {
