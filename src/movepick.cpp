@@ -158,7 +158,8 @@ MovePicker::MovePicker(const Position&              p,
                        const CapturePieceToHistory* cph,
                        const PieceToHistory**       ch,
                        const SharedHistories*       sh,
-                       int                          pl) :
+                       int                          pl,
+                       bool su) :
     pos(p),
     mainHistory(mh),
     lowPlyHistory(lph),
@@ -167,7 +168,8 @@ MovePicker::MovePicker(const Position&              p,
     sharedHistory(sh),
     ttMove(ttm),
     depth(d),
-    ply(pl) {
+    ply(pl),
+    skipUnderpromos(su) {
 
     if (pos.checkers())
         stage = EVASION_TT + !(ttm && pos.pseudo_legal(ttm));
@@ -317,7 +319,7 @@ top:
     case QUIET_INIT :
         if (!skipQuiets)
         {
-            MoveList<QUIETS> ml(pos);
+            MoveList<QUIETS> ml(pos, skipUnderpromos);
 
             endCur = endGenerated = score<QUIETS>(ml);
 

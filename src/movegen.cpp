@@ -84,7 +84,7 @@ inline Move* splat_moves(Move* moveList, Square from, Bitboard to_bb) {
 #endif
 
 template<GenType Type, Direction D, bool Enemy>
-Move* make_promotions(Move* moveList, [[maybe_unused]] Square to) {
+Move* make_promotions(Move* moveList, [[maybe_unused]] Square to, bool skipUnderpromos) {
 
     constexpr bool all = Type == EVASIONS || Type == NON_EVASIONS;
 
@@ -93,8 +93,10 @@ Move* make_promotions(Move* moveList, [[maybe_unused]] Square to) {
 
     if constexpr ((Type == CAPTURES && Enemy) || (Type == QUIETS && !Enemy) || all)
     {
-        *moveList++ = Move::make<PROMOTION>(to - D, to, ROOK);
-        *moveList++ = Move::make<PROMOTION>(to - D, to, BISHOP);
+        if (!skipUnderpromos) {
+            *moveList++ = Move::make<PROMOTION>(to - D, to, ROOK);
+            *moveList++ = Move::make<PROMOTION>(to - D, to, BISHOP);
+        }
         *moveList++ = Move::make<PROMOTION>(to - D, to, KNIGHT);
     }
 
@@ -103,7 +105,7 @@ Move* make_promotions(Move* moveList, [[maybe_unused]] Square to) {
 
 
 template<Color Us, GenType Type>
-Move* generate_pawn_moves(const Position& pos, Move* moveList, Bitboard target) {
+Move* generate_pawn_moves(const Position& pos, Move* moveList, Bitboard target, bool skipUnderpromos) {
 
     constexpr Color     Them     = ~Us;
     constexpr Bitboard  TRank7BB = (Us == WHITE ? Rank7BB : Rank2BB);
@@ -145,13 +147,13 @@ Move* generate_pawn_moves(const Position& pos, Move* moveList, Bitboard target) 
             b3 &= target;
 
         while (b1)
-            moveList = make_promotions<Type, UpRight, true>(moveList, pop_lsb(b1));
+            moveList = make_promotions<Type, UpRight, true>(moveList, pop_lsb(b1), skipUnderpromos);
 
         while (b2)
-            moveList = make_promotions<Type, UpLeft, true>(moveList, pop_lsb(b2));
+            moveList = make_promotions<Type, UpLeft, true>(moveList, pop_lsb(b2), skipUnderpromos);
 
         while (b3)
-            moveList = make_promotions<Type, Up, false>(moveList, pop_lsb(b3));
+            moveList = make_promotions<Type, Up, false>(moveList, pop_lsb(b3), skipUnderpromos);
     }
 
     // Standard and en passant captures
@@ -204,7 +206,7 @@ Move* generate_moves(const Position& pos, Move* moveList, Bitboard target) {
 
 
 template<Color Us, GenType Type>
-Move* generate_all(const Position& pos, Move* moveList) {
+Move* generate_all(const Position& pos, Move* moveList, bool skipUnderpromos) {
 
     static_assert(Type != LEGAL, "Unsupported type in generate_all()");
 
@@ -219,7 +221,7 @@ Move* generate_all(const Position& pos, Move* moveList) {
                : Type == CAPTURES     ? pos.pieces(~Us)
                                       : ~pos.pieces();  // QUIETS
 
-        moveList = generate_pawn_moves<Us, Type>(pos, moveList, target);
+        moveList = generate_pawn_moves<Us, Type>(pos, moveList, target, skipUnderpromos);
         moveList = generate_moves<Us, KNIGHT>(pos, moveList, target);
         moveList = generate_moves<Us, BISHOP>(pos, moveList, target);
         moveList = generate_moves<Us, ROOK>(pos, moveList, target);
@@ -248,27 +250,27 @@ Move* generate_all(const Position& pos, Move* moveList) {
 //
 // Returns a pointer to the end of the move list.
 template<GenType Type>
-Move* generate(const Position& pos, Move* moveList) {
+Move* generate(const Position& pos, Move* moveList, bool skipUnderpromos) {
 
     static_assert(Type != LEGAL, "Unsupported type in generate()");
     assert((Type == EVASIONS) == bool(pos.checkers()));
 
     Color us = pos.side_to_move();
 
-    return us == WHITE ? generate_all<WHITE, Type>(pos, moveList)
-                       : generate_all<BLACK, Type>(pos, moveList);
+    return us == WHITE ? generate_all<WHITE, Type>(pos, moveList, skipUnderpromos)
+                       : generate_all<BLACK, Type>(pos, moveList, skipUnderpromos);
 }
 
 // Explicit template instantiations
-template Move* generate<CAPTURES>(const Position&, Move*);
-template Move* generate<QUIETS>(const Position&, Move*);
-template Move* generate<EVASIONS>(const Position&, Move*);
-template Move* generate<NON_EVASIONS>(const Position&, Move*);
+template Move* generate<CAPTURES>(const Position&, Move*, bool);
+template Move* generate<QUIETS>(const Position&, Move*, bool);
+template Move* generate<EVASIONS>(const Position&, Move*, bool);
+template Move* generate<NON_EVASIONS>(const Position&, Move*, bool);
 
 // generate<LEGAL> generates all the legal moves in the given position
 
 template<>
-Move* generate<LEGAL>(const Position& pos, Move* moveList) {
+Move* generate<LEGAL>(const Position& pos, Move* moveList, bool) {
 
     Color    us     = pos.side_to_move();
     Bitboard pinned = pos.blockers_for_king(us) & pos.pieces(us);
@@ -276,7 +278,7 @@ Move* generate<LEGAL>(const Position& pos, Move* moveList) {
     Move*    cur    = moveList;
 
     moveList =
-      pos.checkers() ? generate<EVASIONS>(pos, moveList) : generate<NON_EVASIONS>(pos, moveList);
+      pos.checkers() ? generate<EVASIONS>(pos, moveList, false) : generate<NON_EVASIONS>(pos, moveList, false);
     while (cur != moveList)
         if (((pinned & cur->from_sq()) || cur->from_sq() == ksq || cur->type_of() == EN_PASSANT)
             && !pos.legal(*cur))
