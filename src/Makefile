@@ -995,7 +995,7 @@ endif
 ### 3.11 Inline settings
 ifeq ($(optimize), yes)
 	ifeq ($(comp), clang)
-		CXXFLAGS += -Xclang -mllvm -Xclang -inline-threshold=500
+		CXXFLAGS += -Xclang -mllvm -Xclang -inline-threshold=500 -Xclang -mllvm -Xclang -enable-ipra
 	endif
 endif
 
