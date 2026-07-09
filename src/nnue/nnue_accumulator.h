@@ -91,11 +91,7 @@ struct AccumulatorCaches {
 };
 
 
-struct AccumulatorState: public Accumulator {
-    DirtyPiece     dirtyPiece;
-    DirtyThreats   dirtyThreats;
-    DirtyPawnPairs dirtyPawnPairs;
-};
+struct AccumulatorState: public Accumulator, Dirties {};
 
 class AccumulatorStack {
    public:
@@ -103,9 +99,9 @@ class AccumulatorStack {
 
     [[nodiscard]] const AccumulatorState& latest() const noexcept;
 
-    void                                                    reset() noexcept;
-    std::tuple<DirtyPiece&, DirtyThreats&, DirtyPawnPairs&> push() noexcept;
-    void                                                    pop() noexcept;
+    void     reset() noexcept;
+    Dirties& push() noexcept;
+    void     pop() noexcept;
 
     void evaluate(const Position&           pos,
                   const FeatureTransformer& featureTransformer,

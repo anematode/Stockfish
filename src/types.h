@@ -350,6 +350,12 @@ struct DirtyPawnPairs {
     Bitboard after[COLOR_NB];
 };
 
+struct Dirties {
+    DirtyPiece     dirtyPiece;
+    DirtyThreats   dirtyThreats;
+    DirtyPawnPairs dirtyPawnPairs;
+};
+
     #define ENABLE_INCR_OPERATORS_ON(T) \
         constexpr T& operator++(T& d) { return d = T(int(d) + 1); } \
         constexpr T& operator--(T& d) { return d = T(int(d) - 1); }

@@ -209,8 +209,8 @@ inline sf_always_inline IndexType FullThreats::make_index(
 // Get a list of indices for active features in ascending order
 
 void FullThreats::append_active_indices(Color perspective, const Position& pos, IndexList& active) {
-    const Square   ksq      = pos.square<KING>(perspective);
-    const Bitboard occupied = pos.pieces();
+    const Square   ksq                = pos.square<KING>(perspective);
+    const Bitboard occupied           = pos.pieces();
     const Bitboard pawnTargets        = pos.pieces(KNIGHT, ROOK);
     const Bitboard minorSliderTargets = pos.pieces(PAWN, KNIGHT, BISHOP, ROOK);
     const Bitboard queenTargets       = pos.pieces(PAWN, KNIGHT, BISHOP, ROOK, QUEEN);
@@ -220,15 +220,15 @@ void FullThreats::append_active_indices(Color perspective, const Position& pos, 
         const Color c = Color(perspective ^ color);
 
         {
-            const Piece    attacker = make_piece(c, PAWN);
-            const Bitboard cPawns   = pos.pieces(c, PAWN);
-            auto process_pawn_attacks = [&](Bitboard attacks, Direction attkDir) {
+            const Piece    attacker             = make_piece(c, PAWN);
+            const Bitboard cPawns               = pos.pieces(c, PAWN);
+            auto           process_pawn_attacks = [&](Bitboard attacks, Direction attkDir) {
                 while (attacks)
                 {
                     Square    to       = pop_lsb(attacks);
                     Square    from     = to - attkDir;
                     Piece     attacked = pos.piece_on(to);
-                    IndexType index    = make_index(perspective, attacker, from, to, attacked, ksq);
+                    IndexType index = make_index(perspective, attacker, from, to, attacked, ksq);
                     active.push_back_if_lt(index, Dimensions);
                 }
             };

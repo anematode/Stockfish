@@ -62,14 +62,14 @@ void AccumulatorStack::reset() noexcept {
     size = 1;
 }
 
-std::tuple<DirtyPiece&, DirtyThreats&, DirtyPawnPairs&> AccumulatorStack::push() noexcept {
+Dirties& AccumulatorStack::push() noexcept {
     assert(size < MaxSize);
     auto& st = accumulators[size];
     st.computed.fill(false);
     new (&st.dirtyThreats) DirtyThreats;
     new (&st.dirtyPawnPairs) DirtyPawnPairs;
     size++;
-    return {st.dirtyPiece, st.dirtyThreats, st.dirtyPawnPairs};
+    return st;
 }
 
 void AccumulatorStack::pop() noexcept {

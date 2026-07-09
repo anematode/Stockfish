@@ -807,9 +807,7 @@ bool Position::gives_check(Move m) const {
 void Position::do_move(Move                      m,
                        StateInfo&                newSt,
                        bool                      givesCheck,
-                       DirtyPiece&               dp,
-                       DirtyThreats&             dts,
-                       DirtyPawnPairs&           dpps,
+                       Dirties&                  dirties,
                        const TranspositionTable* tt      = nullptr,
                        const SharedHistories*    history = nullptr) {
 
@@ -830,6 +828,10 @@ void Position::do_move(Move                      m,
     ++gamePly;
     ++st->rule50;
     ++st->pliesFromNull;
+
+    auto& dpps = dirties.dirtyPawnPairs;
+    auto& dts  = dirties.dirtyThreats;
+    auto& dp   = dirties.dirtyPiece;
 
     dpps.before[WHITE] = pieces(WHITE, PAWN);
     dpps.before[BLACK] = pieces(BLACK, PAWN);
