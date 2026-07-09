@@ -39,7 +39,8 @@ static inline __m256i pp_idx_epi16(__m256i a, __m256i b) {
     const __m256i hi   = _mm256_max_epu16(a, b);
     const __m256i lo   = _mm256_min_epu16(a, b);
     const __m256i prod = _mm256_mullo_epi16(hi, _mm256_sub_epi16(hi, _mm256_set1_epi16(1)));
-    return _mm256_add_epi16(_mm256_add_epi16(_mm256_srli_epi16(prod, 1), lo), _mm256_set1_epi16(i16(PP_3Wide::IndexBase)));
+    return _mm256_add_epi16(_mm256_add_epi16(_mm256_srli_epi16(prod, 1), lo),
+                            _mm256_set1_epi16(i16(PP_3Wide::IndexBase)));
 }
 #endif
 
@@ -89,11 +90,11 @@ void PP_3Wide::append_active_indices(Color perspective, const Position& pos, Ind
     }
 }
 
-void PP_3Wide::append_changed_indices(Color                   perspective,
-                                      Square                  ksq,
-                                      const DiffType&         diff,
-                                      IndexList&              removed,
-                                      IndexList&              added,
+void PP_3Wide::append_changed_indices(Color                                    perspective,
+                                      Square                                   ksq,
+                                      const DiffType&                          diff,
+                                      IndexList&                               removed,
+                                      IndexList&                               added,
                                       [[maybe_unused]] const ThreatWeightType* prefetchBase,
                                       [[maybe_unused]] IndexType               prefetchStride) {
 

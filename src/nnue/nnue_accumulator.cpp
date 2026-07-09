@@ -439,16 +439,16 @@ void update_accumulator_incremental(Color                     perspective,
     {
         ThreatFeatureSet::append_changed_indices(perspective, ksq, dirtyThreats, thrRemoved,
                                                  thrAdded, threatBase, pfStride);
-        PairFeatureSet::append_changed_indices(perspective, ksq, dirtyPawnPairs, thrRemoved, thrAdded,
-                                               ppBase, pfStride);
+        PairFeatureSet::append_changed_indices(perspective, ksq, dirtyPawnPairs, thrRemoved,
+                                               thrAdded, ppBase, pfStride);
         PSQFeatureSet::append_changed_indices(perspective, ksq, dirtyPiece, psqRemoved, psqAdded);
     }
     else
     {
         ThreatFeatureSet::append_changed_indices(perspective, ksq, dirtyThreats, thrAdded,
                                                  thrRemoved, threatBase, pfStride);
-        PairFeatureSet::append_changed_indices(perspective, ksq, dirtyPawnPairs, thrAdded, thrRemoved,
-                                               ppBase, pfStride);
+        PairFeatureSet::append_changed_indices(perspective, ksq, dirtyPawnPairs, thrAdded,
+                                               thrRemoved, ppBase, pfStride);
         PSQFeatureSet::append_changed_indices(perspective, ksq, dirtyPiece, psqAdded, psqRemoved);
     }
 

@@ -37,8 +37,8 @@ class PP_3Wide {
     static constexpr IndexType Dimensions = PawnIds * (PawnIds - 1) / 2;
 
     static constexpr IndexType IndexBase = 59808;  // Indexing placed after full threats
-    using IndexList                                = ValueList<u16, 256>;
-    using DiffType                                 = DirtyPawnPairs;
+    using IndexList                      = ValueList<u16, 256>;
+    using DiffType                       = DirtyPawnPairs;
 
     static IndexType make_index(
       Color perspective, Color color, Square from, Square to, Color pairedColor, Square ksq);
