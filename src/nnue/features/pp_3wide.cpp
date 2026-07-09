@@ -39,7 +39,7 @@ static inline __m256i pp_idx_epi16(__m256i a, __m256i b) {
     const __m256i hi   = _mm256_max_epu16(a, b);
     const __m256i lo   = _mm256_min_epu16(a, b);
     const __m256i prod = _mm256_mullo_epi16(hi, _mm256_sub_epi16(hi, _mm256_set1_epi16(1)));
-    return _mm256_add_epi16(_mm256_srli_epi16(prod, 1), lo);
+    return _mm256_add_epi16(_mm256_add_epi16(_mm256_srli_epi16(prod, 1), lo), _mm256_set1_epi16(i16(PP_3Wide::IndexBase)));
 }
 #endif
 
@@ -60,7 +60,7 @@ inline sf_always_inline IndexType PP_3Wide::make_index(
     const IndexType hi  = std::max(idA, idB);
     const IndexType lo  = std::min(idA, idB);
 
-    return hi * (hi - 1) / 2 + lo;
+    return hi * (hi - 1) / 2 + lo + IndexBase;
 }
 
 void PP_3Wide::append_active_indices(Color perspective, const Position& pos, IndexList& active) {
@@ -94,8 +94,8 @@ void PP_3Wide::append_changed_indices(Color                   perspective,
                                       const DiffType&         diff,
                                       IndexList&              removed,
                                       IndexList&              added,
-                                      const ThreatWeightType* prefetchBase,
-                                      IndexType               prefetchStride) {
+                                      [[maybe_unused]] const ThreatWeightType* prefetchBase,
+                                      [[maybe_unused]] IndexType               prefetchStride) {
 
     const Bitboard whiteBefore = diff.before[WHITE];
     const Bitboard blackBefore = diff.before[BLACK];
@@ -107,10 +107,7 @@ void PP_3Wide::append_changed_indices(Color                   perspective,
 
 #ifdef USE_AVX512ICL
     const u8      orientation = u8(FullThreats::OrientTBL[ksq]) ^ u8(56 * perspective);
-    const __m512i iota        = _mm512_set_epi8(
-      63, 62, 61, 60, 59, 58, 57, 56, 55, 54, 53, 52, 51, 50, 49, 48, 47, 46, 45, 44, 43, 42, 41,
-      40, 39, 38, 37, 36, 35, 34, 33, 32, 31, 30, 29, 28, 27, 26, 25, 24, 23, 22, 21, 20, 19, 18,
-      17, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0);
+    const __m512i iota        = AllSquares;
     const __m512i adjusted =
       _mm512_sub_epi8(_mm512_xor_si512(iota, _mm512_set1_epi8(orientation)), _mm512_set1_epi8(8));
 
@@ -138,11 +135,6 @@ void PP_3Wide::append_changed_indices(Color                   perspective,
 
             u16* w = out.make_space(n);
             _mm256_storeu_epi16(w, feats);
-
-            if (prefetchBase)
-                for (int i = 0; i < n; ++i)
-                    prefetch<PrefetchRw::READ, PrefetchLoc::LOW>(reinterpret_cast<const void*>(
-                      reinterpret_cast<uintptr_t>(prefetchBase) + w[i] * prefetchStride));
         }
     };
 #else
