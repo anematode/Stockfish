@@ -82,13 +82,15 @@ class SqrClippedReLU {
         const auto          out       = reinterpret_cast<__m256i*>(output);
         for (IndexType i = 0; i < NumChunks; ++i)
         {
-            const __m256i words0 = _mm512_cvtsepi32_epi16(_mm512_load_si512(&in[i * 2 + 0]));
-            const __m256i words1 = _mm512_cvtsepi32_epi16(_mm512_load_si512(&in[i * 2 + 1]));
-            __m512i       words  = _mm512_inserti64x4(_mm512_castsi256_si512(words0), words1, 1);
+            __m512i words = _mm512_packs_epi32(_mm512_load_si512(&in[i * 2 + 0]),
+                                               _mm512_load_si512(&in[i * 2 + 1]));
+            words         = _mm512_srli_epi16(_mm512_mulhi_epi16(words, words), SimdShiftAmount);
+            words         = _mm512_packs_epi16(words, words);
 
-            words = _mm512_srli_epi16(_mm512_mulhi_epi16(words, words), SimdShiftAmount);
+            __m256i unshuffled = _mm512_castsi512_si256(_mm512_permutexvar_epi32(
+              _mm512_castsi256_si512(_mm256_setr_epi32(0, 4, 8, 12, 1, 5, 9, 13)), words));
 
-            _mm256_store_si256(&out[i], _mm512_cvtsepi16_epi8(words));
+            _mm256_store_si256(&out[i], unshuffled);
         }
         constexpr IndexType Start = NumChunks * 32;
 
