@@ -858,6 +858,8 @@ Value Search::Worker::search(
         && (ttData.bound & (ttData.value >= beta ? BOUND_LOWER : BOUND_UPPER))
         && (cutNode == (ttData.value >= beta) || depth > 4))
     {
+        prefetch(tt.first_entry(pos.prefetch_key(ttData.move)));
+
         // If ttMove is quiet, update move sorting heuristics on TT hit
         if (ttData.move && ttData.value >= beta)
         {
