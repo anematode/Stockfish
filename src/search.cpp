@@ -24,6 +24,7 @@
 #include <cassert>
 #include <chrono>
 #include <cmath>
+#include <csetjmp>
 #include <cstdint>
 #include <cstdlib>
 #include <initializer_list>
@@ -263,6 +264,8 @@ void Search::Worker::start_searching() {
     main_manager()->updates.onBestmove(bestmove, ponder);
 }
 
+thread_local jmp_buf end_search;
+
 // Main iterative deepening loop. It calls search()
 // repeatedly with increasing depth until the allocated thinking time has been
 // consumed, the user stops the search, or the maximum search depth is reached.
@@ -392,7 +395,17 @@ bool Search::Worker::iterative_deepening() {
                 Depth adjustedDepth =
                   std::max(1, rootDepth - failedHighCnt - 3 * (searchAgainCounter + 1) / 4);
                 rootDelta = beta - alpha;
-                bestValue = search<Root>(rootPos, ss, alpha, beta, adjustedDepth, false);
+
+                Position p(rootPos);
+                ([&] () {
+                    if (setjmp(end_search) == 0) {
+                        bestValue = search<Root>(rootPos, ss, alpha, beta, adjustedDepth, false);
+                    } else {
+                        // aborted search
+                        bestValue = VALUE_NONE;
+                    }
+                }());
+                rootPos = p;
 
                 // Bring the best move to the front. It is critical that sorting
                 // is done with a stable algorithm because all the values but the
@@ -767,7 +780,10 @@ Value Search::Worker::search(
     if (!rootNode)
     {
         // Step 2. Check for aborted search and immediate draw
-        if (threads.stop.load(std::memory_order_relaxed) || pos.is_draw(ss->ply)
+        if (threads.stop.load(std::memory_order_relaxed))
+            longjmp(end_search, 1);
+
+        if (pos.is_draw(ss->ply)
             || ss->ply >= MAX_PLY)
             return (ss->ply >= MAX_PLY && !ss->inCheck) ? evaluate(pos) : value_draw(nodes);
 

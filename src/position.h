@@ -88,8 +88,8 @@ class Position {
     static void init();
 
     Position()                           = default;
-    Position(const Position&)            = delete;
-    Position& operator=(const Position&) = delete;
+    Position(const Position&)            = default;
+    Position& operator=(const Position&) = default;
 
     // FEN string input/output
     std::optional<PositionSetError> set(const std::string& fenStr, bool isChess960, StateInfo* si);
