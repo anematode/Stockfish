@@ -19,7 +19,7 @@
 #ifndef MOVEGEN_H_INCLUDED
 #define MOVEGEN_H_INCLUDED
 
-#include <algorithm>  // IWYU pragma: keep
+#include <algorithm>
 
 #include "misc.h"
 #include "types.h"

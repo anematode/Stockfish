@@ -27,7 +27,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <limits>
-#include <type_traits>  // IWYU pragma: keep
+#include <type_traits>
 
 #include "memory.h"
 #include "misc.h"

@@ -27,7 +27,7 @@
 #include "../types.h"
 #include "nnue_architecture.h"
 #include "nnue_common.h"
-#include "nnue_feature_transformer.h"  // IWYU pragma: keep
+#include "nnue_feature_transformer.h"
 #include "simd.h"
 
 namespace Stockfish::Eval::NNUE {

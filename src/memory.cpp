@@ -28,7 +28,6 @@
 #if defined(__linux__) && !defined(__ANDROID__)
     #include <errno.h>
     #include <sys/mman.h>
-    // IWYU pragma: no_include <bits/mman-map-flags-generic.h>
     #include <cstring>
     #include <mutex>
     #include <map>

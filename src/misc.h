@@ -27,8 +27,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
-#include <exception>  // IWYU pragma: keep
-// IWYU pragma: no_include <__exception/terminate.h>
+#include <exception>
 #include <functional>
 #include <filesystem>
 #include <iosfwd>
