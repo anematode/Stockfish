@@ -203,7 +203,7 @@ Move* generate_moves(const Position& pos, Move* moveList, Bitboard target) {
 }
 
 
-template<Color Us, GenType Type>
+template<Color Us, GenType Type, unsigned PresentSet = -1U>
 Move* generate_all(const Position& pos, Move* moveList) {
 
     static_assert(Type != LEGAL, "Unsupported type in generate_all()");
@@ -219,18 +219,23 @@ Move* generate_all(const Position& pos, Move* moveList) {
                : Type == CAPTURES     ? pos.pieces(~Us)
                                       : ~pos.pieces();  // QUIETS
 
-        moveList = generate_pawn_moves<Us, Type>(pos, moveList, target);
-        moveList = generate_moves<Us, KNIGHT>(pos, moveList, target);
-        moveList = generate_moves<Us, BISHOP>(pos, moveList, target);
-        moveList = generate_moves<Us, ROOK>(pos, moveList, target);
-        moveList = generate_moves<Us, QUEEN>(pos, moveList, target);
+        if (PresentSet & (1 << PAWN))
+            moveList = generate_pawn_moves<Us, Type>(pos, moveList, target);
+        if (PresentSet & (1 << KNIGHT))
+            moveList = generate_moves<Us, KNIGHT>(pos, moveList, target);
+        if (PresentSet & (1 << BISHOP))
+            moveList = generate_moves<Us, BISHOP>(pos, moveList, target);
+        if (PresentSet & (1 << ROOK))
+            moveList = generate_moves<Us, ROOK>(pos, moveList, target);
+        if (PresentSet & (1 << QUEEN))
+            moveList = generate_moves<Us, QUEEN>(pos, moveList, target);
     }
 
     Bitboard b = Attacks::attacks_bb<KING>(ksq) & (Type == EVASIONS ? ~pos.pieces(Us) : target);
 
     moveList = splat_moves(moveList, ksq, b);
 
-    if ((Type == QUIETS || Type == NON_EVASIONS) && pos.can_castle(Us & ANY_CASTLING))
+    if (PresentSet & (1 << ROOK) && (Type == QUIETS || Type == NON_EVASIONS) && pos.can_castle(Us & ANY_CASTLING))
         for (CastlingRights cr : {Us & KING_SIDE, Us & QUEEN_SIDE})
             if (!pos.castling_impeded(cr) && pos.can_castle(cr))
                 *moveList++ = Move::make<CASTLING>(ksq, pos.castling_rook_square(cr));
@@ -238,8 +243,27 @@ Move* generate_all(const Position& pos, Move* moveList) {
     return moveList;
 }
 
-}  // namespace
+    using ArrayC = std::array<decltype(&generate_all<Color(0), GenType(0), 0>), 4>;
+    using ArrayB = std::array<ArrayC, 2>;
+    using ArrayA = std::array<ArrayB, 32>;
 
+    template <int PtSet, int Us, usize... Type>
+    constexpr ArrayC make_array_c(std::index_sequence<Type...>) {
+        return { &generate_all<Color(Us), GenType(Type), (PtSet << 1)>... };
+    }
+
+    template <int PtSet, usize... Us>
+    constexpr ArrayB make_array_b(std::index_sequence<Us...>) {
+        return { make_array_c<PtSet, Us>(std::make_index_sequence<4>{})... };
+    }
+
+    template <usize... PtSet>
+    constexpr ArrayA make_array_a(std::index_sequence<PtSet...>) {
+        return { make_array_b<PtSet>(std::make_index_sequence<2>{})... };
+    }
+
+    constexpr ArrayA Generated = make_array_a(std::make_index_sequence<32>{});
+} // namespace
 
 // <CAPTURES>     Generates all pseudo-legal captures plus queen promotions
 // <QUIETS>       Generates all pseudo-legal non-captures and underpromotions
@@ -254,9 +278,7 @@ Move* generate(const Position& pos, Move* moveList) {
     assert((Type == EVASIONS) == bool(pos.checkers()));
 
     Color us = pos.side_to_move();
-
-    return us == WHITE ? generate_all<WHITE, Type>(pos, moveList)
-                       : generate_all<BLACK, Type>(pos, moveList);
+    return Generated[pos.pt_mask(us)][us][Type](pos, moveList);
 }
 
 // Explicit template instantiations
@@ -286,5 +308,6 @@ Move* generate<LEGAL>(const Position& pos, Move* moveList) {
 
     return moveList;
 }
+
 
 }  // namespace Stockfish

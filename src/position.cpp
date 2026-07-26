@@ -443,7 +443,6 @@ Position::set(const string& fenStr, bool isChess960, StateInfo* si) {
     return std::nullopt;
 }
 
-
 // Helper function used to set castling
 // rights given the corresponding color and the rook starting square.
 void Position::set_castling_right(Color c, Square rfrom) {
@@ -488,6 +487,7 @@ void Position::set_state() const {
 
     st->key               = 0;
     st->minorPieceKey     = 0;
+    st->ptMask[WHITE] = st->ptMask[BLACK] = 0;
     st->nonPawnKey[WHITE] = st->nonPawnKey[BLACK] = 0;
     st->pawnKey                                   = Zobrist::noPawns;
     st->nonPawnMaterial[WHITE] = st->nonPawnMaterial[BLACK] = VALUE_ZERO;
@@ -500,6 +500,9 @@ void Position::set_state() const {
         Square s  = pop_lsb(b);
         Piece  pc = piece_on(s);
         st->key ^= Zobrist::psq[pc][s];
+
+        if (type_of(pc) != KING)
+            st->ptMask[color_of(pc)] |= 1 << (type_of(pc) - PAWN);
 
         if (type_of(pc) == PAWN)
             st->pawnKey ^= Zobrist::psq[pc][s];
@@ -1022,8 +1025,10 @@ void Position::do_move(Move                      m,
     if (m.type_of() != CASTLING)
     {
         Piece toPc = pc;
-        if (m.type_of() == PROMOTION)
+        if (m.type_of() == PROMOTION) {
             toPc = make_piece(us, m.promotion_type());
+            st->ptMask[us] |= 1 << (m.promotion_type() - PAWN);
+        }
 
         if (captured && m.type_of() != EN_PASSANT)
         {
@@ -1036,6 +1041,10 @@ void Position::do_move(Move                      m,
         {
             remove_piece(from, &dts);
             put_piece(toPc, to, &dts);
+        }
+
+        if (captured && pieceCount[captured] == 0) {
+            st->ptMask[~us] &= ~(1 << (type_of(captured) - PAWN));
         }
     }
 

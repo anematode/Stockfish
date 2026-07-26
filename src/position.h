@@ -54,6 +54,7 @@ struct StateInfo {
     int    rule50;
     int    pliesFromNull;
     Square epSquare;
+    u8     ptMask[COLOR_NB];
 
     // Not copied when making a move (will be recomputed anyhow)
     Key        key;
@@ -113,6 +114,7 @@ class Position {
     int count() const;
     template<PieceType Pt>
     Square square(Color c) const;
+    u8 pt_mask(Color us) const;
 
     // Castling
     bool   can_castle(CastlingRights cr) const;
@@ -189,7 +191,7 @@ class Position {
     void remove_piece(Square s, DirtyThreats* const dts = nullptr);
     void swap_piece(Square s, Piece pc, DirtyThreats* const dts = nullptr);
 
-   private:
+private:
     // Initialization helpers (used while setting up a position)
     void set_castling_right(Color c, Square rfrom);
     Key  compute_material_key() const;
@@ -274,6 +276,10 @@ template<PieceType Pt>
 inline Square Position::square(Color c) const {
     assert(count<Pt>(c) == 1);
     return lsb(pieces(c, Pt));
+}
+
+inline u8 Position::pt_mask(Color us) const {
+    return st->ptMask[us];
 }
 
 inline Square Position::ep_square() const { return st->epSquare; }
