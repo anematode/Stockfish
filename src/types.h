@@ -112,7 +112,7 @@ constexpr bool Is64Bit = false;
 using Key      = u64;
 using Bitboard = u64;
 
-constexpr int MAX_MOVES = 256;
+constexpr int MAX_MOVES = 512;
 constexpr int MAX_PLY   = 246;
 
 enum Color : u8 {
