@@ -86,10 +86,11 @@ class FeatureTransformer {
     using OutputType = TransformedFeatureType;
 
     // Number of input/output dimensions
-    static constexpr IndexType ThreatInputDimensions = ThreatFeatureSet::Dimensions;
-    static constexpr IndexType PairInputDimensions   = PairFeatureSet::Dimensions;
+    static constexpr IndexType ThreatInputDimensions   = ThreatFeatureSet::Dimensions;
+    static constexpr IndexType PairInputDimensions     = PairFeatureSet::Dimensions;
+    static constexpr IndexType QKThreatInputDimensions = QKThreatFeatureSet::Dimensions;
     static constexpr IndexType InputDimensions =
-      PSQFeatureSet::Dimensions + ThreatInputDimensions + PairInputDimensions;
+      PSQFeatureSet::Dimensions + ThreatInputDimensions + PairInputDimensions + QKThreatInputDimensions;
     static constexpr IndexType OutputDimensions = HalfDimensions;
 
     // Size of forward propagation buffer
@@ -131,37 +132,49 @@ class FeatureTransformer {
     // Hash value embedded in the evaluation file
     static constexpr u32 get_hash_value() {
         return combine_hash(
-                 {ThreatFeatureSet::HashValue, PairFeatureSet::HashValue, PSQFeatureSet::HashValue})
+                 {ThreatFeatureSet::HashValue, PairFeatureSet::HashValue, QKThreatFeatureSet::HashValue, PSQFeatureSet::HashValue})
              ^ (OutputDimensions * 2);
     }
 
     void permute_weights() {
         permute<16>(biases, PackusEpi16Order);
-        permute<16>(weights, PackusEpi16Order);
+        permute<8>(weights, PackusEpi16Order);
 
-        permute<8>(threatAndPpWeights, PackusEpi16Order);
+        permute<8>(auxWeights, PackusEpi16Order);
     }
 
     void unpermute_weights() {
         permute<16>(biases, InversePackusEpi16Order);
-        permute<16>(weights, InversePackusEpi16Order);
-        permute<8>(threatAndPpWeights, InversePackusEpi16Order);
+        permute<8>(weights, InversePackusEpi16Order);
+        permute<8>(auxWeights, InversePackusEpi16Order);
     }
 
-    auto threatWeights() { return threatAndPpWeights.data(); }
-    auto threatWeights() const { return threatAndPpWeights.data(); }
-    auto ppWeights() { return &threatAndPpWeights[ThreatFeatureSet::Dimensions * HalfDimensions]; }
+    auto threatWeights() { return auxWeights.data(); }
+    auto threatWeights() const { return auxWeights.data(); }
+    auto ppWeights() { return &auxWeights[ThreatFeatureSet::Dimensions * HalfDimensions]; }
     auto ppWeights() const {
-        return &threatAndPpWeights[ThreatFeatureSet::Dimensions * HalfDimensions];
+        return &auxWeights[ThreatFeatureSet::Dimensions * HalfDimensions];
+    }
+    auto qk4Weights() {
+        return &auxWeights[(ThreatFeatureSet::Dimensions + PairFeatureSet::Dimensions) * HalfDimensions];
+    }
+    auto qk4Weights() const {
+        return &auxWeights[(ThreatFeatureSet::Dimensions + PairFeatureSet::Dimensions) * HalfDimensions];
     }
 
-    auto threatPsqtWeights() { return threatAndPpPsqtWeights.data(); }
-    auto threatPsqtWeights() const { return threatAndPpPsqtWeights.data(); }
+    auto threatPsqtWeights() { return auxPsqtWeights.data(); }
+    auto threatPsqtWeights() const { return auxPsqtWeights.data(); }
     auto ppPsqtWeights() {
-        return &threatAndPpPsqtWeights[ThreatFeatureSet::Dimensions * PSQTBuckets];
+        return &auxPsqtWeights[ThreatFeatureSet::Dimensions * PSQTBuckets];
     }
     auto ppPsqtWeights() const {
-        return &threatAndPpPsqtWeights[ThreatFeatureSet::Dimensions * PSQTBuckets];
+        return &auxPsqtWeights[ThreatFeatureSet::Dimensions * PSQTBuckets];
+    }
+    auto qk4PsqtWeights() {
+        return &auxPsqtWeights[(ThreatFeatureSet::Dimensions + PairFeatureSet::Dimensions) * PSQTBuckets];
+    }
+    auto qk4PsqtWeights() const {
+        return &auxPsqtWeights[(ThreatFeatureSet::Dimensions + PairFeatureSet::Dimensions) * PSQTBuckets];
     }
 
 
@@ -169,14 +182,17 @@ class FeatureTransformer {
     bool read_parameters(std::istream& stream) {
         read_leb_128(stream, biases);
 
-        read_little_endian<ThreatWeightType>(stream, threatWeights(),
+        read_little_endian<WeightType>(stream, threatWeights(),
                                              ThreatInputDimensions * HalfDimensions);
         read_leb_128(stream, threatPsqtWeights(), ThreatFeatureSet::Dimensions * PSQTBuckets);
-        read_little_endian<ThreatWeightType>(stream, ppWeights(),
+        read_little_endian<WeightType>(stream, ppWeights(),
                                              PairInputDimensions * HalfDimensions);
         read_leb_128(stream, ppPsqtWeights(), PairFeatureSet::Dimensions * PSQTBuckets);
+        read_little_endian<WeightType>(stream, qk4Weights(),
+                                             QKThreatInputDimensions * HalfDimensions);
+        read_leb_128(stream, qk4PsqtWeights(), QKThreatFeatureSet::Dimensions * PSQTBuckets);
 
-        read_leb_128(stream, weights);
+        read_little_endian<WeightType>(stream, weights.data(), HalfDimensions * PSQFeatureSet::Dimensions);
         read_leb_128(stream, psqtWeights);
 
         permute_weights();
@@ -193,16 +209,20 @@ class FeatureTransformer {
         write_leb_128<BiasType>(stream, copy->biases);
 
 
-        write_little_endian<ThreatWeightType>(stream, copy->threatWeights(),
+        write_little_endian<WeightType>(stream, copy->threatWeights(),
                                               ThreatInputDimensions * HalfDimensions);
         write_leb_128<PSQTWeightType>(stream, copy->threatPsqtWeights(),
                                       ThreatFeatureSet::Dimensions * PSQTBuckets);
-        write_little_endian<ThreatWeightType>(stream, copy->ppWeights(),
+        write_little_endian<WeightType>(stream, copy->ppWeights(),
                                               PairInputDimensions * HalfDimensions);
         write_leb_128<PSQTWeightType>(stream, copy->ppPsqtWeights(),
                                       PairFeatureSet::Dimensions * PSQTBuckets);
+        write_little_endian<WeightType>(stream, copy->qk4Weights(),
+                                              QKThreatInputDimensions * HalfDimensions);
+        write_leb_128<PSQTWeightType>(stream, copy->qk4PsqtWeights(),
+                                      QKThreatFeatureSet::Dimensions * PSQTBuckets);
 
-        write_leb_128<WeightType>(stream, copy->weights);
+        write_little_endian<WeightType>(stream, copy->weights.data(), HalfDimensions * PSQFeatureSet::Dimensions);
         write_leb_128<PSQTWeightType>(stream, copy->psqtWeights);
 
         return !stream.fail();
@@ -215,8 +235,8 @@ class FeatureTransformer {
         hash_combine(h, get_raw_data_hash(weights));
         hash_combine(h, get_raw_data_hash(psqtWeights));
 
-        hash_combine(h, get_raw_data_hash(threatAndPpWeights));
-        hash_combine(h, get_raw_data_hash(threatAndPpPsqtWeights));
+        hash_combine(h, get_raw_data_hash(auxWeights));
+        hash_combine(h, get_raw_data_hash(auxPsqtWeights));
 
         hash_combine(h, get_hash_value());
 
@@ -436,19 +456,20 @@ class FeatureTransformer {
     alignas(
       CacheLineSize) std::array<WeightType, HalfDimensions * PSQFeatureSet::Dimensions> weights;
 
-    // Threats and pawn-pair features are concatenated into one array to allow for a single index to address either.
-    // The first pawn-pair feature is at index ThreatFeatureSet::Dimensions.
+    // FullThreats, PP_3Wide and QK4 feature weights are packed into one array
+    // so that a single index (with IndexBase offset already applied) can address any of them.
+    // Layout: [FullThreats | PP_3Wide | QK4]  (each segment: Dimensions * HalfDimensions bytes)
     static_assert(PairFeatureSet::IndexBase == ThreatFeatureSet::Dimensions);
 
-    alignas(CacheLineSize) std::array<ThreatWeightType,
-                                      (ThreatFeatureSet::Dimensions + PairFeatureSet::Dimensions)
-                                        * HalfDimensions> threatAndPpWeights;
+    alignas(CacheLineSize) std::array<WeightType,
+                                      (ThreatFeatureSet::Dimensions + PairFeatureSet::Dimensions + QKThreatFeatureSet::Dimensions)
+                                        * HalfDimensions> auxWeights;
     alignas(CacheLineSize)
       std::array<PSQTWeightType, PSQTBuckets * PSQFeatureSet::Dimensions> psqtWeights;
-    // As above
+    // Same layout as auxWeights but for PSQT: [FullThreats | PP_3Wide | QK4] * PSQTBuckets
     alignas(CacheLineSize) std::array<PSQTWeightType,
-                                      (ThreatFeatureSet::Dimensions + PairFeatureSet::Dimensions)
-                                        * PSQTBuckets> threatAndPpPsqtWeights;
+                                      (ThreatFeatureSet::Dimensions + PairFeatureSet::Dimensions + QKThreatFeatureSet::Dimensions)
+                                        * PSQTBuckets> auxPsqtWeights;
 };
 
 }  // namespace Stockfish::Eval::NNUE

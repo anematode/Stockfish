@@ -97,7 +97,7 @@ void PP_3Wide::append_changed_indices(Color                                    p
                                       const DiffType&                          diff,
                                       IndexList&                               removed,
                                       IndexList&                               added,
-                                      [[maybe_unused]] const ThreatWeightType* prefetchBase,
+                                      [[maybe_unused]] const WeightType* prefetchBase,
                                       [[maybe_unused]] IndexType               prefetchStride) {
 
     const Bitboard whiteBefore = diff.before[WHITE];

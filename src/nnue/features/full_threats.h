@@ -66,7 +66,7 @@ class FullThreats {
     // clang-format on
 
     // Maximum number of simultaneously active features.
-    using IndexList = ValueList<u16, 256>;
+    using IndexList = ValueList<IndexType, 256>;
     using DiffType  = DirtyThreats;
 
     static IndexType
@@ -81,7 +81,7 @@ class FullThreats {
                                        const DiffType&         diff,
                                        IndexList&              removed,
                                        IndexList&              added,
-                                       const ThreatWeightType* prefetchBase   = nullptr,
+                                       const WeightType* prefetchBase   = nullptr,
                                        IndexType               prefetchStride = 0);
 };
 

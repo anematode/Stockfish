@@ -16,9 +16,9 @@
   along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-//Definition of input features HalfKAv2_hm of NNUE evaluation function
+//Definition of input features K32Q2 of NNUE evaluation function
 
-#include "half_ka_v2_hm.h"
+#include "k32q2.h"
 
 #include "../../types.h"
 #include "../nnue_common.h"
@@ -30,14 +30,15 @@
 namespace Stockfish::Eval::NNUE::Features {
 
 #if defined(USE_AVX512ICL)
-void HalfKAv2_hm::write_indices(const std::array<Piece, SQUARE_NB>& oldPieces,
-                                const std::array<Piece, SQUARE_NB>& newPieces,
-                                Bitboard                            removedBB,
-                                Bitboard                            addedBB,
-                                Color                               perspective,
-                                Square                              ksq,
-                                IndexList&                          removed,
-                                IndexList&                          added) {
+void K32Q2::write_indices(const std::array<Piece, SQUARE_NB>& oldPieces,
+                          const std::array<Piece, SQUARE_NB>& newPieces,
+                          Bitboard                            removedBB,
+                          Bitboard                            addedBB,
+                          Color                               perspective,
+                          Square                              ksq,
+                          bool                                opponent_has_queen,
+                          IndexList&                          removed,
+                          IndexList&                          added) {
 
     auto* write_removed = removed.make_space(popcount(removedBB));
     auto* write_added   = added.make_space(popcount(addedBB));
@@ -53,8 +54,9 @@ void HalfKAv2_hm::write_indices(const std::array<Piece, SQUARE_NB>& oldPieces,
     const u16     orient = u16(OrientTBL[ksq]) ^ flip;
     const __m512i psi =
       _mm512_castsi256_si512(_mm256_loadu_si256((const __m256i*) PieceSquareIndex[perspective]));
+    const u16     queen_offset = opponent_has_queen ? PS_NB : 0;
     const __m512i psi_plus_offset =
-      _mm512_add_epi16(psi, _mm512_set1_epi16(u16(KingBuckets[int(ksq) ^ flip] + orient)));
+      _mm512_add_epi16(psi, _mm512_set1_epi16(u16(KingBuckets[int(ksq) ^ flip] + queen_offset + orient)));
 
     __m512i removed_squares = _mm512_maskz_compress_epi8(removedBB, AllSquares);
     __m512i added_squares   = _mm512_maskz_compress_epi8(addedBB, AllSquares);
@@ -83,29 +85,37 @@ void HalfKAv2_hm::write_indices(const std::array<Piece, SQUARE_NB>& oldPieces,
 
 // Index of a feature for a given king position and another piece on some square
 
-IndexType HalfKAv2_hm::make_index(Color perspective, Square s, Piece pc, Square ksq) {
+IndexType K32Q2::make_index(Color perspective, Square s, Piece pc, Square ksq, bool opponent_has_queen) {
     const IndexType flip = 56 * perspective;
     return (IndexType(s) ^ OrientTBL[ksq] ^ flip) + PieceSquareIndex[perspective][pc]
-         + KingBuckets[int(ksq) ^ flip];
+         + KingBuckets[int(ksq) ^ flip] + (opponent_has_queen ? PS_NB : 0);
 }
 
 // Get a list of indices for recently changed features
 
-void HalfKAv2_hm::append_changed_indices(
-  Color perspective, Square ksq, const DiffType& diff, IndexList& removed, IndexList& added) {
-    removed.push_back(make_index(perspective, diff.from, diff.pc, ksq));
+void K32Q2::append_changed_indices(
+  Color perspective, Square ksq, const DiffType& diff, bool opponent_has_queen, IndexList& removed, IndexList& added) {
+    removed.push_back(make_index(perspective, diff.from, diff.pc, ksq, opponent_has_queen));
     if (diff.to != SQ_NONE)
-        added.push_back(make_index(perspective, diff.to, diff.pc, ksq));
+        added.push_back(make_index(perspective, diff.to, diff.pc, ksq, opponent_has_queen));
 
     if (diff.remove_sq != SQ_NONE)
-        removed.push_back(make_index(perspective, diff.remove_sq, diff.remove_pc, ksq));
+        removed.push_back(make_index(perspective, diff.remove_sq, diff.remove_pc, ksq, opponent_has_queen));
 
     if (diff.add_sq != SQ_NONE)
-        added.push_back(make_index(perspective, diff.add_sq, diff.add_pc, ksq));
+        added.push_back(make_index(perspective, diff.add_sq, diff.add_pc, ksq, opponent_has_queen));
 }
 
-bool HalfKAv2_hm::requires_refresh(const DiffType& diff, Color perspective) {
-    return diff.pc == make_piece(perspective, KING);
+bool K32Q2::requires_refresh(const DiffType& diff, Color perspective) {
+    if (diff.pc == make_piece(perspective, KING))
+        return true;
+
+    Color opponent = ~perspective;
+    if (   (diff.remove_sq != SQ_NONE && diff.remove_pc == make_piece(opponent, QUEEN))
+        || (diff.add_sq != SQ_NONE && diff.add_pc == make_piece(opponent, QUEEN)))
+        return true;
+
+    return false;
 }
 
 }  // namespace Stockfish::Eval::NNUE::Features
