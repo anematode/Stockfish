@@ -116,7 +116,7 @@ class AccumulatorStack {
                        // Silence spurious warning on GCC 10
                        [[maybe_unused]] AccumulatorCaches& cache) noexcept;
 
-    [[nodiscard]] usize find_last_usable_accumulator(Color perspective, const Position& pos) const noexcept;
+    [[nodiscard]] usize find_last_usable_accumulator(Color perspective) const noexcept;
 
     void forward_update_incremental(Color                     perspective,
                                     const Position&           pos,

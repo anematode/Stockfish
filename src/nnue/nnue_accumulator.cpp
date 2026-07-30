@@ -100,7 +100,7 @@ void AccumulatorStack::evaluate_side(Color                     perspective,
 
     constexpr int MIN_PC_COUNT_HYBRID = 15;
 
-    const auto last_usable_accum = find_last_usable_accumulator(perspective, pos);
+    const auto last_usable_accum = find_last_usable_accumulator(perspective);
 
     if (accumulators[last_usable_accum].computed[perspective])
         forward_update_incremental(perspective, pos, featureTransformer, last_usable_accum);
@@ -128,7 +128,7 @@ void AccumulatorStack::evaluate_side(Color                     perspective,
 
 // Find the earliest usable accumulator, this can either be a computed accumulator or the accumulator
 // state just before a change that requires full refresh.
-usize AccumulatorStack::find_last_usable_accumulator(Color perspective, const Position& pos) const noexcept {
+usize AccumulatorStack::find_last_usable_accumulator(Color perspective) const noexcept {
 
     for (usize curr_idx = size - 1; curr_idx > 0; curr_idx--)
     {
@@ -138,27 +138,6 @@ usize AccumulatorStack::find_last_usable_accumulator(Color perspective, const Po
         // Threat feature set refreshes require a king move across the center, i.e.,
         // a subset of halfka refreshes
         if (PSQFeatureSet::requires_refresh(accumulators[curr_idx].dirtyPiece, perspective))
-            return curr_idx;
-
-        // QK4 check threat feature refresh if a blocker moves onto or off of any check ray of the king
-        const auto& diff = accumulators[curr_idx].dirtyPiece;
-        Square ksq = pos.square<KING>(perspective);
-        Bitboard queens = accumulators[curr_idx].opponentQueens[perspective];
-
-        bool QK4_affected = false;
-        while (queens) {
-            Square qsq = pop_lsb(queens);
-            int fd = file_of(qsq) - file_of(ksq);
-            int rd = rank_of(qsq) - rank_of(ksq);
-            if (fd == 0 || rd == 0 || fd == rd || fd == -rd) {
-                Bitboard ray = Attacks::between_bb(ksq, qsq);
-                if (ray & (square_bb(diff.from) | square_bb(diff.to))) {
-                    QK4_affected = true;
-                    break;
-                }
-            }
-        }
-        if (QK4_affected)
             return curr_idx;
     }
 
