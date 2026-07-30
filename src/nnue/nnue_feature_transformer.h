@@ -253,47 +253,19 @@ class FeatureTransformer {
 
         using namespace SIMD;
         accumulatorStack.evaluate(pos, *this, cache);
-        const auto& accumulatorState = accumulatorStack.latest();
 
         const Color perspectives[2]  = {pos.side_to_move(), ~pos.side_to_move()};
-        const auto& psqtAccumulation = accumulatorState.psqtAccumulation;
-
-        i32 qkPsqt[2] = {0, 0};
-        for (IndexType p = 0; p < 2; ++p)
-        {
-            QKThreatFeatureSet::IndexList qkActive;
-            QKThreatFeatureSet::append_active_indices(perspectives[p], pos, qkActive);
-            for (int i = 0; i < qkActive.ssize(); ++i)
-                qkPsqt[p] += auxPsqtWeights[qkActive[i] * PSQTBuckets + bucket];
-        }
 
         const auto  psqt =
-          ((psqtAccumulation[perspectives[0]][bucket] + qkPsqt[0]) - (psqtAccumulation[perspectives[1]][bucket] + qkPsqt[1]))
+          (accumulatorStack.get_psqt(perspectives[0], bucket, pos, *this) -
+           accumulatorStack.get_psqt(perspectives[1], bucket, pos, *this))
           / 2;
-
-        const auto& accumulation = accumulatorState.accumulation;
 
         for (IndexType p = 0; p < 2; ++p)
         {
             const IndexType offset = (HalfDimensions / 2) * p;
 
-            QKThreatFeatureSet::IndexList qkActive;
-            QKThreatFeatureSet::append_active_indices(perspectives[p], pos, qkActive);
-
-            alignas(64) std::array<BiasType, HalfDimensions> local_acc;
-            if (qkActive.ssize() > 0)
-            {
-                std::memcpy(local_acc.data(), &accumulation[perspectives[p]][0], sizeof(local_acc));
-                for (int i = 0; i < qkActive.ssize(); ++i)
-                {
-                    const IndexType wOffset = qkActive[i] * HalfDimensions;
-                    const auto* w = &auxWeights[wOffset];
-                    for (IndexType j = 0; j < HalfDimensions; ++j)
-                        local_acc[j] += w[j];
-                }
-            }
-
-            const BiasType* accPtr = qkActive.ssize() == 0 ? &accumulation[perspectives[p]][0] : local_acc.data();
+            const BiasType* accPtr = accumulatorStack.get_accumulation(perspectives[p], pos, *this);
 
 #if defined(VECTOR)
 

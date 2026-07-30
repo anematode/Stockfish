@@ -102,6 +102,17 @@ class AccumulatorStack {
     Dirties& push() noexcept;
     void     pop() noexcept;
 
+    const i16* get_accumulation(
+        Color                     perspective,
+        const Position&           pos,
+        const FeatureTransformer& featureTransformer);
+
+    i32 get_psqt(
+        Color                     perspective,
+        int                       bucket,
+        const Position&           pos,
+        const FeatureTransformer& featureTransformer) const;
+
     void evaluate(const Position&           pos,
                   const FeatureTransformer& featureTransformer,
                   // Silence spurious warning on GCC 10
@@ -130,6 +141,7 @@ class AccumulatorStack {
 
     std::array<AccumulatorState, MaxSize> accumulators;
     usize                                 size = 1;
+    alignas(64) std::array<i16, L1>       qkBuffer;
 };
 
 }  // namespace Stockfish::Eval::NNUE
