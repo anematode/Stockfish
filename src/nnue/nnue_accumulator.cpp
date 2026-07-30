@@ -109,7 +109,11 @@ void AccumulatorStack::evaluate_side(Color                     perspective,
     {
         const auto& dirtyPiece = latest().dirtyPiece;
 
+        const bool opponent_has_queen = pos.count<QUEEN>(~perspective) > 0;
+        const bool previous_opponent_has_queen = opponent_has_queen || (dirtyPiece.remove_pc == make_piece(~perspective, QUEEN));
+
         if (dirtyPiece.pc == make_piece(perspective, KING)
+            && previous_opponent_has_queen == opponent_has_queen
             && accumulators[size - 2].computed[perspective]
             && pos.count<ALL_PIECES>() >= MIN_PC_COUNT_HYBRID
             && ((int(dirtyPiece.from) & 0b100) == (int(dirtyPiece.to) & 0b100))
@@ -603,11 +607,11 @@ void update_accumulator_hybrid(Color                     perspective,
     previousPieces[oldKsq] = make_piece(perspective, KING);
     previousPieceBB |= square_bb(oldKsq);
 
-    const auto& oldEntry = cache[oldKsq][perspective];
-    auto&       newEntry = cache[newKsq][perspective];
-
     const bool opponent_has_queen = pos.count<QUEEN>(~perspective) > 0;
     const bool previous_opponent_has_queen = opponent_has_queen || (dirtyPiece.remove_pc == make_piece(~perspective, QUEEN));
+
+    const auto& oldEntry = cache[oldKsq + (previous_opponent_has_queen ? SQUARE_NB : 0)][perspective];
+    auto&       newEntry = cache[newKsq + (opponent_has_queen ? SQUARE_NB : 0)][perspective];
 
     // "Remove" means we need to remove them from the cache entry,
     // "Add" means add them to the entry to get the accumulator we want
@@ -689,17 +693,17 @@ void update_accumulator_hybrid(Color                     perspective,
 
         for (int i = 0; i < newRemove.ssize(); ++i)
         {
-            auto* column =
-              reinterpret_cast<const vec_t*>(&weights[newRemove[i] * Dimensions + tileOff]);
+            auto* column = reinterpret_cast<const vec_i8_t*>(
+              &weights[newRemove[i] * Dimensions + tileOff]);
             for (IndexType k = 0; k < Tiling::NumRegs; ++k)
-                acc[k] = vec_sub_16(acc[k], column[k]);
+                acc[k] = vec_sub_16(acc[k], vec_convert_8_16(column[k]));
         }
         for (int i = 0; i < newAdd.ssize(); ++i)
         {
-            auto* column =
-              reinterpret_cast<const vec_t*>(&weights[newAdd[i] * Dimensions + tileOff]);
+            auto* column = reinterpret_cast<const vec_i8_t*>(
+              &weights[newAdd[i] * Dimensions + tileOff]);
             for (IndexType k = 0; k < Tiling::NumRegs; ++k)
-                acc[k] = vec_add_16(acc[k], column[k]);
+                acc[k] = vec_add_16(acc[k], vec_convert_8_16(column[k]));
         }
 
         for (IndexType k = 0; k < Tiling::NumRegs; ++k)
@@ -716,17 +720,17 @@ void update_accumulator_hybrid(Color                     perspective,
         // ... then we adjust
         for (int i = 0; i < oldRemove.ssize(); ++i)
         {
-            auto* column =
-              reinterpret_cast<const vec_t*>(&weights[oldRemove[i] * Dimensions + tileOff]);
+            auto* column = reinterpret_cast<const vec_i8_t*>(
+              &weights[oldRemove[i] * Dimensions + tileOff]);
             for (IndexType k = 0; k < Tiling::NumRegs; ++k)
-                acc[k] = vec_add_16(acc[k], column[k]);
+                acc[k] = vec_add_16(acc[k], vec_convert_8_16(column[k]));
         }
         for (int i = 0; i < oldAdd.ssize(); ++i)
         {
-            auto* column =
-              reinterpret_cast<const vec_t*>(&weights[oldAdd[i] * Dimensions + tileOff]);
+            auto* column = reinterpret_cast<const vec_i8_t*>(
+              &weights[oldAdd[i] * Dimensions + tileOff]);
             for (IndexType k = 0; k < Tiling::NumRegs; ++k)
-                acc[k] = vec_sub_16(acc[k], column[k]);
+                acc[k] = vec_sub_16(acc[k], vec_convert_8_16(column[k]));
         }
 
         for (int i = 0; i < thrRemoved.ssize(); ++i)
