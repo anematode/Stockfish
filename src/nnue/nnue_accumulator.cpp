@@ -606,6 +606,9 @@ void update_accumulator_hybrid(Color                     perspective,
     const auto& oldEntry = cache[oldKsq][perspective];
     auto&       newEntry = cache[newKsq][perspective];
 
+    const bool opponent_has_queen = pos.count<QUEEN>(~perspective) > 0;
+    const bool previous_opponent_has_queen = opponent_has_queen || (dirtyPiece.remove_pc == make_piece(~perspective, QUEEN));
+
     // "Remove" means we need to remove them from the cache entry,
     // "Add" means add them to the entry to get the accumulator we want
     PSQFeatureSet::IndexList oldRemove, oldAdd, newRemove, newAdd;
@@ -620,36 +623,36 @@ void update_accumulator_hybrid(Color                     perspective,
 
 #if defined(USE_AVX512ICL)
     PSQFeatureSet::write_indices(oldEntry.pieces, previousPieces, oldRemovedBB, oldAddedBB,
-                                 perspective, oldKsq, oldRemove, oldAdd);
+                                 perspective, oldKsq, previous_opponent_has_queen, oldRemove, oldAdd);
     PSQFeatureSet::write_indices(newEntry.pieces, currentPieces, newRemovedBB, newAddedBB,
-                                 perspective, newKsq, newRemove, newAdd);
+                                 perspective, newKsq, opponent_has_queen, newRemove, newAdd);
 #else
     while (oldRemovedBB)
     {
         Square sq = pop_lsb(oldRemovedBB);
         oldRemove.push_back(
-          PSQFeatureSet::make_index(perspective, sq, oldEntry.pieces[sq], oldKsq));
+          PSQFeatureSet::make_index(perspective, sq, oldEntry.pieces[sq], oldKsq, previous_opponent_has_queen));
     }
     while (oldAddedBB)
     {
         Square sq = pop_lsb(oldAddedBB);
-        oldAdd.push_back(PSQFeatureSet::make_index(perspective, sq, previousPieces[sq], oldKsq));
+        oldAdd.push_back(PSQFeatureSet::make_index(perspective, sq, previousPieces[sq], oldKsq, previous_opponent_has_queen));
     }
     while (newRemovedBB)
     {
         Square sq = pop_lsb(newRemovedBB);
         newRemove.push_back(
-          PSQFeatureSet::make_index(perspective, sq, newEntry.pieces[sq], newKsq));
+          PSQFeatureSet::make_index(perspective, sq, newEntry.pieces[sq], newKsq, opponent_has_queen));
     }
     while (newAddedBB)
     {
         Square sq = pop_lsb(newAddedBB);
-        newAdd.push_back(PSQFeatureSet::make_index(perspective, sq, currentPieces[sq], newKsq));
+        newAdd.push_back(PSQFeatureSet::make_index(perspective, sq, currentPieces[sq], newKsq, opponent_has_queen));
     }
 #endif
 
     ThreatFeatureSet::IndexList thrRemoved, thrAdded;  // also contain pp indices
-    const auto*                 threatPpBase = &featureTransformer.threatAndPpWeights[0];
+    const auto*                 threatPpBase = &featureTransformer.auxWeights[0];
     IndexType                   pfStride     = FeatureTransformer::OutputDimensions;
     ThreatFeatureSet::append_changed_indices(perspective, newKsq, target.dirtyThreats, thrRemoved,
                                              thrAdded, threatPpBase, pfStride);
@@ -671,7 +674,7 @@ void update_accumulator_hybrid(Color                     perspective,
     psqt_vec_t psqt[Tiling::NumPsqtRegs];
 
     const auto* weights            = &featureTransformer.weights[0];
-    const auto* threatAndPpWeights = &featureTransformer.threatAndPpWeights[0];
+    const auto* threatAndPpWeights = &featureTransformer.auxWeights[0];
 
     for (IndexType j = 0; j < Dimensions / Tiling::TileHeight; ++j)
     {
@@ -818,7 +821,7 @@ void update_accumulator_hybrid(Color                     perspective,
         {
             auto* columnPsqt = reinterpret_cast<const psqt_vec_t*>(
               &featureTransformer
-                 .threatAndPpPsqtWeights[thrRemoved[i] * PSQTBuckets + psqtTileOff]);
+                 .auxPsqtWeights[thrRemoved[i] * PSQTBuckets + psqtTileOff]);
             for (usize k = 0; k < Tiling::NumPsqtRegs; ++k)
                 psqt[k] = vec_sub_psqt_32(psqt[k], columnPsqt[k]);
         }
@@ -826,7 +829,7 @@ void update_accumulator_hybrid(Color                     perspective,
         for (int i = 0; i < thrAdded.ssize(); ++i)
         {
             auto* columnPsqt = reinterpret_cast<const psqt_vec_t*>(
-              &featureTransformer.threatAndPpPsqtWeights[thrAdded[i] * PSQTBuckets + psqtTileOff]);
+              &featureTransformer.auxPsqtWeights[thrAdded[i] * PSQTBuckets + psqtTileOff]);
             for (usize k = 0; k < Tiling::NumPsqtRegs; ++k)
                 psqt[k] = vec_add_psqt_32(psqt[k], columnPsqt[k]);
         }
@@ -892,17 +895,17 @@ void update_accumulator_hybrid(Color                     perspective,
     {
         const IndexType offset = Dimensions * index;
         for (IndexType j = 0; j < Dimensions; ++j)
-            toAcc[j] -= featureTransformer.threatAndPpWeights[offset + j];
+            toAcc[j] -= featureTransformer.auxWeights[offset + j];
         for (usize k = 0; k < PSQTBuckets; ++k)
-            toPsqtAcc[k] -= featureTransformer.threatAndPpPsqtWeights[index * PSQTBuckets + k];
+            toPsqtAcc[k] -= featureTransformer.auxPsqtWeights[index * PSQTBuckets + k];
     }
     for (const auto index : thrAdded)
     {
         const IndexType offset = Dimensions * index;
         for (IndexType j = 0; j < Dimensions; ++j)
-            toAcc[j] += featureTransformer.threatAndPpWeights[offset + j];
+            toAcc[j] += featureTransformer.auxWeights[offset + j];
         for (usize k = 0; k < PSQTBuckets; ++k)
-            toPsqtAcc[k] += featureTransformer.threatAndPpPsqtWeights[index * PSQTBuckets + k];
+            toPsqtAcc[k] += featureTransformer.auxPsqtWeights[index * PSQTBuckets + k];
     }
 
 #endif
@@ -955,7 +958,6 @@ void update_accumulator_refresh_cache(Color                     perspective,
     ThreatFeatureSet::IndexList active;
     ThreatFeatureSet::append_active_indices(perspective, pos, active);
     PairFeatureSet::append_active_indices(perspective, pos, active);
-    QKThreatFeatureSet::append_active_indices(perspective, pos, active);
 
     accumulator.opponentQueens[perspective] = pos.pieces(~perspective, QUEEN);
     accumulator.computed[perspective] = true;

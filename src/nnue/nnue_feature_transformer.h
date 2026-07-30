@@ -257,8 +257,18 @@ class FeatureTransformer {
 
         const Color perspectives[2]  = {pos.side_to_move(), ~pos.side_to_move()};
         const auto& psqtAccumulation = accumulatorState.psqtAccumulation;
+
+        i32 qkPsqt[2] = {0, 0};
+        for (IndexType p = 0; p < 2; ++p)
+        {
+            QKThreatFeatureSet::IndexList qkActive;
+            QKThreatFeatureSet::append_active_indices(perspectives[p], pos, qkActive);
+            for (int i = 0; i < qkActive.ssize(); ++i)
+                qkPsqt[p] += auxPsqtWeights[qkActive[i] * PSQTBuckets + bucket];
+        }
+
         const auto  psqt =
-          (psqtAccumulation[perspectives[0]][bucket] - psqtAccumulation[perspectives[1]][bucket])
+          ((psqtAccumulation[perspectives[0]][bucket] + qkPsqt[0]) - (psqtAccumulation[perspectives[1]][bucket] + qkPsqt[1]))
           / 2;
 
         const auto& accumulation = accumulatorState.accumulation;
@@ -266,6 +276,24 @@ class FeatureTransformer {
         for (IndexType p = 0; p < 2; ++p)
         {
             const IndexType offset = (HalfDimensions / 2) * p;
+
+            QKThreatFeatureSet::IndexList qkActive;
+            QKThreatFeatureSet::append_active_indices(perspectives[p], pos, qkActive);
+
+            alignas(64) std::array<BiasType, HalfDimensions> local_acc;
+            if (qkActive.ssize() > 0)
+            {
+                std::memcpy(local_acc.data(), &accumulation[perspectives[p]][0], sizeof(local_acc));
+                for (int i = 0; i < qkActive.ssize(); ++i)
+                {
+                    const IndexType wOffset = qkActive[i] * HalfDimensions;
+                    const auto* w = &auxWeights[wOffset];
+                    for (IndexType j = 0; j < HalfDimensions; ++j)
+                        local_acc[j] += w[j];
+                }
+            }
+
+            const BiasType* accPtr = qkActive.ssize() == 0 ? &accumulation[perspectives[p]][0] : local_acc.data();
 
 #if defined(VECTOR)
 
@@ -279,9 +307,9 @@ class FeatureTransformer {
             [[maybe_unused]] const vec_t   FtMax = vec_set_16(FtMaxVal);
             [[maybe_unused]] constexpr int shift = 7;
 
-            const vec_t* in0 = reinterpret_cast<const vec_t*>(&(accumulation[perspectives[p]][0]));
+            const vec_t* in0 = reinterpret_cast<const vec_t*>(accPtr);
             const vec_t* in1 =
-              reinterpret_cast<const vec_t*>(&(accumulation[perspectives[p]][HalfDimensions / 2]));
+              reinterpret_cast<const vec_t*>(accPtr + HalfDimensions / 2);
             vec_t* out = reinterpret_cast<vec_t*>(output + offset);
 
             // Per the NNUE architecture, here we want to multiply pairs of
@@ -345,7 +373,11 @@ class FeatureTransformer {
 
                     static_assert(FtMaxVal == 255);
 
-    #if defined(USE_NEON)
+#if defined(USE_NEON)
+                    // The NEON path uses unsigned saturation. To use signed
+                    // saturate we'd have to shift down first which loses LSBs.
+                    // Instead, saturate positive elements to u8, multiply and
+                    // shift right by 8. Then narrow back to i8.
                     uint16x8_t mul0 = vmull_u8(vqmovun_s16(acc0a), vqmovun_s16(acc1a));
                     uint16x8_t mul1 = vmull_u8(vqmovun_s16(acc0b), vqmovun_s16(acc1b));
 
@@ -353,17 +385,17 @@ class FeatureTransformer {
                       vuzpq_u8(vreinterpretq_u8_u16(mul0), vreinterpretq_u8_u16(mul1));
                     uint8x16_t pab    = vshrq_n_u8(uzp.val[1], 1);
                     vec_t      result = reinterpret_cast<vec_t>(pab);
-    #elif defined(USE_LSX) || defined(USE_LASX)
+#elif defined(USE_LSX) || defined(USE_LASX)
                     vec_t pa = vec_packus_16(acc0a, acc0b);
                     vec_t pb = vec_packus_16(acc1a, acc1b);
 
                     vec_t hi     = vec_mulhi_8(pa, pb);
                     vec_t result = vec_srli_8(hi, 1);
-    #elif defined(__wasm__)
+#elif defined(__wasm__)
                     // _mm_mulhi_epi16 is lowered to 32-bit multiplies, so we take
                     // a similar approach as the NEON path.
                     vec_t mul0 = vec_packus_16(acc0a, acc0b);
-                    vec_t mul1 = vec_packus_16(acc1a, acc1b);
+                    vec_t mul1 = vec_packus_16(acc0b, acc1b);
 
                     vec_t low = wasm_u16x8_extmul_low_u8x16(mul0, mul1);
                     vec_t hi  = wasm_u16x8_extmul_high_u8x16(mul0, mul1);
@@ -372,7 +404,7 @@ class FeatureTransformer {
                     vec_t merged = wasm_i8x16_shuffle(low, hi, 1, 3, 5, 7, 9, 11, 13, 15, 17, 19,
                                                       21, 23, 25, 27, 29, 31);
                     vec_t result = wasm_u8x16_shr(merged, 1);
-    #else
+#else
                     vec_t sum0a = vec_slli_16(vec_max_16(vec_min_16(acc0a, FtMax), Zero), shift);
                     vec_t sum0b = vec_slli_16(vec_max_16(vec_min_16(acc0b, FtMax), Zero), shift);
                     vec_t sum1a = vec_min_16(acc1a, FtMax);
@@ -382,7 +414,7 @@ class FeatureTransformer {
                     vec_t pb = vec_mulhi_16(sum0b, sum1b);
 
                     vec_t result = vec_packus_16(pa, pb);
-    #endif
+#endif
 
                     packed[k] = out[j + k] = result;
                 }
@@ -400,7 +432,7 @@ class FeatureTransformer {
                 vid8 = __riscv_vid_v_u8m1(VL);
             else
                 vid16 = __riscv_vid_v_u16m2(VL);
-            const auto& accp = accumulation[perspectives[p]];
+            const BiasType* accp = accPtr;
 
             for (usize vl; j < HalfDimensions / 2; j += vl)
             {
@@ -436,9 +468,8 @@ class FeatureTransformer {
 
             for (IndexType j = 0; j < HalfDimensions / 2; ++j)
             {
-                BiasType sum0 = accumulation[static_cast<int>(perspectives[p])][j + 0];
-                BiasType sum1 =
-                  accumulation[static_cast<int>(perspectives[p])][j + HalfDimensions / 2];
+                BiasType sum0 = accPtr[j + 0];
+                BiasType sum1 = accPtr[j + HalfDimensions / 2];
 
                 sum0 = std::clamp<BiasType>(sum0, 0, FtMaxVal);
                 sum1 = std::clamp<BiasType>(sum1, 0, FtMaxVal);
