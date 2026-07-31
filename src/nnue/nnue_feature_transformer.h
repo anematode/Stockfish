@@ -275,7 +275,7 @@ class FeatureTransformer {
         {
             const IndexType offset = (HalfDimensions / 2) * p;
 
-            const BiasType* accPtr = accumulatorStack.get_accumulation(perspectives[p], pos, *this);
+            const BiasType* accPtr = &latest.accumulation[perspectives[p]][0];
 
 #if defined(VECTOR)
 
@@ -344,6 +344,7 @@ class FeatureTransformer {
             for (IndexType j = 0; j < NumOutputChunks; j += 2)
             {
                 vec_t packed[2];
+
                 for (IndexType k = 0; k < 2; ++k)
                 {
                     const IndexType i = (j + k) * 2;
@@ -352,6 +353,16 @@ class FeatureTransformer {
                     vec_t acc0b = in0[i + 1];
                     vec_t acc1a = in1[i + 0];
                     vec_t acc1b = in1[i + 1];
+
+                    for (IndexType qk4i : qkActive[p]) {
+                        const vec_i8_t* qw0 = reinterpret_cast<const vec_i8_t*>(&auxWeights[qk4i * L1]);
+                        acc0a = vec_add_16(acc0a, vec_convert_8_16(qw0[i + 0]));
+                        acc0b = vec_add_16(acc0b, vec_convert_8_16(qw0[i + 1]));
+
+                        const vec_i8_t* qw1 = reinterpret_cast<const vec_i8_t*>(&auxWeights[qk4i * L1 + L1 / 2]);
+                        acc1a = vec_add_16(acc1a, vec_convert_8_16(qw1[i + 0]));
+                        acc1b = vec_add_16(acc1b, vec_convert_8_16(qw1[i + 1]));
+                    }
 
                     static_assert(FtMaxVal == 255);
 
