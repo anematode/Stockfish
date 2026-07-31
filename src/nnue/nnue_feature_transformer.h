@@ -345,6 +345,7 @@ class FeatureTransformer {
             {
                 vec_t packed[2];
 
+#pragma GCC unroll 2
                 for (IndexType k = 0; k < 2; ++k)
                 {
                     const IndexType i = (j + k) * 2;

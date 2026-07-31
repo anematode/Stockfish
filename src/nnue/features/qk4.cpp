@@ -57,59 +57,50 @@ void QK4::append_active_indices(Color perspective, const Position& pos, IndexLis
     while (queens) {
         Square qsq = pop_lsb(queens);
         // Find check threat squares (where the queen can move and deliver check)
-        Bitboard check_squares = Attacks::attacks_bb<QUEEN>(qsq, pos.pieces());
+        Bitboard check_squares = Attacks::attacks_bb<QUEEN>(qsq, pos.pieces()) &
+                Attacks::attacks_bb<QUEEN>(ksq, pos.pieces());
         // Exclude squares occupied by opponent's own pieces
         check_squares &= ~pos.pieces(opp_color);
         while (check_squares) {
             Square check_sq = pop_lsb(check_squares);
+            Square oriented_check_sq = Square(int(check_sq) ^ (56 * perspective));
+            if (flip_h)
+                oriented_check_sq = Square(int(oriented_check_sq) ^ 7);
 
-            // Is check_sq aligned with ksq?
-            int fd = int(file_of(check_sq)) - int(file_of(ksq));
-            int rd = int(rank_of(check_sq)) - int(rank_of(ksq));
-            if (fd == 0 || rd == 0 || std::abs(fd) == std::abs(rd)) {
-                // Is the line of sight clear to ksq?
-                if (!((Attacks::between_bb(check_sq, ksq) ^ ksq) & pos.pieces())) {
-                    // Compute oriented check_sq
-                    Square oriented_check_sq = Square(int(check_sq) ^ (56 * perspective));
-                    if (flip_h)
-                        oriented_check_sq = Square(int(oriented_check_sq) ^ 7);
+            int ofd = int(file_of(oriented_check_sq)) - int(file_of(oriented_ksq));
+            int ord = int(rank_of(oriented_check_sq)) - int(rank_of(oriented_ksq));
+            int sf = (ofd == 0) ? 0 : ((ofd > 0) ? 1 : -1);
+            int sr = (ord == 0) ? 0 : ((ord > 0) ? 1 : -1);
 
-                    int ofd = int(file_of(oriented_check_sq)) - int(file_of(oriented_ksq));
-                    int ord = int(rank_of(oriented_check_sq)) - int(rank_of(oriented_ksq));
-                    int sf = (ofd == 0) ? 0 : ((ofd > 0) ? 1 : -1);
-                    int sr = (ord == 0) ? 0 : ((ord > 0) ? 1 : -1);
-
-                    int dir_idx = -1;
-                    for (int i = 0; i < 8; ++i) {
-                        if (RAY_DIRECTIONS[i][0] == sf && RAY_DIRECTIONS[i][1] == sr) {
-                            dir_idx = i;
-                            break;
-                        }
-                    }
-
-                    if (dir_idx >= 0) {
-                        int dist = std::max(std::abs(ofd), std::abs(ord)) - 1;
-                        int ray = dir_idx * 3 + std::min(dist, 2);
-
-                        // Contested state logic (King Capture Rule)
-                        Bitboard opp_attackers = pos.attackers_to(check_sq) & pos.pieces(opp_color);
-                        bool protected_by_friendly = (opp_attackers & ~square_bb(qsq));
-
-                        Bitboard our_attackers = pos.attackers_to(check_sq) & pos.pieces(perspective);
-                        bool others_attack = (our_attackers & ~square_bb(ksq));
-                        bool king_attacks = our_attackers & ksq;
-
-                        bool can_be_taken = others_attack || (king_attacks && !protected_by_friendly);
-
-                        int state = 0;
-                        if (protected_by_friendly && !can_be_taken) state = 1;
-                        else if (protected_by_friendly && can_be_taken) state = 2;
-                        else if (!protected_by_friendly && can_be_taken) state = 3;
-
-                        IndexType index = IndexBase + king_bucket * 96 + ray * 4 + state;
-                        active.push_back(index);
-                    }
+            int dir_idx = -1;
+            for (int i = 0; i < 8; ++i) {
+                if (RAY_DIRECTIONS[i][0] == sf && RAY_DIRECTIONS[i][1] == sr) {
+                    dir_idx = i;
+                    break;
                 }
+            }
+
+            if (dir_idx >= 0) {
+                int dist = std::max(std::abs(ofd), std::abs(ord)) - 1;
+                int ray = dir_idx * 3 + std::min(dist, 2);
+
+                // Contested state logic (King Capture Rule)
+                Bitboard opp_attackers = pos.attackers_to(check_sq) & pos.pieces(opp_color);
+                bool protected_by_friendly = (opp_attackers & ~square_bb(qsq));
+
+                Bitboard our_attackers = pos.attackers_to(check_sq) & pos.pieces(perspective);
+                bool others_attack = (our_attackers & ~square_bb(ksq));
+                bool king_attacks = our_attackers & ksq;
+
+                bool can_be_taken = others_attack || (king_attacks && !protected_by_friendly);
+
+                int state = 0;
+                if (protected_by_friendly && !can_be_taken) state = 1;
+                else if (protected_by_friendly && can_be_taken) state = 2;
+                else if (!protected_by_friendly && can_be_taken) state = 3;
+
+                IndexType index = IndexBase + king_bucket * 96 + ray * 4 + state;
+                active.push_back(index);
             }
         }
     }
