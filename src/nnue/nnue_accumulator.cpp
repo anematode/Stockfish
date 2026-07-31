@@ -1205,21 +1205,4 @@ const i16* AccumulatorStack::get_accumulation(
     return qkBuffer.data();
 }
 
-i32 AccumulatorStack::get_psqt(
-    Color                     perspective,
-    int                       bucket,
-    const Position&           pos,
-    const FeatureTransformer& featureTransformer) const {
-
-    const auto& latestState = latest();
-    i32 val = latestState.psqtAccumulation[perspective][bucket];
-
-    QKThreatFeatureSet::IndexList qkActive;
-    QKThreatFeatureSet::append_active_indices(perspective, pos, qkActive);
-    for (int i = 0; i < qkActive.ssize(); ++i)
-        val += featureTransformer.auxPsqtWeights[qkActive[i] * PSQTBuckets + bucket];
-
-    return val;
-}
-
 }

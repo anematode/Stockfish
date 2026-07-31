@@ -256,10 +256,20 @@ class FeatureTransformer {
 
         const Color perspectives[2]  = {pos.side_to_move(), ~pos.side_to_move()};
 
-        const auto  psqt =
-          (accumulatorStack.get_psqt(perspectives[0], bucket, pos, *this) -
-           accumulatorStack.get_psqt(perspectives[1], bucket, pos, *this))
-          / 2;
+        QKThreatFeatureSet::IndexList qkActive[COLOR_NB];
+        QKThreatFeatureSet::append_active_indices(perspectives[0], pos, qkActive[0]);
+        QKThreatFeatureSet::append_active_indices(perspectives[1], pos, qkActive[1]);
+
+        const auto& latest = accumulatorStack.latest();
+        int psqt =
+          (latest.psqtAccumulation[perspectives[0]][bucket] - latest.psqtAccumulation[perspectives[1]][bucket]);
+
+        for (IndexType i0 : qkActive[0])
+            psqt += auxPsqtWeights[i0 * PSQTBuckets + bucket];
+        for (IndexType i1 : qkActive[1])
+            psqt -= auxPsqtWeights[i1 * PSQTBuckets + bucket];
+
+        psqt /= 2;
 
         for (IndexType p = 0; p < 2; ++p)
         {
