@@ -40,13 +40,10 @@ void QK4::append_active_indices(Color perspective, const Position& pos, IndexLis
 
 
     // Horizontally mirror if king is on file A-D
-    bool flip_h = file_of(ksq) < FILE_E;
+    int flip_h = file_of(ksq) < FILE_E ? 0x7 : 0x0;
 
     // Oriented king square
-    Square oriented_ksq = Square(int(ksq) ^ (56 * perspective));
-    if (flip_h)
-        oriented_ksq = Square(int(oriented_ksq) ^ 7);
-
+    Square oriented_ksq = Square(int(ksq) ^ (56 * perspective) ^ flip_h);
     int king_bucket = int(oriented_ksq);
 
     const int RAY_DIRECTIONS[8][2] = {
@@ -63,9 +60,7 @@ void QK4::append_active_indices(Color perspective, const Position& pos, IndexLis
         check_squares &= ~pos.pieces(opp_color);
         while (check_squares) {
             Square check_sq = pop_lsb(check_squares);
-            Square oriented_check_sq = Square(int(check_sq) ^ (56 * perspective));
-            if (flip_h)
-                oriented_check_sq = Square(int(oriented_check_sq) ^ 7);
+            Square oriented_check_sq = Square(int(check_sq) ^ (56 * perspective) ^ flip_h);
 
             int ofd = int(file_of(oriented_check_sq)) - int(file_of(oriented_ksq));
             int ord = int(rank_of(oriented_check_sq)) - int(rank_of(oriented_ksq));
@@ -84,11 +79,13 @@ void QK4::append_active_indices(Color perspective, const Position& pos, IndexLis
                 int dist = std::max(std::abs(ofd), std::abs(ord)) - 1;
                 int ray = dir_idx * 3 + std::min(dist, 2);
 
+                Bitboard attackers = pos.attackers_to(check_sq);
+
                 // Contested state logic (King Capture Rule)
-                Bitboard opp_attackers = pos.attackers_to(check_sq) & pos.pieces(opp_color);
+                Bitboard opp_attackers = attackers & pos.pieces(opp_color);
                 bool protected_by_friendly = (opp_attackers & ~square_bb(qsq));
 
-                Bitboard our_attackers = pos.attackers_to(check_sq) & pos.pieces(perspective);
+                Bitboard our_attackers = attackers & pos.pieces(perspective);
                 bool others_attack = (our_attackers & ~square_bb(ksq));
                 bool king_attacks = our_attackers & ksq;
 
