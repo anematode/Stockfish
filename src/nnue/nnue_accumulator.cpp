@@ -610,8 +610,8 @@ void update_accumulator_hybrid(Color                     perspective,
     const bool opponent_has_queen = pos.count<QUEEN>(~perspective) > 0;
     const bool previous_opponent_has_queen = opponent_has_queen || (dirtyPiece.remove_pc == make_piece(~perspective, QUEEN));
 
-    const auto& oldEntry = cache[oldKsq + (previous_opponent_has_queen ? SQUARE_NB : 0)][perspective];
-    auto&       newEntry = cache[newKsq + (opponent_has_queen ? SQUARE_NB : 0)][perspective];
+    const auto& oldEntry = cache[previous_opponent_has_queen][oldKsq][perspective];
+    auto&       newEntry = cache[opponent_has_queen][newKsq][perspective];
 
     // "Remove" means we need to remove them from the cache entry,
     // "Add" means add them to the entry to get the accumulator we want
@@ -933,7 +933,7 @@ void update_accumulator_refresh_cache(Color                     perspective,
 
     const Square             ksq   = pos.square<KING>(perspective);
     const bool opponent_has_queen = pos.count<QUEEN>(~perspective) > 0;
-    auto&                    entry = cache[ksq + (opponent_has_queen ? SQUARE_NB : 0)][perspective];
+    auto&                    entry = cache[opponent_has_queen][ksq][perspective];
     PSQFeatureSet::IndexList removed, added;
 
     const Bitboard changedBB = get_changed_pieces(entry.pieces, pos.piece_array());
