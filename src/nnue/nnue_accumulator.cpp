@@ -1181,28 +1181,4 @@ void update_accumulator_refresh_cache(Color                     perspective,
 
 }
 
-const i16* AccumulatorStack::get_accumulation(
-    Color                     perspective,
-    const Position&           pos,
-    const FeatureTransformer& featureTransformer) {
-
-    const auto& latestState = latest();
-
-    QKThreatFeatureSet::IndexList qkActive;
-    QKThreatFeatureSet::append_active_indices(perspective, pos, qkActive);
-
-    if (qkActive.ssize() == 0)
-        return &latestState.accumulation[perspective][0];
-
-    std::memcpy(qkBuffer.data(), &latestState.accumulation[perspective][0], sizeof(qkBuffer));
-    for (int i = 0; i < qkActive.ssize(); ++i)
-    {
-        const IndexType wOffset = qkActive[i] * L1;
-        const auto* w = &featureTransformer.auxWeights[wOffset];
-        for (IndexType j = 0; j < L1; ++j)
-            qkBuffer[j] += w[j];
-    }
-    return qkBuffer.data();
-}
-
 }
