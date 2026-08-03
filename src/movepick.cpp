@@ -158,7 +158,8 @@ MovePicker::MovePicker(const Position&              p,
                        const CapturePieceToHistory* cph,
                        const PieceToHistory**       ch,
                        const SharedHistories*       sh,
-                       int                          pl) :
+                       int                          pl,
+                       bool rescoreQuiets) :
     pos(p),
     mainHistory(mh),
     lowPlyHistory(lph),
@@ -167,7 +168,8 @@ MovePicker::MovePicker(const Position&              p,
     sharedHistory(sh),
     ttMove(ttm),
     depth(d),
-    ply(pl) {
+    ply(pl),
+    doRescore(rescoreQuiets) {
 
     if (pos.checkers())
         stage = EVASION_TT + !(ttm && pos.pseudo_legal(ttm));
@@ -281,9 +283,7 @@ void MovePicker::maybe_rescore() {
     switch (stage)
     {
     case GOOD_QUIET: {
-        // Re-score if the delta between the next two moves is small and we're
-        // near the root
-        if (ply > 6 || endCur - cur < 2) {
+        if (!doRescore || endCur - cur < 2) {
             return;
         }
 

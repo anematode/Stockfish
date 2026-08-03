@@ -46,7 +46,8 @@ class MovePicker {
                const CapturePieceToHistory*,
                const PieceToHistory**,
                const SharedHistories*,
-               int);
+               int,
+               bool);
     MovePicker(const Position&, Move, int, const CapturePieceToHistory*);
     Move next_move();
     void maybe_rescore();
@@ -74,6 +75,7 @@ class MovePicker {
     int                          threshold;
     Depth                        depth;
     int                          ply;
+    bool                         doRescore = false;
     bool                         skipQuiets = false;
     ExtMove                      moves[MAX_MOVES];
 };
