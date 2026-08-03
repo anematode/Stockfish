@@ -93,7 +93,7 @@ class HalfKAv2_hm {
     // clang-format on
 
     // Maximum number of simultaneously active features.
-    static constexpr IndexType MaxActiveDimensions = 32;
+    static constexpr IndexType MaxActiveDimensions = 64;
     using IndexList                                = ValueList<IndexType, MaxActiveDimensions>;
     using DiffType                                 = DirtyPiece;
 

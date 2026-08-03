@@ -149,7 +149,7 @@ NetworkOutput Network::evaluate(const Position&    pos,
 
     NNZInfo<L1> nnzInfo;
 
-    const int  bucket     = (pos.count<ALL_PIECES>() - 1) / 4;
+    const int  bucket     = std::min((pos.count<ALL_PIECES>() - 1) / 4, int(LayerStacks) - 1);
     const auto psqt       = featureTransformer.transform(pos, accumulatorStack, cache,
                                                          transformedFeatures, bucket, nnzInfo);
     const auto positional = network[bucket].propagate(transformedFeatures, nnzInfo);
@@ -211,7 +211,7 @@ NnueEvalTrace Network::trace_evaluate(const Position&    pos,
     ASSERT_ALIGNED(transformedFeatures, alignment);
 
     NnueEvalTrace t{};
-    t.correctBucket = (pos.count<ALL_PIECES>() - 1) / 4;
+    t.correctBucket = std::min((pos.count<ALL_PIECES>() - 1) / 4, int(LayerStacks) - 1);
     for (IndexType bucket = 0; bucket < LayerStacks; ++bucket)
     {
         NNZInfo<L1> nnzInfo;

@@ -112,7 +112,7 @@ constexpr bool Is64Bit = false;
 using Key      = u64;
 using Bitboard = u64;
 
-constexpr int MAX_MOVES = 256;
+constexpr int MAX_MOVES = 512;
 constexpr int MAX_PLY   = 246;
 
 enum Color : u8 {
@@ -338,7 +338,7 @@ struct DirtyThreat {
 // Thus, 80 should work as an upper bound. Finally, 16 entries are added to accommodate
 // unmasked vector stores near the end of the list.
 
-using DirtyThreatList = ValueList<DirtyThreat, 96>;
+using DirtyThreatList = ValueList<DirtyThreat, 256>;
 
 struct DirtyThreats {
     DirtyThreatList list;

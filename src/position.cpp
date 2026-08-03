@@ -258,7 +258,7 @@ Position::set(const string& fenStr, bool isChess960, StateInfo* si) {
                                         + std::string(1, token));
 
             if (++numPieces > 32)
-                return PositionSetError("Invalid FEN. More than 32 pieces on the board.");
+                ; //return PositionSetError("Invalid FEN. More than 32 pieces on the board.");
 
             const Square sq = make_square(File(file), Rank(rank));
             put_piece(Piece(idx), sq);
@@ -275,19 +275,6 @@ Position::set(const string& fenStr, bool isChess960, StateInfo* si) {
 
     if (count<KING>(WHITE) != 1 || count<KING>(BLACK) != 1)
         return PositionSetError("Unsupported position. Incorrect number of kings.");
-
-    for (Color c : {WHITE, BLACK})
-    {
-        if (count<PAWN>(c) > 8)
-            return PositionSetError(std::string("Unsupported position. ")
-                                    + (c == WHITE ? "WHITE" : "BLACK") + " has more than 8 pawns.");
-
-        int additional = std::max(count<KNIGHT>(c) - 2, 0) + std::max(count<BISHOP>(c) - 2, 0)
-                       + std::max(count<ROOK>(c) - 2, 0) + std::max(count<QUEEN>(c) - 1, 0);
-        if (additional > 8 - count<PAWN>(c))
-            return PositionSetError(std::string("Unsupported position. Too many pieces for ")
-                                    + (c == WHITE ? "WHITE." : "BLACK."));
-    }
 
     // 2. Active color
     if (!(ss >> token))
