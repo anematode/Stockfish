@@ -66,10 +66,11 @@ static void splat_extmove(const ExtMove& m, __m512i& move, __m512i& value) {
 // Sorts up to 16 moves.
 struct MoveSorter {
     static constexpr int MAX_ELEMENTS = 16;
-    __m512i              sortedValues, sortedMoves;
+    __m512i              sortedValues, sortedMoves, iota;
 
     explicit MoveSorter(const ExtMove& first) {
         splat_extmove(first, sortedMoves, sortedValues);
+        iota = _mm512_cvtepi8_epi32(_mm512_castsi512_si128(AllSquares));
 
         // Set the uninitialized move values to INT_MIN, so that they sort less than any other move
         sortedValues = _mm512_mask_set1_epi32(sortedValues, ~1, std::numeric_limits<int>::min());
@@ -79,12 +80,19 @@ struct MoveSorter {
         __m512i move, value;
         splat_extmove(m, move, value);
 
-        // Mask of all elements except the insertion point
         assert(m.value != std::numeric_limits<int>::min());
-        const u16 expand = _kadd_mask16(_mm512_cmplt_epi32_mask(sortedValues, value), -1);
+        // Mask of all elements beyond the insertion point
+        const u16 beyond          = _mm512_cmplt_epi32_mask(sortedValues, value);
+        const u16 allButInsertion = _kadd_mask16(beyond, -1);
 
-        sortedValues = _mm512_mask_expand_epi32(value, expand, sortedValues);
-        sortedMoves  = _mm512_mask_expand_epi32(move, expand, sortedMoves);
+        __m512i index = _mm512_mask_add_epi32(iota, beyond, iota, _mm512_set1_epi32(-1));
+
+        auto shuffle = [=](__m512i& sorted, __m512i splat) {
+            sorted = _mm512_mask_permutexvar_epi32(splat, allButInsertion, index, sorted);
+        };
+
+        shuffle(sortedValues, value);
+        shuffle(sortedMoves, move);
     }
 
     void write_sorted(ExtMove* moves, isize count) const {
