@@ -34,6 +34,10 @@
 
 namespace Stockfish {
 
+struct NativeThreadOptions {
+    bool largeStack{};
+};
+
 #ifdef _MSC_VER
 
 // MSVC-compatible toolchains use std::thread because they do not provide
@@ -41,7 +45,27 @@ namespace Stockfish {
 
 using NativeThread = std::thread;
 
+template<class Function, class... Args>
+NativeThread create_native_thread(NativeThreadOptions options, Function&& fun, Args&&... args) {
+    // TODO: implement for MSVC
+    (void) options;
+    return NativeThread(options, std::forward<Function>(fun), std::forward<Args>(args)...);
+}
+
 #else
+
+struct ThreadCallableBase {  // type erase F
+    virtual ~ThreadCallableBase() = default;
+    virtual void run()            = 0;
+};
+
+template<typename F>
+struct ThreadCallable final: ThreadCallableBase {
+    F func;
+    ThreadCallable(F&& f) :
+        func(std::move(f)) {}
+    void run() override { func(); }
+};
 
 // On OSX threads other than the main thread are created with a reduced stack
 // size of 512KB by default, this is too low for deep searches, which require
@@ -51,23 +75,22 @@ using NativeThread = std::thread;
 
 class NativeThread {
     pthread_t thread;
+    bool      running_ = false;
 
     static constexpr usize TH_STACK_SIZE = 8 * 1024 * 1024;
 
-   public:
-    template<class Function, class... Args>
-    explicit NativeThread(Function&& fun, Args&&... args) {
-        auto func = new std::function<void()>(
-          std::bind(std::forward<Function>(fun), std::forward<Args>(args)...));
-
+    void start(NativeThreadOptions options, ThreadCallableBase* func) {
         pthread_attr_t attr_storage, *attr = &attr_storage;
         pthread_attr_init(attr);
-        pthread_attr_setstacksize(attr, TH_STACK_SIZE);
+        if (options.largeStack)
+        {
+            pthread_attr_setstacksize(attr, TH_STACK_SIZE);
+        }
 
         auto start_routine = [](void* ptr) -> void* {
-            auto f = reinterpret_cast<std::function<void()>*>(ptr);
+            auto f = reinterpret_cast<ThreadCallableBase*>(ptr);
             // Call the function
-            (*f)();
+            f->run();
             delete f;
             return nullptr;
         };
@@ -76,14 +99,40 @@ class NativeThread {
         pthread_attr_destroy(attr);
 
         if (rc != 0)
+            delete func;
+        else
+            running_ = true;
+    }
+
+   public:
+    bool joinable() const { return running_; }
+    void join() {
+        if (running_)
         {
-            std::cerr << "Failed to create a thread: " << std::strerror(rc) << std::endl;
-            std::exit(EXIT_FAILURE);
+            pthread_join(thread, nullptr);
+            running_ = false;
         }
     }
 
-    void join() { pthread_join(thread, nullptr); }
+    template<class Function, class... Args>
+    friend NativeThread create_native_thread(NativeThreadOptions, Function&&, Args&&...);
 };
+
+template<class Function, class... Args>
+inline NativeThread
+create_native_thread(NativeThreadOptions options, Function&& fun, Args&&... args) {
+    NativeThread thread{};
+    auto         bound_lambda = [f   = std::forward<Function>(fun),
+                         tup = std::make_tuple(std::forward<Args>(args)...)]() mutable {
+        std::apply(std::move(f), std::move(tup));
+    };
+    auto func = new (std::nothrow) ThreadCallable<decltype(bound_lambda)>(std::move(bound_lambda));
+    if (func != nullptr)
+    {
+        thread.start(options, func);
+    }
+    return thread;
+}
 
 #endif  // _MSC_VER
 

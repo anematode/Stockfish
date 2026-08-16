@@ -51,6 +51,7 @@
 #define SF_MAX_SEM_NAME_LEN NAME_MAX
 
 #include "misc.h"
+#include "thread_native.h"
 
 namespace Stockfish::shm {
 
@@ -206,9 +207,9 @@ class SharedMemory {
     std::string init_lock_path_;
 
     // serve requests for the shared segment on this .sock
-    std::string socket_path_;
-    std::thread server_thread_;
-    UniqueFd    shutdown_;  // close to signal server thread shutdown
+    std::string  socket_path_;
+    NativeThread server_thread_;
+    UniqueFd     shutdown_;  // close to signal server thread shutdown
 
     static std::string make_sentinel_base(const std::string& name) {
         char buf[32];
@@ -375,10 +376,13 @@ class SharedMemory {
     //  - Forwards the file descriptor fd
     //  - Exits when shutdown_receiver is hung up on
     //  - Listens on server_fd
-    static std::thread
+    static NativeThread
     make_server_thread(UniqueFd fd, UniqueFd shutdown_receiver, UniqueFd server_fd) {
-        return std::thread([fd = std::move(fd), shutdown_receiver = std::move(shutdown_receiver),
-                            server_fd = std::move(server_fd)]() {
+        NativeThreadOptions options{/*.largeStack=*/false};
+
+        return create_native_thread(options, [fd                = std::move(fd),
+                                              shutdown_receiver = std::move(shutdown_receiver),
+                                              server_fd         = std::move(server_fd)]() {
             enum {
                 FdServer,
                 FdShutdown,
@@ -562,6 +566,10 @@ class SharedMemory {
             // other fishes can use.
             server_thread_ = make_server_thread(std::move(memfd), std::move(shutdown_receiver),
                                                 std::move(server_fd));
+            if (!server_thread_.joinable())
+            {
+                return false;
+            }
         }
 
         return true;
