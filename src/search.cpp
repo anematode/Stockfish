@@ -2191,7 +2191,7 @@ void syzygy_extend_pv(const OptionsMap&         options,
     // Step 2, now extend the PV to mate, as if the user explored syzygy-tables.info
     // using top ranked moves (minimal DTZ), which gives optimal mates only for simple
     // endgames e.g. KRvK.
-    while (!(rule50 && pos.is_draw(0)))
+    while (!(rule50 && pos.is_draw(0) && rootMove.pv.remaining_cap() > 0))
     {
         if (time_abort())
             break;

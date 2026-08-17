@@ -74,6 +74,7 @@ struct PVMoves {
 
     bool  empty() const { return length == 0; }
     usize size() const { return length; }
+    usize remaining_cap() const { return length - (MAX_PLY + 1); }
 
     void clear() { length = 0; }
 
