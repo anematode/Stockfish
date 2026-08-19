@@ -97,9 +97,7 @@ struct PVMoves {
         length = childPv ? childPv->length : 0;
 
         if (childPv)
-        {
             std::memcpy(moves + 1, childPv->moves, length * sizeof(Move));
-        }
 
         moves[0] = move;
         ++length;
