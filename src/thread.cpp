@@ -252,7 +252,7 @@ void ThreadPool::set(const NumaConfig&                           numaConfig,
 
 // Sets threadPool data to initial values
 void ThreadPool::clear() {
-    if (threads.size() == 0)
+    if (threads.empty())
         return;
 
     for (auto&& th : threads)

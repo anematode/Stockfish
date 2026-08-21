@@ -2219,7 +2219,7 @@ void syzygy_extend_pv(const OptionsMap&         options,
         }
 
         // Mate found
-        if (legalMoves.size() == 0)
+        if (legalMoves.empty())
             break;
 
         // Sort moves according to their above assigned rank.
