@@ -378,11 +378,10 @@ class SharedMemory {
     //  - Listens on server_fd
     static NativeThread
     make_server_thread(UniqueFd fd, UniqueFd shutdown_receiver, UniqueFd server_fd) {
-        NativeThreadOptions options{/*.largeStack=*/false};
-
-        return create_native_thread(options, [fd                = std::move(fd),
-                                              shutdown_receiver = std::move(shutdown_receiver),
-                                              server_fd         = std::move(server_fd)]() {
+        return create_native_thread(NativeThreadOptions{}, [fd = std::move(fd),
+                                                            shutdown_receiver =
+                                                              std::move(shutdown_receiver),
+                                                            server_fd = std::move(server_fd)]() {
             enum {
                 FdServer,
                 FdShutdown,

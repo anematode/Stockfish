@@ -957,7 +957,7 @@ class NumaConfig {
 
     template<typename FuncT>
     void execute_on_numa_node(NumaIndex n, FuncT&& f) const {
-        NativeThread th = create_native_thread({/*.largeStack=*/false}, [this, &f, n]() {
+        NativeThread th = create_native_thread(NativeThreadOptions{}, [this, &f, n]() {
             bind_current_thread_to_numa_node(n);
             std::forward<FuncT>(f)();
         });

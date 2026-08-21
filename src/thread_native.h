@@ -36,6 +36,11 @@ namespace Stockfish {
 
 struct NativeThreadOptions {
     bool largeStack{};
+
+    NativeThreadOptions& setLargeStack(bool value) {
+        largeStack = value;
+        return *this;
+    }
 };
 
 #ifdef _MSC_VER
@@ -47,9 +52,9 @@ using NativeThread = std::thread;
 
 template<class Function, class... Args>
 NativeThread create_native_thread(NativeThreadOptions options, Function&& fun, Args&&... args) {
-    // TODO: implement for MSVC
+    // TODO: implement fallible thread creation for MSVC
     (void) options;
-    return NativeThread(options, std::forward<Function>(fun), std::forward<Args>(args)...);
+    return NativeThread(std::forward<Function>(fun), std::forward<Args>(args)...);
 }
 
 #else
@@ -59,12 +64,14 @@ struct ThreadCallableBase {  // type erase F
     virtual void run()            = 0;
 };
 
-template<typename F>
+template<typename F, typename... Args>
 struct ThreadCallable final: ThreadCallableBase {
-    F func;
-    ThreadCallable(F&& f) :
-        func(std::move(f)) {}
-    void run() override { func(); }
+    F                   func_;
+    std::tuple<Args...> args_;
+    ThreadCallable(F&& f, Args&&... args) :
+        func_(std::forward<F>(f)),
+        args_(std::make_tuple(std::forward<Args>(args)...)) {}
+    void run() override { std::apply(func_, args_); }
 };
 
 // On OSX threads other than the main thread are created with a reduced stack
@@ -105,6 +112,26 @@ class NativeThread {
     }
 
    public:
+    NativeThread()                               = default;
+    NativeThread(const NativeThread&)            = delete;
+    NativeThread& operator=(const NativeThread&) = delete;
+
+    NativeThread(NativeThread&& other) noexcept {
+        thread         = other.thread;
+        running_       = other.running_;
+        other.running_ = false;
+    }
+
+    NativeThread& operator=(NativeThread&& other) noexcept {
+        if (&other != this)
+        {
+            thread         = other.thread;
+            running_       = other.running_;
+            other.running_ = false;
+        }
+        return *this;
+    }
+
     bool joinable() const { return running_; }
     void join() {
         if (running_)
@@ -122,15 +149,10 @@ template<class Function, class... Args>
 inline NativeThread
 create_native_thread(NativeThreadOptions options, Function&& fun, Args&&... args) {
     NativeThread thread{};
-    auto         bound_lambda = [f   = std::forward<Function>(fun),
-                         tup = std::make_tuple(std::forward<Args>(args)...)]() mutable {
-        std::apply(std::move(f), std::move(tup));
-    };
-    auto func = new (std::nothrow) ThreadCallable<decltype(bound_lambda)>(std::move(bound_lambda));
-    if (func != nullptr)
-    {
+    using Callable = ThreadCallable<std::decay_t<Function>, std::decay_t<Args>...>;
+    if (auto func =
+          new (std::nothrow) Callable(std::forward<Function>(fun), std::forward<Args>(args)...))
         thread.start(options, func);
-    }
     return thread;
 }
 

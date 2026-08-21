@@ -57,7 +57,7 @@ Thread::Thread(Search::SharedState&                    sharedState,
     totalNuma(totalNumaCount),
     nthreads(sharedState.options["Threads"]),
     stdThread(
-      create_native_thread(NativeThreadOptions{/*.largeStack=*/true}, &Thread::idle_loop, this)) {
+      create_native_thread(NativeThreadOptions{}.setLargeStack(true), &Thread::idle_loop, this)) {
 
     if (!stdThread.joinable())
     {
