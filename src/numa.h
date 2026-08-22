@@ -300,7 +300,7 @@ inline WindowsAffinity get_process_affinity() {
 
         if (GetThreadSelectedCpuSetMasks_f != nullptr)
         {
-            std::thread th([&]() {
+            NativeThread th = create_native_thread(NativeThreadOptions{}, [&]() {
                 std::set<CpuIndex> cpus;
                 bool               isAffinityFull = true;
 

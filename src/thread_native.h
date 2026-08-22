@@ -27,6 +27,7 @@
     #include <cstring>
     #include <functional>
     #include <iostream>
+    #include <tuple>
     #include <utility>
 
     #include "misc.h"
@@ -125,12 +126,15 @@ class NativeThread {
     NativeThread& operator=(NativeThread&& other) noexcept {
         if (&other != this)
         {
+            assert(!running_ && "Thread was not joined");
             thread         = other.thread;
             running_       = other.running_;
             other.running_ = false;
         }
         return *this;
     }
+
+    ~NativeThread() { assert(!running_ && "Thread was not joined"); }
 
     bool joinable() const { return running_; }
     void join() {
