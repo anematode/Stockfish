@@ -97,11 +97,11 @@ void TTEntry::save(
         move16 = m;
 
     auto surprisal = [&] () {
-        return std::abs(value16 - eval16) / 8192;
+        return std::abs(value16 - eval16) / 4096;
     };
 
     // Overwrite less valuable entries (cheapest checks first)
-    if (b == BOUND_EXACT || u16(k) != key16 || d - DEPTH_NONE + 2 * pv > depth8 - 5
+    if (b == BOUND_EXACT || u16(k) != key16 || d - DEPTH_NONE + 2 * pv > depth8 - 7
         + surprisal() || relative_age(curr_generation))
     {
         assert(d > DEPTH_NONE);
