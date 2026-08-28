@@ -459,7 +459,6 @@ sf_always_inline Tile apply_psq_features(IndexType                       j,
                                          const PSQFeatureSet::IndexList& list,
                                          const FeatureTransformer&       ft) {
     static_assert(sign == 1 || sign == -1);
-#if defined(USE_AVX2) && !defined(USE_AVX512)
     if constexpr (Incremental)
     {
         assert(list.size() == 1 || list.size() == 2);
@@ -468,7 +467,6 @@ sf_always_inline Tile apply_psq_features(IndexType                       j,
             acc = apply<sign>(j, acc, &ft.weights[list[1] * Dimensions]);
         return acc;
     }
-#endif
     for (int i = 0; i < list.ssize(); ++i)
         acc = apply<sign>(j, acc, &ft.weights[list[i] * Dimensions]);
     return acc;
