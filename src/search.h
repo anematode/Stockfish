@@ -33,6 +33,7 @@
 
 #include "history.h"
 #include "misc.h"
+#include "movegen.h"
 #include "nnue/nnue_accumulator.h"
 #include "numa.h"
 #include "position.h"
@@ -354,8 +355,9 @@ class Worker {
     TTMoveHistory    ttMoveHistory;
     SharedHistories& sharedHistory;
     ContinuationHistory (&continuationHistory)[2][2];
+    std::array<std::array<ExtMove, MAX_MOVES>, MAX_PLY + 1> pickerStorage;
 
-   private:
+private:
     bool iterative_deepening();
 
     void do_move(Position& pos, const Move move, StateInfo& st, Stack* const ss);

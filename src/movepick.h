@@ -38,7 +38,8 @@ class MovePicker {
    public:
     MovePicker(const MovePicker&)            = delete;
     MovePicker& operator=(const MovePicker&) = delete;
-    MovePicker(const Position&,
+    MovePicker(std::array<ExtMove, MAX_MOVES>&,
+               const Position&,
                Move,
                Depth,
                const ButterflyHistory*,
@@ -47,7 +48,7 @@ class MovePicker {
                const PieceToHistory**,
                const SharedHistories*,
                int);
-    MovePicker(const Position&, Move, int, const CapturePieceToHistory*);
+    MovePicker(std::array<ExtMove, MAX_MOVES>&, const Position&, Move, int, const CapturePieceToHistory*);
     Move next_move();
     void skip_quiet_moves();
 
@@ -70,7 +71,7 @@ class MovePicker {
     Depth                        depth;
     int                          ply;
     bool                         skipQuiets = false;
-    ExtMove                      moves[MAX_MOVES];
+    std::array<ExtMove, MAX_MOVES>& moves;
 };
 
 }  // namespace Stockfish
