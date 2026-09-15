@@ -728,12 +728,6 @@ void update_accumulator_hybrid(Color                     perspective,
     Bitboard newRemovedBB = newChangedBB & newEntry.pieceBB;
     Bitboard newAddedBB   = newChangedBB & pos.pieces();
 
-#if defined(USE_AVX512ICL)
-    PSQFeatureSet::write_indices(oldEntry.pieces, previousPieces, oldRemovedBB, oldAddedBB,
-                                 perspective, oldKsq, oldRemove, oldAdd);
-    PSQFeatureSet::write_indices(newEntry.pieces, currentPieces, newRemovedBB, newAddedBB,
-                                 perspective, newKsq, newRemove, newAdd);
-#else
     while (oldRemovedBB)
     {
         Square sq = pop_lsb(oldRemovedBB);
@@ -756,7 +750,6 @@ void update_accumulator_hybrid(Color                     perspective,
         Square sq = pop_lsb(newAddedBB);
         newAdd.push_back(PSQFeatureSet::make_index(perspective, sq, currentPieces[sq], newKsq));
     }
-#endif
 
     ThreatFeatureSet::IndexList thrRemoved, thrAdded;  // also contain pp indices
     const auto*                 threatPpBase = &featureTransformer.threatAndPpWeights[0];
@@ -939,10 +932,6 @@ void update_accumulator_refresh_cache(Color                     perspective,
     Bitboard       removedBB = changedBB & entry.pieceBB;
     Bitboard       addedBB   = changedBB & pos.pieces();
 
-#if defined(USE_AVX512ICL)
-    PSQFeatureSet::write_indices(entry.pieces, pos.piece_array(), removedBB, addedBB, perspective,
-                                 ksq, removed, added);
-#else
     while (removedBB)
     {
         Square sq = pop_lsb(removedBB);
@@ -953,7 +942,6 @@ void update_accumulator_refresh_cache(Color                     perspective,
         Square sq = pop_lsb(addedBB);
         added.push_back(PSQFeatureSet::make_index(perspective, sq, pos.piece_on(sq), ksq));
     }
-#endif
 
     entry.pieceBB = pos.pieces();
     entry.pieces  = pos.piece_array();
