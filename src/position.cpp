@@ -60,21 +60,27 @@ constexpr std::string_view PieceToChar(" PNBRQK  pnbrqk");
 static constexpr Piece Pieces[] = {W_PAWN, W_KNIGHT, W_BISHOP, W_ROOK, W_QUEEN, W_KING,
                                    B_PAWN, B_KNIGHT, B_BISHOP, B_ROOK, B_QUEEN, B_KING};
 
-// Nibble packing: byte j holds square j in the low nibble and square j+32 in the high nibble
-inline std::array<uint8_t, 32> pack_pieces(const std::array<Piece, SQUARE_NB>& b) {
-    std::array<uint8_t, 32> p;
-    for (int j = 0; j < 32; ++j)
-        p[j] = uint8_t(b[j] | (b[j + 32] << 4));
+// Pack pieces into nibbles: lower half of the board to even nibbles, upper half to odd nibbles
+inline std::array<u8, 32> pack_pieces(const std::array<Piece, SQUARE_NB>& arr) {
+    std::array<u8, 32> p;
+    for (int k = 0; k < 32; k += 8) {
+        u64 a, b;
+        memcpy(&a, &arr[k], 8);
+        memcpy(&b, &arr[k + 32], 8);
+        a |= b << 4;
+        memcpy(&p[k], &a, 8);
+    }
     return p;
 }
 
-inline void swap_nibble(std::array<uint8_t, 32>& p, Square s1, Square s2) {
-    int i1 = int(s1) & 31, sh1 = int(s1) < 32 ? 0 : 4;
-    int i2 = int(s2) & 31, sh2 = int(s2) < 32 ? 0 : 4;
-    uint8_t v1 = (p[i1] >> sh1) & 0xF, v2 = (p[i2] >> sh2) & 0xF;
-    p[i1] = uint8_t((p[i1] & ~(0xF << sh1)) | (v2 << sh1));
-    p[i2] = uint8_t((p[i2] & ~(0xF << sh2)) | (v1 << sh2));
+inline void swap_nibble(std::array<u8, 32>& p, Square s1, Square s2) {
+    int i1 = int(s1) & 31, sh1 = (int(s1) & 0x20) >> 3;
+    int i2 = int(s2) & 31, sh2 = (int(s2) & 0x20) >> 3;
+    int swap = ((p[i1] >> sh1) ^ (p[i2] >> sh2)) & 0xF;
+    p[i1] ^= swap << sh1;
+    p[i2] ^= swap << sh2;
 }
+
 }  // namespace
 
 
