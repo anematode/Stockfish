@@ -439,12 +439,7 @@ sf_always_inline Tile apply_feature_diff(Tile acc, const i8* add, const i8* sub)
     static_assert(Tiling::NumRegs % 2 == 0);
     const vec_t bias  = vec_set_8(-128);
     const vec_t signs = vec_set_16(-255);  // i8 pairs (+1, -1)
-        #if defined(__clang__)
-            #pragma clang loop unroll(full)
-        #elif defined(__GNUC__)
-            #pragma GCC unroll(Tiling::NumRegs / 2)
-        #endif
-    for (IndexType k = 0; k < Tiling::NumRegs; k += 2)
+    UNROLLED_FOR (IndexType k = 0; k < Tiling::NumRegs; k += 2)
     {
         const vec_t ua = vec_xor(vec_load(reinterpret_cast<const vec_t*>(add) + k / 2), bias);
         const vec_t us = vec_xor(vec_load(reinterpret_cast<const vec_t*>(sub) + k / 2), bias);
